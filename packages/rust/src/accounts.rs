@@ -12,9 +12,16 @@ use sha2::Sha512;
 use thiserror::Error;
 
 use crate::constants::ACCOUNT_PREFIX;
+use crate::utils::bytes::hex_to_bytes;
 
 /// The Cosmos BIP-44 derivation path (`m/44'/118'/0'/0/0`).
 pub const COSMOS_DERIVATION_PATH: &str = "m/44'/118'/0'/0/0";
+
+/// Environment variable holding an operator's hex-encoded secp256k1 private key.
+pub const ENV_OPERATOR_PRIVATE_KEY_HEX: &str = "QORE_OPERATOR_PRIVATE_KEY_HEX";
+
+/// Environment variable holding an operator's BIP-39 mnemonic.
+pub const ENV_MNEMONIC: &str = "QORE_MNEMONIC";
 
 /// Derive the BIP-39 seed from a mnemonic and optional passphrase.
 ///
@@ -157,6 +164,39 @@ impl Signer for NativeAccount {
     fn signing_key(&self) -> &SigningKey {
         &self.signing_key
     }
+}
+
+/// Build a signer from the process environment, preferring a hex private key
+/// (`QORE_OPERATOR_PRIVATE_KEY_HEX`) over a mnemonic (`QORE_MNEMONIC`), using the
+/// default `qor` prefix.
+///
+/// Returns `Ok(None)` when neither variable is set, so callers can give a
+/// friendly message; `Err` when a value is present but invalid.
+pub fn signer_from_env() -> Result<Option<NativeAccount>, AccountError> {
+    signer_from_env_with(|key| std::env::var(key).ok(), ACCOUNT_PREFIX)
+}
+
+/// Like [`signer_from_env`] but with an injectable env lookup and bech32 prefix,
+/// for testing and non-`std::env` environments. The lookup returns the value for
+/// a variable name, or `None` if unset.
+pub fn signer_from_env_with(
+    lookup: impl Fn(&str) -> Option<String>,
+    prefix: &str,
+) -> Result<Option<NativeAccount>, AccountError> {
+    if let Some(hex) = lookup(ENV_OPERATOR_PRIVATE_KEY_HEX) {
+        let hex = hex.trim();
+        if !hex.is_empty() {
+            let bytes = hex_to_bytes(hex).map_err(|e| AccountError::Derivation(e.to_string()))?;
+            return NativeAccount::from_private_key(&bytes, prefix).map(Some);
+        }
+    }
+    if let Some(mnemonic) = lookup(ENV_MNEMONIC) {
+        let mnemonic = mnemonic.trim();
+        if !mnemonic.is_empty() {
+            return NativeAccount::from_mnemonic(mnemonic, prefix).map(Some);
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]

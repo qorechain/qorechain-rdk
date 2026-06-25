@@ -10,8 +10,9 @@ sidebar_position: 2
 project. Each template is built around one of the five [preset
 profiles](../guides/profiles.md).
 
-> Coming soon. The CLI is published alongside the language packages; the usage
-> below reflects its interface.
+> Published on npm as `create-qorechain-rollup` (run via `npm create
+> qorechain-rollup`). To operate an existing rollup, see the
+> [`qorollup` reference](cli-qorollup.md).
 
 ## Usage
 

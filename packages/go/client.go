@@ -364,6 +364,45 @@ func (c *RestClient) BroadcastTxBytes(ctx context.Context, txBytes []byte) (map[
 	return asRecord(parsed), nil
 }
 
+// SimulateTxBytes simulates TxRaw bytes via the REST simulate endpoint and
+// returns the estimated gas used (gas_info.gas_used).
+func (c *RestClient) SimulateTxBytes(ctx context.Context, txBytes []byte) (uint64, error) {
+	payload := map[string]any{
+		"tx_bytes": base64.StdEncoding.EncodeToString(txBytes),
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/cosmos/tx/v1beta1/simulate", bytes.NewReader(body))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	res, err := c.http.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer res.Body.Close()
+	respBody, _ := io.ReadAll(res.Body)
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return 0, fmt.Errorf("simulate failed: %d %s", res.StatusCode, http.StatusText(res.StatusCode))
+	}
+	var parsed any
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return 0, err
+	}
+	record := asRecord(parsed)
+	gasInfo := asRecord(pick(record, "gas_info", "gasInfo"))
+	gasUsed := asStr(pick(gasInfo, "gas_used", "gasUsed"), "0")
+	n, err := strconv.ParseUint(gasUsed, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("simulate: invalid gas_used %q: %w", gasUsed, err)
+	}
+	return n, nil
+}
+
 // --- qor_ JSON-RPC client ---
 
 // QorClient calls the custom qor_ JSON-RPC namespace served at the EVM JSON-RPC

@@ -5,11 +5,12 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 
-use qorechain_rdk::accounts::NativeAccount;
+use qorechain_rdk::accounts::{signer_from_env_with, NativeAccount};
 use qorechain_rdk::client::http::{HttpError, HttpRequest, HttpResponse, Method, Transport};
 use qorechain_rdk::client::{QorClient, RdkClient, RdkClientOptions, RestClient};
+use qorechain_rdk::monitor::events_from_tx_hash;
 use qorechain_rdk::tx::messages::CreateRollupInput;
-use qorechain_rdk::tx::{RdkTxClient, TxOptions};
+use qorechain_rdk::tx::{MockTxClient, RdkTxClient, TxOptions};
 
 const GOLDEN_MNEMONIC: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -187,6 +188,214 @@ fn sign_doc_roundtrip_verifies() {
     let mut bad = payload.clone();
     bad.push(0xff);
     assert!(!k256_verify(&sec1, &bad, &signature.to_vec()));
+}
+
+#[test]
+fn rest_client_gets_tx() {
+    let body = json!({
+        "tx_response": { "txhash": "ABCD", "code": 0, "events": [] }
+    })
+    .to_string();
+    let transport = MockTransport::new(200, &body);
+    let rest = RestClient::with_transport("http://node.example", transport.clone());
+    let tx = rest.get_tx("ABCD").unwrap();
+    assert_eq!(tx["tx_response"]["txhash"].as_str(), Some("ABCD"));
+
+    let last = transport.last.lock().unwrap().clone().unwrap();
+    assert_eq!(last.method, Method::Get);
+    assert_eq!(last.url, "http://node.example/cosmos/tx/v1beta1/txs/ABCD");
+}
+
+#[test]
+fn rest_client_gets_all_balances() {
+    let body = json!({
+        "balances": [
+            { "denom": "uqor", "amount": "100" },
+            { "denom": "stake", "amount": "5" }
+        ]
+    })
+    .to_string();
+    let rest = RestClient::with_transport("http://node.example", MockTransport::new(200, &body));
+    let balances = rest.get_all_balances("qor1abc").unwrap();
+    assert_eq!(balances.len(), 2);
+    assert_eq!(balances[0].denom, "uqor");
+    assert_eq!(balances[0].amount, "100");
+    assert_eq!(balances[1].denom, "stake");
+}
+
+#[test]
+fn events_from_tx_hash_decodes_rdk_events() {
+    let body = json!({
+        "tx_response": {
+            "txhash": "ABCD",
+            "events": [
+                { "type": "message", "attributes": [] },
+                {
+                    "type": "rollup_created",
+                    "attributes": [
+                        { "key": "rollup_id", "value": "my-rollup" },
+                        { "key": "creator", "value": "qor1creator" }
+                    ]
+                }
+            ]
+        }
+    })
+    .to_string();
+    let client = RdkClient::new(RdkClientOptions {
+        transport: Some(MockTransport::new(200, &body)),
+        ..Default::default()
+    });
+    let decoded = events_from_tx_hash(&client, "ABCD").unwrap();
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].event_type, "rollup_created");
+    assert_eq!(
+        decoded[0].attributes.get("rollup_id"),
+        Some(&"my-rollup".to_string())
+    );
+}
+
+#[test]
+fn mock_tx_client_records_create_and_lifecycle() {
+    let mock = Arc::new(MockTxClient::new());
+    let rest = RestClient::with_transport("http://devnet.local", mock.clone());
+    let account = NativeAccount::from_mnemonic_default(GOLDEN_MNEMONIC).unwrap();
+    let mut tx = RdkTxClient::new(account, rest, "qorechain-diana", 0, 0);
+
+    let resp = tx
+        .create_rollup(
+            "my-rollup",
+            "defi",
+            "evm",
+            10_000_000_000,
+            &TxOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(resp["tx_response"]["code"].as_i64(), Some(0));
+    assert_eq!(resp["tx_response"]["txhash"].as_str(), Some("MOCK_TX_HASH"));
+
+    // Advance the sequence and run a lifecycle action against the same mock.
+    tx.set_sequence(1);
+    let resp = tx
+        .pause_rollup("my-rollup", "maintenance", None, &TxOptions::default())
+        .unwrap();
+    assert_eq!(resp["tx_response"]["code"].as_i64(), Some(0));
+
+    // Both broadcasts were recorded.
+    let calls = mock.calls();
+    assert_eq!(calls.len(), 2);
+    for call in &calls {
+        assert_eq!(call.path, "/cosmos/tx/v1beta1/txs");
+        assert_eq!(call.mode, "BROADCAST_MODE_SYNC");
+        assert!(!call.tx_bytes.is_empty());
+    }
+}
+
+#[test]
+fn tx_client_simulate_returns_gas_estimate() {
+    let mock = MockTxClient::new().into_transport();
+    let rest = RestClient::with_transport("http://devnet.local", mock);
+    let account = NativeAccount::from_mnemonic_default(GOLDEN_MNEMONIC).unwrap();
+    let tx = RdkTxClient::new(account, rest, "qorechain-diana", 0, 0);
+
+    let opts = TxOptions {
+        gas_limit: 175_000,
+        ..Default::default()
+    };
+    let input = CreateRollupInput {
+        creator: tx.address().to_string(),
+        rollup_id: "sim-rollup".to_string(),
+        profile: "defi".to_string(),
+        vm_type: "evm".to_string(),
+        stake_amount: 1,
+    };
+    let gas = tx.simulate(&input.to_msg(), &opts).unwrap();
+    assert_eq!(gas, 175_000);
+}
+
+#[test]
+fn signer_from_env_derives_golden_address_from_mnemonic() {
+    // No env set -> None.
+    let none = signer_from_env_with(|_| None, "qor").unwrap();
+    assert!(none.is_none());
+
+    // Mnemonic -> golden address.
+    let signer = signer_from_env_with(
+        |key| match key {
+            "QORE_MNEMONIC" => Some(GOLDEN_MNEMONIC.to_string()),
+            _ => None,
+        },
+        "qor",
+    )
+    .unwrap()
+    .expect("a signer");
+    assert_eq!(
+        signer.address(),
+        "qor19rl4cm2hmr8afy4kldpxz3fka4jguq0agt672h"
+    );
+}
+
+/// A transport that answers based on the request path, counting hits.
+struct RoutingTransport {
+    rollup_body: String,
+    batch_body: String,
+    hits: Arc<Mutex<usize>>,
+}
+
+impl Transport for RoutingTransport {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
+        *self.hits.lock().unwrap() += 1;
+        let body = if request.url.contains("/rollup/") {
+            &self.rollup_body
+        } else {
+            &self.batch_body
+        };
+        Ok(HttpResponse {
+            status: 200,
+            body: body.clone(),
+        })
+    }
+}
+
+#[test]
+fn watch_rollup_polls_and_stops() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    let rollup_body = json!({ "rollup": { "rollup_id": "r", "status": "active" } }).to_string();
+    // submitted_at == 0 makes health short-circuit (no params call needed).
+    let batch_body = json!({ "batch": { "batch_index": 0, "submitted_at": 0 } }).to_string();
+    let hits = Arc::new(Mutex::new(0usize));
+    let transport = Arc::new(RoutingTransport {
+        rollup_body,
+        batch_body,
+        hits: hits.clone(),
+    });
+
+    let client = RdkClient::new(RdkClientOptions {
+        transport: Some(transport),
+        ..Default::default()
+    });
+
+    let updates = Arc::new(AtomicUsize::new(0));
+    let updates_cb = updates.clone();
+    let watcher = qorechain_rdk::monitor::watch_rollup(
+        client,
+        "r",
+        Duration::from_millis(10),
+        move |health| {
+            assert_eq!(health.rollup_id, "r");
+            updates_cb.fetch_add(1, Ordering::SeqCst);
+        },
+        |_err| panic!("unexpected polling error"),
+        || 1_000,
+    );
+
+    // Give the loop time to produce at least one update, then stop.
+    while updates.load(Ordering::SeqCst) == 0 {
+        std::thread::yield_now();
+    }
+    watcher.stop();
+    assert!(updates.load(Ordering::SeqCst) >= 1);
 }
 
 /// Verify a secp256k1 signature using the compressed SEC1 public key bytes.

@@ -86,8 +86,7 @@ advisory service is unavailable.
 
 ## Quickstart (TypeScript)
 
-> The TypeScript package is in active development toward v0.1.0. The shape below
-> reflects its public surface.
+> The TypeScript package is published at v0.2.0 (`npm i @qorechain/rdk`).
 
 ```sh
 npm install @qorechain/rdk

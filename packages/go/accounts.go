@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/cosmos/go-bip39"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
@@ -83,6 +84,47 @@ func DeriveNativeAccount(mnemonic string, index uint32) (Account, error) {
 		PublicKey:  compressed,
 		PrivateKey: append([]byte(nil), priv...),
 	}, nil
+}
+
+// SignerFromEnv builds an operator Account from the environment, preferring a
+// hex private key (QORE_OPERATOR_PRIVATE_KEY_HEX) over a mnemonic
+// (QORE_MNEMONIC). The prefix selects the bech32 address prefix (empty defaults
+// to the account prefix).
+//
+// It returns (Account{}, nil, false) when neither variable is set, so callers
+// can give a friendly message; it returns a non-nil error when a variable is set
+// but malformed.
+func SignerFromEnv(env map[string]string, prefix string) (Account, error, bool) {
+	hex := strings.TrimSpace(env["QORE_OPERATOR_PRIVATE_KEY_HEX"])
+	mnemonic := strings.TrimSpace(env["QORE_MNEMONIC"])
+	if prefix == "" {
+		prefix = AccountPrefix
+	}
+	if hex != "" {
+		priv, err := HexToBytes(hex)
+		if err != nil {
+			return Account{}, err, true
+		}
+		acc, err := AccountFromPrivateKey(priv, prefix)
+		if err != nil {
+			return Account{}, err, true
+		}
+		return acc, nil, true
+	}
+	if mnemonic != "" {
+		acc, err := DeriveNativeAccount(mnemonic, 0)
+		if err != nil {
+			return Account{}, err, true
+		}
+		if prefix != AccountPrefix {
+			acc, err = AccountFromPrivateKey(acc.PrivateKey, prefix)
+			if err != nil {
+				return Account{}, err, true
+			}
+		}
+		return acc, nil, true
+	}
+	return Account{}, nil, false
 }
 
 // AccountFromPrivateKey builds an Account from a 32-byte secp256k1 private key

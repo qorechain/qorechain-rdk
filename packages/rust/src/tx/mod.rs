@@ -7,6 +7,7 @@ pub mod client;
 pub mod codecs;
 pub mod lifecycle;
 pub mod messages;
+pub mod mock;
 
 pub use client::{RdkTxClient, TxError, TxOptions};
 pub use codecs::{
@@ -21,3 +22,4 @@ pub use messages::{
     to_any, ChallengeBatchInput, CreateRollupInput, ExecuteWithdrawalInput, PauseRollupInput,
     ResolveChallengeInput, RollupRefInput, SubmitBatchInput,
 };
+pub use mock::{MockCall, MockTxClient, DEFAULT_MOCK_GAS_ESTIMATE, MOCK_TX_HASH};

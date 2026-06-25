@@ -166,6 +166,15 @@ impl RestClient {
         Ok(map_batch_view(Self::obj_or(&body, &["batch"])))
     }
 
+    /// Raw data-availability blob details (status, size, expiry).
+    pub fn get_blob(&self, rollup_id: &str, blob_index: u64) -> Result<Value, RestError> {
+        self.get(&format!(
+            "/qorechain/rdk/v1/blob/{}/{}",
+            urlencode(rollup_id),
+            blob_index
+        ))
+    }
+
     /// An account's balance for a single denom (default `uqor`), as an integer
     /// string.
     pub fn get_balance(&self, address: &str, denom: &str) -> Result<String, RestError> {
@@ -183,6 +192,49 @@ impl RestClient {
             })
             .unwrap_or_else(|| "0".to_string());
         Ok(amount)
+    }
+
+    /// All of an account's balances as `(denom, amount)` records.
+    pub fn get_all_balances(&self, address: &str) -> Result<Vec<Coin>, RestError> {
+        let body = self.get(&format!(
+            "/cosmos/bank/v1beta1/balances/{}",
+            urlencode(address)
+        ))?;
+        Ok(body
+            .get("balances")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|c| Coin {
+                        denom: value_to_string(c.get("denom"), ""),
+                        amount: value_to_string(c.get("amount"), "0"),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    /// A transaction by hash (the raw `/cosmos/tx/v1beta1/txs/{hash}` response).
+    pub fn get_tx(&self, hash: &str) -> Result<Value, RestError> {
+        self.get(&format!("/cosmos/tx/v1beta1/txs/{}", urlencode(hash)))
+    }
+}
+
+/// A `{ denom, amount }` balance record, as returned by `get_all_balances`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Coin {
+    /// The denom (e.g. `uqor`).
+    pub denom: String,
+    /// The amount, as an integer string.
+    pub amount: String,
+}
+
+/// Read a JSON value as a string, falling back to `default` when absent/null.
+fn value_to_string(value: Option<&Value>, default: &str) -> String {
+    match value {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Null) | None => default.to_string(),
+        Some(other) => other.to_string(),
     }
 }
 

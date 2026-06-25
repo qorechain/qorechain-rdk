@@ -55,18 +55,18 @@ primitives the chain implements.
 ## The RDK family
 
 The RDK ships as a family of packages so you can build in your language of
-choice. The TypeScript package is built first and at the highest polish; the
-other language packages mirror the same conceptual surface and are marked
-"coming soon" until filled in.
+choice. The TypeScript package is the reference and at the highest polish; the
+Python, Go, and Rust clients mirror the full surface and are verified against
+shared cross-language golden vectors.
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | Available (v0.2.0, in development) |
-| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available |
-| `qorechain-rdk` | Python | Coming soon |
-| `qorechain-rdk` | Go | Coming soon |
-| `qorechain-rdk` | Rust | Coming soon |
-| `create-qorechain-rollup` | Project scaffolding CLI | Coming soon |
+| `@qorechain/rdk` | TypeScript | Available (v0.2.0) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.1.0) |
+| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.2.0) |
+| `qorechain-rdk` | Go | Available (v0.2.0, `go get`) |
+| `qorechain-rdk` | Python | Implemented (v0.2.0); PyPI publish pending |
+| `qorechain-rdk` | Rust | Implemented (v0.2.0); crates.io publish pending |
 
 The TypeScript core (`@qorechain/rdk`) is the basis for the examples in this
 documentation.

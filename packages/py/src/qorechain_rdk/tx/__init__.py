@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from . import codecs
-from .client import RdkTxClient, TxOptions
+from .client import BroadcastResult, RdkTxClient, SignAndBroadcastBackend, TxOptions
+from .mock import MockCall, MockTxClient
 from .messages import (
     ChallengeBatchInput,
     CreateRollupInput,
@@ -43,4 +44,8 @@ __all__ = [
     "execute_withdrawal_msg",
     "RdkTxClient",
     "TxOptions",
+    "BroadcastResult",
+    "SignAndBroadcastBackend",
+    "MockTxClient",
+    "MockCall",
 ]

@@ -9,8 +9,7 @@ public RPC / REST / gRPC / JSON-RPC. It depends on
 [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk) for accounts,
 quantum-safe signing, and transport.
 
-> In active development toward v0.1.0. The surface below reflects the intended
-> public API.
+> Published at v0.2.0 — `npm i @qorechain/rdk`.
 
 ## Install
 

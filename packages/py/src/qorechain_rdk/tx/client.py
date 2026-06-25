@@ -16,7 +16,7 @@ import base64
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Protocol, runtime_checkable
 
 from google.protobuf.any_pb2 import Any as PbAny
 from cosmpy.protos.cosmos.base.v1beta1.coin_pb2 import Coin
@@ -68,25 +68,75 @@ def _to_any(encoded: EncodedMsg) -> PbAny:
     return PbAny(type_url=encoded.type_url, value=encoded.value)
 
 
+@runtime_checkable
+class SignAndBroadcastBackend(Protocol):
+    """The sign-and-broadcast capability ``RdkTxClient`` can delegate to.
+
+    Satisfied by :class:`~qorechain_rdk.tx.mock.MockTxClient` (and by the real
+    client's own REST path). A backend may additionally implement ``simulate``
+    to support dry-run gas estimation offline.
+    """
+
+    address: str
+
+    def sign_and_broadcast(
+        self, encoded: list[EncodedMsg], opts: Optional["TxOptions"] = None
+    ) -> "BroadcastResult":
+        ...
+
+
 class RdkTxClient:
-    """Builds, signs, and broadcasts ``rdk`` transactions over REST."""
+    """Builds, signs, and broadcasts ``rdk`` transactions over REST.
+
+    By default the client assembles a ``SIGN_MODE_DIRECT`` transaction and
+    broadcasts it over REST. Pass a ``backend`` (see
+    :class:`SignAndBroadcastBackend`) -- or build one with :meth:`from_backend`
+    -- to delegate signing and broadcast elsewhere, e.g. the offline
+    :class:`~qorechain_rdk.tx.mock.MockTxClient`.
+    """
 
     def __init__(
         self,
         *,
-        rest_url: str,
-        chain_id: str,
-        signer: Signer,
+        rest_url: Optional[str] = None,
+        chain_id: Optional[str] = None,
+        signer: Optional[Signer] = None,
         transport: Optional[Transport] = None,
+        backend: Optional[SignAndBroadcastBackend] = None,
     ) -> None:
-        self._rest = rest_url.rstrip("/")
-        self._chain_id = chain_id
-        self._signer = signer
-        self._transport = transport or default_transport()
+        self._backend = backend
+        if backend is None:
+            if rest_url is None or chain_id is None or signer is None:
+                raise ValueError(
+                    "rest_url, chain_id, and signer are required without a backend"
+                )
+            self._rest = rest_url.rstrip("/")
+            self._chain_id = chain_id
+            self._signer = signer
+            self._transport = transport or default_transport()
+        else:
+            self._rest = (rest_url or "").rstrip("/")
+            self._chain_id = chain_id or ""
+            self._signer = signer
+            self._transport = transport
+
+    @classmethod
+    def from_backend(
+        cls, backend: SignAndBroadcastBackend
+    ) -> "RdkTxClient":
+        """Wrap a sign-and-broadcast backend (advanced use and testing).
+
+        Mirrors the TS ``RdkTxClient.fromClient``: the backend supplies both the
+        signer address and the broadcast result, so the full create/lifecycle
+        flow runs without a node.
+        """
+        return cls(backend=backend)
 
     @property
     def address(self) -> str:
         """The signing/operator address used as the message signer."""
+        if self._backend is not None:
+            return self._backend.address
         return self._signer.address
 
     # ------------------------------------------------------------------ #
@@ -175,10 +225,49 @@ class RdkTxClient:
         base = account.get("base_account", account)
         return int(base.get("account_number", 0)), int(base.get("sequence", 0))
 
+    def simulate(
+        self, encoded: list[EncodedMsg], memo: Optional[str] = None
+    ) -> int:
+        """Estimate gas for ``encoded`` messages without broadcasting -- the
+        basis for a dry run.
+
+        If a backend supplies its own ``simulate``, it is used. Otherwise the
+        real client POSTs a signed transaction to the REST
+        ``/cosmos/tx/v1beta1/simulate`` endpoint, which requires a reachable
+        node. Mirrors the TS ``RdkTxClient.simulate``.
+        """
+        if self._backend is not None:
+            sim = getattr(self._backend, "simulate", None)
+            if not callable(sim):
+                raise RuntimeError("the underlying backend does not support simulation")
+            return int(sim(encoded, memo))
+
+        opts = TxOptions(memo=memo) if memo is not None else None
+        account_number, sequence = self.fetch_account(self.address)
+        tx_bytes = self.sign_tx(
+            encoded, account_number=account_number, sequence=sequence, opts=opts
+        )
+        payload = json.dumps({"tx_bytes": base64.b64encode(tx_bytes).decode("ascii")})
+        resp = self._transport(
+            "POST",
+            f"{self._rest}/cosmos/tx/v1beta1/simulate",
+            {"content-type": "application/json", "accept": "application/json"},
+            payload,
+        )
+        if not resp.ok:
+            raise RuntimeError(
+                f"simulate failed: {resp.status} {resp.status_text}: {resp.body_text}"
+            )
+        body = resp.json() or {}
+        gas_info = body.get("gas_info", body)
+        return int(gas_info.get("gas_used", 0))
+
     def broadcast_messages(
         self, encoded: list[EncodedMsg], opts: Optional[TxOptions] = None
     ) -> BroadcastResult:
         """Sign and broadcast ``encoded`` messages in ``BROADCAST_MODE_SYNC``."""
+        if self._backend is not None:
+            return self._backend.sign_and_broadcast(encoded, opts)
         account_number, sequence = self.fetch_account(self.address)
         tx_bytes = self.sign_tx(
             encoded, account_number=account_number, sequence=sequence, opts=opts
@@ -322,4 +411,9 @@ def _coerce(inp, cls, **injected):
     raise TypeError(f"expected {cls.__name__} or dict, got {type(inp).__name__}")
 
 
-__all__ = ["TxOptions", "BroadcastResult", "RdkTxClient"]
+__all__ = [
+    "TxOptions",
+    "BroadcastResult",
+    "RdkTxClient",
+    "SignAndBroadcastBackend",
+]

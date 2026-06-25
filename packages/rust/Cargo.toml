@@ -3,6 +3,7 @@ name = "qorechain-rdk"
 version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
+readme = "README.md"
 description = "Rust Rollup Development Kit for the QoreChain network."
 authors = ["QoreChain"]
 repository = "https://github.com/qorechain/qorechain-rdk"

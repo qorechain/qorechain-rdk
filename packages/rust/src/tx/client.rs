@@ -142,6 +142,19 @@ impl<S: Signer> RdkTxClient<S> {
         Ok(base64_encode(&bytes))
     }
 
+    /// Estimate gas for a message without broadcasting -- the basis for a dry
+    /// run. Builds and signs the transaction (so an invalid message is caught)
+    /// and returns the gas limit from `opts` as the estimate.
+    pub fn simulate<M: super::codecs::RdkMsg>(
+        &self,
+        msg: &M,
+        opts: &TxOptions,
+    ) -> Result<u64, TxError> {
+        // Build and sign to validate the message, but do not broadcast.
+        let _ = self.build_signed_tx(msg, opts)?;
+        Ok(opts.gas_limit)
+    }
+
     /// Build the body/auth-info bytes, sign the sign-doc, and return the encoded
     /// `TxRaw` bytes (SIGN_MODE_DIRECT).
     fn sign(&self, any: cosmrs::Any, opts: &TxOptions) -> Result<Vec<u8>, TxError> {

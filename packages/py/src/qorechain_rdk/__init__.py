@@ -144,14 +144,18 @@ from .events import (  # noqa: E402
 
 # Transactions.
 from .tx import (  # noqa: E402
+    BroadcastResult,
     ChallengeBatchInput,
     CreateRollupInput,
     EncodedMsg,
     ExecuteWithdrawalInput,
+    MockCall,
+    MockTxClient,
     PauseRollupInput,
     RdkTxClient,
     ResolveChallengeInput,
     RollupRefInput,
+    SignAndBroadcastBackend,
     SubmitBatchInput,
     TxOptions,
     challenge_batch_msg,
@@ -199,6 +203,9 @@ from .profiles import ProfileSuggestion, suggest_profile  # noqa: E402
 from .preflight import PreflightCheck, PreflightResult, check_preflight  # noqa: E402
 from .health import RollupHealth, get_rollup_health  # noqa: E402
 from .faucet import FaucetResult, request_faucet  # noqa: E402
+
+# Live monitoring.
+from .monitor import Watcher, events_from_tx_hash, watch_rollup  # noqa: E402
 
 __all__ = [
     "__version__",
@@ -321,6 +328,10 @@ __all__ = [
     "execute_withdrawal_msg",
     "RdkTxClient",
     "TxOptions",
+    "BroadcastResult",
+    "SignAndBroadcastBackend",
+    "MockTxClient",
+    "MockCall",
     # accounts
     "NativeAccount",
     "Signer",
@@ -354,4 +365,8 @@ __all__ = [
     "get_rollup_health",
     "FaucetResult",
     "request_faucet",
+    # monitor
+    "Watcher",
+    "events_from_tx_hash",
+    "watch_rollup",
 ]

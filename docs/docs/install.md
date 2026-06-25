@@ -6,19 +6,25 @@ sidebar_position: 2
 
 # Install
 
-Install the RDK for your language. The TypeScript package is published first; the
-other language packages are coming soon and listed here for completeness. Until
-they ship, build them from the
+Install the RDK for your language. The TypeScript packages and the Go module are
+published; the Python and Rust clients are fully implemented and awaiting their
+registry publications (PyPI / crates.io) — until then, build them from the
 [monorepo](https://github.com/qorechain/qorechain-rdk).
 
 | Package | Language | Install | Status |
 | --- | --- | --- | --- |
 | `@qorechain/rdk` | TypeScript | `npm i @qorechain/rdk` | Available (v0.2.0) |
 | `@qorechain/rdk-cli` (`qorollup`) | CLI | `npm i -g @qorechain/rdk-cli` | Available |
-| `qorechain-rdk` | Python | `pip install qorechain-rdk` | Coming soon |
-| `qorechain-rdk` | Go | `go get github.com/qorechain/qorechain-rdk/packages/go/...` | Coming soon |
-| `qorechain-rdk` | Rust | `cargo add qorechain-rdk` | Coming soon |
-| `create-qorechain-rollup` | CLI | `npm create qorechain-rollup` | Coming soon |
+| `qorechain-rdk` | Python | `pip install qorechain-rdk` | Implemented (v0.2.0); PyPI publish pending |
+| `qorechain-rdk` | Go | `go get github.com/qorechain/qorechain-rdk/packages/go` | Available (v0.2.0) |
+| `qorechain-rdk` | Rust | `cargo add qorechain-rdk` | Implemented (v0.2.0); crates.io publish pending |
+| `create-qorechain-rollup` | CLI | `npm create qorechain-rollup` | Available (v0.2.0) |
+
+The Python, Go, and Rust clients are fully implemented and tested in the
+[monorepo](https://github.com/qorechain/qorechain-rdk) (config, presets,
+utilities, read clients, accounts, and transaction signing + broadcast). Go is
+installable today from the tagged module; the Python and Rust registry
+publications (PyPI / crates.io) are pending.
 
 ## TypeScript
 
@@ -70,15 +76,16 @@ for a guided walkthrough.
 pip install qorechain-rdk
 ```
 
-> Coming soon.
+> Implemented and tested. PyPI publication is pending; until then, install from
+> the monorepo (`pip install ./packages/py`).
 
 ## Go
 
 ```bash
-go get github.com/qorechain/qorechain-rdk/packages/go/...
+go get github.com/qorechain/qorechain-rdk/packages/go
 ```
 
-> Coming soon.
+Available today from the tagged module.
 
 ## Rust
 
@@ -86,7 +93,8 @@ go get github.com/qorechain/qorechain-rdk/packages/go/...
 cargo add qorechain-rdk
 ```
 
-> Coming soon.
+> Implemented and tested. crates.io publication is pending; until then, depend on
+> it by path/git from the monorepo (`packages/rust`).
 
 ## Scaffolding CLI
 
@@ -97,7 +105,7 @@ templates:
 npm create qorechain-rollup my-rollup -- --template defi-rollup
 ```
 
-> Coming soon. See the [CLI reference](reference/cli.md) for usage and flags.
+See the [CLI reference](reference/cli.md) for usage and flags.
 
 ## Next
 

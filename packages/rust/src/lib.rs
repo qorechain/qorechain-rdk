@@ -29,16 +29,18 @@ pub mod bridge;
 pub mod client;
 pub mod config;
 pub mod constants;
+pub mod da;
 pub mod events;
 pub mod faucet;
 pub mod health;
 pub mod manifest;
+pub mod monitor;
 pub mod preflight;
 pub mod presets;
 pub mod tx;
 pub mod utils;
 
-pub use accounts::{NativeAccount, Signer};
+pub use accounts::{signer_from_env, NativeAccount, Signer};
 pub use client::{RdkClient, RdkClientOptions};
 pub use config::{
     BatchStatus, DaBackend, GasModel, Profile, ProofSystem, RollupConfig, RollupConfigBuilder,
@@ -46,5 +48,10 @@ pub use config::{
     VmType,
 };
 pub use constants::*;
+pub use da::{
+    assert_da_backend_available, build_da_blob, is_da_backend_available, DaBlob, DaError,
+    DA_CELESTIA_UNAVAILABLE_MESSAGE,
+};
+pub use monitor::{events_from_tx_hash, watch_rollup, Watcher};
 pub use presets::{preset, preset_defaults};
-pub use tx::{RdkTxClient, TxOptions};
+pub use tx::{MockTxClient, RdkTxClient, TxOptions};
