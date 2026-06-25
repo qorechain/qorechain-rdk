@@ -1,16 +1,48 @@
 # create-qorechain-rollup
 
-Interactive scaffolder for new QoreChain rollup projects.
+Scaffold a new QoreChain rollup project from an official starter template.
 
-**Status: coming soon.** Will scaffold a ready-to-run rollup project from a
-preset profile (or a guided custom configuration), wire up a typed
-`rollup.config`, an `.env.example` with placeholder operator key and endpoints,
-and create → submit-batch → query-status scripts.
-
-Planned usage:
+## Usage
 
 ```sh
-npm create qorechain-rollup
+npm create qorechain-rollup my-rollup
 # or
-npx create-qorechain-rollup
+npx create-qorechain-rollup my-rollup
 ```
+
+Interactive by default; pass flags for non-interactive / CI use:
+
+```sh
+npx create-qorechain-rollup my-rollup --template defi-rollup --network testnet --yes
+```
+
+## Templates
+
+| Template | Profile | Summary |
+| --- | --- | --- |
+| `defi-rollup` | defi | zk-SNARK / dedicated / native / EIP-1559 / EVM (with a reference SNARK prover) |
+| `gaming-rollup` | gaming | based / based / native / flat gas / custom VM |
+| `nft-rollup` | nft | optimistic / dedicated / CosmWasm (challenge flow + Celestia notice) |
+| `enterprise-rollup` | enterprise | based / based / native / subsidized gas / EVM |
+| `custom-rollup` | custom | fully parameterized, every field documented |
+
+## Options
+
+```
+  -t, --template <name>      Template id (see the table above).
+      --network <name>       testnet | mainnet (default: testnet).
+      --package-manager <pm> pnpm | npm | yarn (default: pnpm).
+  -y, --yes                  Skip prompts, use defaults.
+      --no-install           Do not install dependencies.
+      --local                Rewrite @qorechain/* deps to local file: links
+                             (for use inside this monorepo before publish).
+  -h, --help                 Show help.
+  -v, --version              Print version.
+```
+
+After scaffolding, the CLI prints the documented stake and creation-burn cost and
+the next steps to create your rollup and read its status.
+
+## License
+
+Apache-2.0

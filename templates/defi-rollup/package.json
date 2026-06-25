@@ -1,0 +1,25 @@
+{
+  "name": "defi-rollup",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A QoreChain DeFi rollup (zk-SNARK / dedicated / native / EIP-1559 / EVM) with a reference SNARK prover.",
+  "scripts": {
+    "create": "tsx src/create.ts",
+    "submit-batch": "tsx src/submit-batch.ts",
+    "query-status": "tsx src/query-status.ts",
+    "circuit:build": "bash scripts/build-circuit.sh",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cosmjs/encoding": "^0.39.0",
+    "@cosmjs/proto-signing": "^0.39.0",
+    "@qorechain/rdk": "^0.1.0",
+    "dotenv": "^16.4.5",
+    "snarkjs": "^0.7.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.3"
+  }
+}
