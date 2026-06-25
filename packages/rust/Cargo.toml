@@ -1,0 +1,14 @@
+[package]
+name = "qorechain-rdk"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Rust Rollup Development Kit for the QoreChain network (coming soon)."
+authors = ["QoreChain"]
+repository = "https://github.com/qorechain/qorechain-rdk"
+keywords = ["qorechain", "rollup", "rdk", "blockchain"]
+categories = ["api-bindings"]
+
+[lib]
+name = "qorechain_rdk"
+path = "src/lib.rs"
