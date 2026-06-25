@@ -13,8 +13,7 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck",
-    "scan": "bash scripts/check.sh"
+    "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.9",
