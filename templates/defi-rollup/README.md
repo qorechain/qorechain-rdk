@@ -32,19 +32,20 @@ pnpm submit-batch    # assemble a native DA blob + SNARK proof and submit a batc
 
 ## Reference SNARK prover
 
-`src/prover.ts` produces the proof bytes for a settlement batch. It runs
-end-to-end out of the box using a **placeholder** proof so you can exercise the
-create → submit → query flow immediately.
+`src/prover.ts` produces the proof bytes for a settlement batch. The reference
+Groth16 artifacts ship **checked in** under `circuits/artifacts/`, so out of the
+box `pnpm submit-batch` generates and locally verifies a **real** Groth16 proof
+with snarkjs before submitting it. (If the artifacts are ever missing it falls
+back to a clearly-labeled placeholder so the create → submit → query flow still
+runs.)
 
-For a **real Groth16 proof**, build the example circuit artifacts (requires the
-[`circom`](https://docs.circom.io/getting-started/installation/) compiler):
+To rebuild the artifacts from the circuit (e.g. after editing
+`circuits/multiplier.circom`), use the
+[`circom`](https://docs.circom.io/getting-started/installation/) compiler:
 
 ```sh
-pnpm circuit:build   # compiles circuits/multiplier.circom and runs a local setup
+pnpm circuit:build   # recompiles the circuit and refreshes circuits/artifacts/
 ```
-
-Once the artifacts exist under `circuits/build/`, `pnpm submit-batch` generates and
-locally verifies a Groth16 proof with snarkjs before submitting it.
 
 > On-chain verification is what gates finalization. The exact proof encoding the
 > network's SNARK verifier expects is defined by the chain — align `encodeProof`
