@@ -33,6 +33,15 @@ export interface SignAndBroadcastCapable {
   ): Promise<DeliverTxResponse>;
 }
 
+/** Optional gas-simulation capability (also satisfied by `SigningStargateClient`). */
+export interface SimulateCapable {
+  simulate(
+    signerAddress: string,
+    messages: readonly EncodeObject[],
+    memo: string | undefined,
+  ): Promise<number>;
+}
+
 export interface RdkTxClientConnectOptions {
   /** Gas price for `"auto"` fee estimation, e.g. `"0.025uqor"`. */
   gasPrice?: GasPrice | string;
@@ -47,10 +56,21 @@ export interface TxOptions {
 
 export class RdkTxClient {
   private constructor(
-    private readonly client: SignAndBroadcastCapable,
+    private readonly client: SignAndBroadcastCapable & Partial<SimulateCapable>,
     /** The signing/operator address used as the message signer. */
     readonly address: string,
   ) {}
+
+  /**
+   * Estimate gas for a set of messages without broadcasting — the basis for a
+   * dry run. Throws if the underlying client does not support simulation.
+   */
+  async simulate(messages: readonly EncodeObject[], memo?: string): Promise<number> {
+    if (typeof this.client.simulate !== "function") {
+      throw new Error("the underlying client does not support simulation");
+    }
+    return this.client.simulate(this.address, messages, memo);
+  }
 
   /** Connect a signing client at a consensus RPC endpoint with the `rdk` registry. */
   static async connect(

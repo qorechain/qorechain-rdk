@@ -11,7 +11,7 @@
  */
 
 /** RDK package version. */
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 // Network and module constants (documented defaults; read live values from the chain).
 export * from "./constants";
@@ -67,3 +67,23 @@ export {
 
 // QCAI-assisted profile suggestion.
 export { suggestProfile, type ProfileSuggestion } from "./profiles/suggest";
+
+// Accounts & signing (built on @qorechain/sdk; includes quantum-safe signers).
+export * from "./accounts";
+
+// Mock tx backend for offline learning/testing, and gas simulation.
+export { MockTxClient, type MockCall, type MockTxClientOptions } from "./tx/mock";
+export type { SimulateCapable } from "./tx/client";
+
+// Preflight ("doctor"), rollup health, and live monitoring.
+export * from "./preflight";
+export * from "./health";
+export * from "./monitor";
+
+// Rollup manifest (portable config snapshot) and faucet helper.
+export * from "./manifest";
+export * from "./faucet";
+
+// Bridge: binary-Merkle utilities and withdrawal-proof assembly.
+export * from "./bridge/merkle";
+export * from "./bridge/withdrawal";

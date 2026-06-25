@@ -89,4 +89,27 @@ export class RestClient {
   async getBlob(rollupId: string, blobIndex: number | bigint): Promise<RawRecord> {
     return this.get(`/qorechain/rdk/v1/blob/${encodeURIComponent(rollupId)}/${blobIndex}`);
   }
+
+  /** An account's balance for a single denom (default `uqor`), as an integer string. */
+  async getBalance(address: string, denom = "uqor"): Promise<string> {
+    const body = await this.get(
+      `/cosmos/bank/v1beta1/balances/${encodeURIComponent(address)}/by_denom?denom=${encodeURIComponent(denom)}`,
+    );
+    const balance = asRecord(body.balance);
+    return typeof balance.amount === "string" ? balance.amount : String(balance.amount ?? "0");
+  }
+
+  /** All of an account's balances as `{ denom, amount }` records. */
+  async getAllBalances(address: string): Promise<{ denom: string; amount: string }[]> {
+    const body = await this.get(`/cosmos/bank/v1beta1/balances/${encodeURIComponent(address)}`);
+    return asArray(body.balances).map((c) => ({
+      denom: String(c.denom ?? ""),
+      amount: String(c.amount ?? "0"),
+    }));
+  }
+
+  /** A transaction by hash (the raw `/cosmos/tx/v1beta1/txs/{hash}` response). */
+  async getTx(hash: string): Promise<RawRecord> {
+    return this.get(`/cosmos/tx/v1beta1/txs/${encodeURIComponent(hash)}`);
+  }
 }
