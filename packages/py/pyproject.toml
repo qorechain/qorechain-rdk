@@ -4,22 +4,35 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qorechain-rdk"
-version = "0.1.0"
-description = "Python Rollup Development Kit for the QoreChain network (coming soon)."
+version = "0.2.0"
+description = "Python Rollup Development Kit for the QoreChain network."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [{ name = "QoreChain" }]
 keywords = ["qorechain", "rollup", "rdk", "blockchain"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Typing :: Typed",
+]
+dependencies = [
+    "cosmpy>=0.9",
+    "requests>=2.28",
+    "bech32>=1.2",
+    "mnemonic>=0.20",
+    "ecdsa>=0.18",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
 ]
 
 [project.urls]
@@ -31,3 +44,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 qorechain_rdk = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

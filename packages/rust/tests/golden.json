@@ -1,0 +1,97 @@
+{
+  "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+  "nativeAddress": "qor19rl4cm2hmr8afy4kldpxz3fka4jguq0agt672h",
+  "privateKeyHex": "c4a48e2fce1481cd3294b4490f6678090ea98d3d0e5cd984558ab0968741b104",
+  "denom": {
+    "qorToUqor_1_5": "1500000",
+    "uqorToQor_1e10": "10000",
+    "qorToUqor_0_000001": "1"
+  },
+  "economics": {
+    "stakeUqor": "10000000000",
+    "burnUqor": "100000000",
+    "netStakeUqor": "9900000000",
+    "totalRequiredUqor": "10000000000",
+    "burnRate": "0.01"
+  },
+  "merkle": {
+    "leavesHex": [
+      "01",
+      "02",
+      "03",
+      "04"
+    ],
+    "root": "98d658fb28540a2eca2a8a5930c309a9c37f89979d48d025a72c36a77a74510d",
+    "proofIndex1Siblings": [
+      "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a",
+      "75a1abcc800ef8f92b7e3b1be166e87a7babdaa05cfa4805be3dfc7c0f0b3e29"
+    ]
+  },
+  "msgProtoHex": {
+    "MsgCreateRollup": "0a0b716f723163726561746f7212096d792d726f6c6c75701a0464656669220365766d2880c8afa025",
+    "MsgPauseRollup": "0a0b716f723163726561746f72120272311a0178",
+    "MsgSubmitBatch": "0a07716f7231736571120172180722030102032a020405302a3a0209094201084a03070707",
+    "MsgExecuteWithdrawal": "0a07716f7231737562120172180320012a08716f723164657374320475716f7238f40342010142020202"
+  },
+  "presetDefaults": {
+    "defi": {
+      "profile": "defi",
+      "settlement": "zk",
+      "sequencer": "dedicated",
+      "da": "native",
+      "proofSystem": "snark",
+      "gasModel": "eip1559",
+      "vmType": "evm",
+      "blockTimeMs": 500,
+      "maxTxPerBlock": 10000
+    },
+    "gaming": {
+      "profile": "gaming",
+      "settlement": "based",
+      "sequencer": "based",
+      "da": "native",
+      "proofSystem": "none",
+      "gasModel": "flat",
+      "vmType": "custom",
+      "blockTimeMs": 200,
+      "maxTxPerBlock": 50000
+    },
+    "nft": {
+      "profile": "nft",
+      "settlement": "optimistic",
+      "sequencer": "dedicated",
+      "da": "celestia",
+      "proofSystem": "fraud",
+      "gasModel": "standard",
+      "vmType": "cosmwasm",
+      "blockTimeMs": 2000,
+      "maxTxPerBlock": 5000,
+      "challengeWindowSecs": 604800,
+      "challengeBondUqor": "1000000000"
+    },
+    "enterprise": {
+      "profile": "enterprise",
+      "settlement": "based",
+      "sequencer": "based",
+      "da": "native",
+      "proofSystem": "none",
+      "gasModel": "subsidized",
+      "vmType": "evm",
+      "blockTimeMs": 1000,
+      "maxTxPerBlock": 20000
+    },
+    "custom": {
+      "profile": "custom",
+      "settlement": "optimistic",
+      "sequencer": "dedicated",
+      "da": "native",
+      "proofSystem": "fraud",
+      "gasModel": "standard",
+      "vmType": "evm",
+      "blockTimeMs": 1000,
+      "maxTxPerBlock": 10000,
+      "challengeWindowSecs": 604800,
+      "challengeBondUqor": "1000000000"
+    }
+  }
+}

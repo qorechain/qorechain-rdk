@@ -2,25 +2,70 @@
 
 Go Rollup Development Kit for the QoreChain network.
 
-**Status: coming soon.** This package mirrors the conceptual surface of the
-TypeScript RDK (`@qorechain/rdk`) — typed rollup configuration with the
-compatibility matrix enforced, preset profiles, the rollup and settlement-batch
-lifecycles, native data availability, and the read clients — and will be filled
-in following the TypeScript reference implementation.
+**Status: available.** This package mirrors the TypeScript RDK
+(`@qorechain/rdk`): typed rollup configuration with the compatibility matrix
+enforced, preset profiles, the rollup and settlement-batch lifecycles, native
+data availability, the read clients, and full transaction signing and broadcast.
 
-Planned surface (mirrors the TypeScript RDK modules):
+Surface (mirrors the TypeScript RDK modules):
 
 - Typed rollup configuration and builder, with the settlement / sequencer /
   proof / DA / gas / VM compatibility matrix validated client-side.
 - The five preset profiles: `defi`, `gaming`, `nft`, `enterprise`, `custom`.
-- Lifecycle, settlement-batch, and native data-availability clients.
-- Read clients for rollups, batches, and module parameters.
+- Exact denomination and economics math (`math/big`, no floating point),
+  bech32 <-> hex helpers, and binary Merkle withdrawal proofs.
+- Rollup manifest, native data-availability helpers, and event decoding.
+- REST and `qor_` JSON-RPC read clients and a high-level `RdkClient` facade,
+  with an injectable HTTP client for testing, plus preflight, health, and
+  faucet helpers.
+- HD account derivation (BIP-44 `m/44'/118'/0'/0/0` secp256k1 -> bech32 `qor`),
+  hand-rolled Cosmos transaction encoding, signing, and broadcast via an
+  `RdkTxClient` with lifecycle guards.
 
-The enum and constant values are stable today (`enums.go`, `constants.go`);
-the client surface is not shipped yet.
-
-Planned install:
+Install:
 
 ```sh
-go get github.com/qorechain/qorechain-rdk/packages/go/...
+go get github.com/qorechain/qorechain-rdk/packages/go
+```
+
+Live broadcast requires a reachable node REST endpoint; the read clients and
+all signing are usable offline (the broadcast call is the only step that needs
+a node).
+
+## Example
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+
+	rdk "github.com/qorechain/qorechain-rdk/packages/go"
+)
+
+func main() {
+	// Build and validate a rollup configuration from a preset.
+	cfg, err := rdk.PresetDefi().
+		SetRollupID("my-defi-rollup").
+		SetStakeAmountUqor("10000000000").
+		Build()
+	if err != nil {
+		panic(err)
+	}
+
+	// Derive a native account and connect a client.
+	acc, _ := rdk.DeriveNativeAccount(mnemonic, 0)
+	client := rdk.NewRdkClient(rdk.RdkClientOptions{Network: "testnet"})
+	params, _ := client.Params(context.Background())
+	fmt.Println(params.MinStakeForRollup)
+
+	// Sign a create-rollup transaction (broadcast needs a live node).
+	tx := rdk.NewRdkTxClient(acc, client.Network.ChainID, client.Rest)
+	msg := tx.CreateRollup(rdk.CreateRollupInput{
+		RollupID: cfg.RollupID, Profile: string(cfg.Profile),
+		VmType: string(cfg.VmType), StakeAmount: 10000000000,
+	})
+	_ = msg
+}
 ```

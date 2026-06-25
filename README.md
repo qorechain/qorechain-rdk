@@ -17,9 +17,15 @@ developer-facing front door for launching rollups on the network.
 | `@qorechain/rdk` | TypeScript | Available (v0.2.0) |
 | `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.1.0) |
 | `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.2.0) |
-| `qorechain-rdk` (Python) | Python | Coming soon |
-| `qorechain-rdk` (Go) | Go | Coming soon |
-| `qorechain-rdk` (Rust) | Rust | Coming soon |
+| `qorechain-rdk` (Python) | Python | Available (v0.2.0) |
+| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.2.0) |
+| `qorechain-rdk` (Rust crate) | Rust | Available (v0.2.0) |
+
+The Python, Go, and Rust clients mirror the TypeScript surface — config builder
+and validation, presets, utilities, Merkle/withdrawal helpers, manifests, REST
+and `qor_` JSON-RPC read clients, preflight/health, accounts, and transaction
+signing + broadcast — and are verified against shared cross-language golden
+vectors. (Live broadcast requires a node endpoint.)
 
 The TypeScript package is built first and at the highest polish; the other
 language packages mirror the same conceptual surface and are marked "coming

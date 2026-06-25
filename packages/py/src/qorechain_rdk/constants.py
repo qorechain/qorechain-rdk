@@ -30,6 +30,9 @@ CHAIN_IDS: Final[dict[str, str]] = {
     "mainnet": "qorechain-vladi",
 }
 
+#: The valid network names.
+NETWORK_NAMES: Final[tuple[str, ...]] = tuple(CHAIN_IDS.keys())
+
 #: Documented defaults for the ``rdk`` module parameters. Read the live values
 #: from the chain with ``rdk.params()``; treat these as reference only.
 DEFAULT_RDK_PARAMS: Final[dict[str, object]] = {
@@ -59,6 +62,7 @@ __all__ = [
     "ACCOUNT_PREFIX",
     "VALIDATOR_PREFIX",
     "CHAIN_IDS",
+    "NETWORK_NAMES",
     "DEFAULT_RDK_PARAMS",
     "DEFAULT_CHALLENGE_BOND_UQOR",
 ]

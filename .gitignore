@@ -56,3 +56,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Rust library lockfile (not committed for libraries)
+Cargo.lock
+**/Cargo.lock

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.3.0
+
+### Added
+
+- Full **Python**, **Go**, and **Rust** clients (each v0.2.0), mirroring the
+  TypeScript surface: config builder + validation, the five presets, denom /
+  economics / bech32 utilities, binary-Merkle and withdrawal-proof helpers,
+  rollup manifests, REST and `qor_` JSON-RPC read clients, preflight / health,
+  accounts (mnemonic → secp256k1 → `qor` address), and transaction signing +
+  broadcast (SIGN_MODE_DIRECT). All three are verified against shared
+  cross-language golden vectors and covered by per-language CI (`ci-py`,
+  `ci-go`, `ci-rust`). Live broadcast requires a node endpoint.
+
 ## 0.2.0
 
 ### Added
