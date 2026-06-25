@@ -14,11 +14,12 @@ developer-facing front door for launching rollups on the network.
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | In development (v0.1.0) |
+| `@qorechain/rdk` | TypeScript | Available (v0.2.0) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.1.0) |
+| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.2.0) |
 | `qorechain-rdk` (Python) | Python | Coming soon |
 | `qorechain-rdk` (Go) | Go | Coming soon |
 | `qorechain-rdk` (Rust) | Rust | Coming soon |
-| `create-qorechain-rollup` | Project scaffolding CLI | Coming soon |
 
 The TypeScript package is built first and at the highest polish; the other
 language packages mirror the same conceptual surface and are marked "coming
@@ -108,6 +109,30 @@ const config = presets.defi({ rollupId: "my-defi-rollup" });
 // Validate against the compatibility matrix before submitting.
 config.validate();
 ```
+
+## Operate a rollup from the command line
+
+`qorollup` (the `@qorechain/rdk-cli` package) takes you from zero to a live,
+monitored rollup — no code required:
+
+```sh
+npx @qorechain/rdk-cli keygen            # generate an operator key
+npx @qorechain/rdk-cli doctor            # preflight: endpoints, params, signer, balance
+npx @qorechain/rdk-cli create --rollup-id my-roll --profile defi
+npx @qorechain/rdk-cli status my-roll    # status + health + challenge-window countdown
+npx @qorechain/rdk-cli watch my-roll     # live updates
+```
+
+It also covers `suggest`, `pause`/`resume`/`stop`, `manifest export|import`,
+`withdraw`, and `faucet`, with `--dry-run` and `--json` everywhere. See the
+[zero-to-rollup tutorial](docs/docs/guides/zero-to-rollup.md) and the
+[`qorollup` reference](docs/docs/reference/cli-qorollup.md).
+
+The library exposes the same surface for programmatic use: `checkPreflight`
+(doctor), `getRollupHealth` / `watchRollup` (monitoring), `signerFromEnv` and
+`generateMnemonic` (accounts), `toManifest` / `fromManifest` (manifests),
+`assembleWithdrawalProof` (bridge), `MockTxClient` and `RdkTxClient.simulate`
+(offline / dry run).
 
 ## Network reference
 

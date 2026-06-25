@@ -54,6 +54,11 @@ unset.
 | `native-da-blob.ts` | Assemble a native DA blob with `buildDaBlob(...)`, print its `dataHash`/`size`, query a stored blob via `client.rest.getBlob(...)`, and guard non-native backends with `assertDaBackendAvailable`. | `pnpm tsx src/native-da-blob.ts` |
 | `list-rollups-and-events.ts` | List rollups via `client.rest.listRollups()` and decode lifecycle events with `decodeRdkEvents(...)` / `findRdkEvent(...)`. | `pnpm tsx src/list-rollups-and-events.ts` |
 | `read-status-jsonrpc.ts` | Read rollup/batch/DA-blob status through the `qor_` JSON-RPC namespace (`client.qor.getRollupStatus`, `getSettlementBatch`, `getDABlobStatus`). | `pnpm tsx src/read-status-jsonrpc.ts` |
+| `preflight-doctor.ts` | Run readiness checks with `checkPreflight` (endpoints, params, signer, balance, config) — the `qorollup doctor` engine. | `pnpm tsx src/preflight-doctor.ts` |
+| `offline-mock.ts` | Exercise the full create → pause → resume → stop flow with `MockTxClient` (no node), plus `RdkTxClient.simulate`. No node required. | `pnpm tsx src/offline-mock.ts` |
+| `manifest-roundtrip.ts` | Export a config to a rollup manifest and load it back (`toManifest` / `fromManifest`). No node required. | `pnpm tsx src/manifest-roundtrip.ts` |
+| `withdrawal-proof.ts` | Build a binary-Merkle root and assemble + verify a withdrawal proof (`assembleWithdrawalProof`). No node required. | `pnpm tsx src/withdrawal-proof.ts` |
+| `keygen-and-health.ts` | Generate an operator key (`generateMnemonic` + `deriveNativeAccount`) and read a rollup's `getRollupHealth`. | `pnpm tsx src/keygen-and-health.ts` |
 
 ## Notes
 

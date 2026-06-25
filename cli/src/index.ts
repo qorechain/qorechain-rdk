@@ -17,7 +17,7 @@ import { ArgError, helpText, parseArgs } from "./args.js";
 import { scaffold, type Network, type PackageManager } from "./scaffold.js";
 import { findTemplate, TEMPLATES, templateIdList } from "./templates.js";
 
-const VERSION = "0.1.1";
+const VERSION = "0.2.0";
 
 function isEmptyOrMissing(dir: string): boolean {
   if (!existsSync(dir)) return true;
