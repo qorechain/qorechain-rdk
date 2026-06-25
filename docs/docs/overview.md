@@ -61,7 +61,8 @@ other language packages mirror the same conceptual surface and are marked
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | Available (v0.1.0, in development) |
+| `@qorechain/rdk` | TypeScript | Available (v0.2.0, in development) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available |
 | `qorechain-rdk` | Python | Coming soon |
 | `qorechain-rdk` | Go | Coming soon |
 | `qorechain-rdk` | Rust | Coming soon |
@@ -74,6 +75,8 @@ documentation.
 
 - [Install](install.md) — per-language install instructions.
 - [Quickstart](quickstart.md) — from zero to a live testnet rollup.
+- [Zero to a live rollup](guides/zero-to-rollup.md) — guided `qorollup` CLI
+  walkthrough, with the library equivalent.
 - [Rollups & anchoring](concepts/rollups-and-anchoring.md) — how state anchors
   to the Main Chain.
 - [Settlement paradigms](concepts/settlement-paradigms.md) — optimistic, zk,

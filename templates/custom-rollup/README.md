@@ -33,6 +33,17 @@ pnpm query-status    # read the rollup config and its latest settlement batch
 pnpm submit-batch    # assemble a native DA blob + fraud proof and submit a batch
 ```
 
+## Operate
+
+```sh
+pnpm doctor          # preflight: endpoints, network, config, signer, balance
+pnpm status          # rollup health: status, latest batch, challenge window
+```
+
+`pnpm doctor` is a good first run — it verifies your `.env` is ready before you
+`pnpm create`. The standalone operator CLI `npx @qorechain/rdk-cli` (`qorollup`)
+does the same checks plus `watch`, `pause`, `resume`, and `stop` for a live rollup.
+
 ## Configuring the rollup
 
 `rollup.config.ts` uses `presets.custom({ rollupId }).set({ ... })` and documents

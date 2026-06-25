@@ -59,7 +59,20 @@ const rdk = createRdkClient({
 
 ## "No signing key found" when creating or submitting
 
-Signing operations need an `OfflineSigner`. Build one from a raw key or mnemonic:
+Signing operations need an `OfflineSigner`. The simplest path is to set one of
+the signing environment variables and let the kit build the signer:
+
+```bash
+export QORE_OPERATOR_PRIVATE_KEY_HEX=0x...   # raw hex key (takes priority)
+# or:
+export QORE_MNEMONIC="word word word ..."     # BIP-39 mnemonic
+```
+
+With `qorollup`, you can also pass `--key <hex>` or `--mnemonic <words>`, which
+override the environment. In code, `signerFromEnv()` reads the same variables and
+returns `undefined` when neither is set.
+
+Or build a signer yourself from a raw key or mnemonic:
 
 ```ts
 import { DirectSecp256k1Wallet } from "@cosmjs/proto-signing";
@@ -73,6 +86,56 @@ const signer = await DirectSecp256k1Wallet.fromKey(
 
 Then connect with `await rdk.connectTx(signer)`. For hybrid post-quantum
 signing, use the signer from [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk).
+See [Keys & funding](guides/keys-and-funding.md).
+
+## "Balance too low" / "Balance covers stake + fees" fails in `doctor`
+
+The operator account does not hold enough to commit the stake plus a fee buffer.
+Fund it before creating a rollup:
+
+- **Testnet** — request funds from a faucet. The network publishes no fixed
+  faucet endpoint, so set `QORE_FAUCET_URL` (or `--faucet-url`) and run
+  `qorollup faucet qor1youraddress...`. Without a URL, transfer from another
+  funded account.
+- **Mainnet** — there is no faucet; fund from an exchange or another account you
+  control.
+
+Preview the exact figures with `estimateCreationCost` against the live params.
+See [Keys & funding](guides/keys-and-funding.md) and [Stake & burn](guides/stake-and-burn.md).
+
+## "REST endpoint unreachable" / reads time out
+
+The kit defaults to **localhost** endpoints. If `doctor` reports the REST check
+as failed, or reads hang, you are pointing at localhost without a local node. Set
+the REST endpoint for your target network:
+
+```bash
+export QORE_REST_URL=https://rest.testnet.example
+```
+
+Or pass `--rest <url>` to `qorollup`, or `endpoints.rest` to `createRdkClient`.
+For signing you will also need `QORE_RPC_URL` (the consensus RPC).
+
+## "Config invalid" before create
+
+`create` and `doctor` validate the rollup config against the [compatibility
+matrix](guides/proof-systems.md) before anything is submitted. The errors name
+the exact mismatch — typically a settlement/sequencer pairing or a
+settlement/proof pairing that is not allowed. Fix the offending field (or start
+from a preset that satisfies the matrix), then re-run. Inspect without throwing:
+
+```ts
+const result = config.validationResult();
+console.log(result.errors);   // each mismatch as a message
+console.log(result.warnings);
+```
+
+## "Celestia DA not active" (planned)
+
+Selecting `celestia` (or `both`) data availability is **planned but not yet
+active**. Validation produces a non-fatal warning, and `assertDaBackendAvailable`
+throws for these backends. Use `native` DA for anything you run on the network
+today. See [Data availability](guides/data-availability.md).
 
 ## Insufficient funds on rollup creation
 

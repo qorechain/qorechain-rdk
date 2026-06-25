@@ -108,8 +108,10 @@ function nextSteps(dir: string, pm: PackageManager, installed: boolean): string 
   if (!installed) lines.push(`${pm} install`);
   const run = pm === "npm" ? "npm run" : pm;
   lines.push("# set QORE_* endpoints and your operator key in .env (see README)");
+  lines.push(`${run} doctor         # preflight checks — run this before create`);
   lines.push(`${run} create         # create the rollup on the selected network`);
   lines.push(`${run} query-status   # read its config and latest batch`);
+  lines.push("# or use the operator CLI: npx @qorechain/rdk-cli status <id>");
   return lines.join("\n");
 }
 
@@ -149,9 +151,13 @@ async function main(): Promise<void> {
 
   const dir = parsed.dir ?? (parsed.yes ? "./my-rollup" : await promptDir());
   const template = parsed.template ?? (parsed.yes ? TEMPLATES[0].id : await promptTemplate());
-  if (!findTemplate(template)) {
+  const chosen = findTemplate(template);
+  if (!chosen) {
     cancel(`Unknown template "${template}". Available: ${templateIdList()}.`);
     process.exit(1);
+  }
+  if (!parsed.yes) {
+    note(`${chosen.label} profile — ${chosen.hint}`, "Profile");
   }
   const network = parsed.network ?? (parsed.yes ? "testnet" : await promptNetwork());
   const packageManager = parsed.packageManager ?? (parsed.yes ? "pnpm" : await promptPackageManager());

@@ -34,6 +34,17 @@ pnpm query-status    # read the rollup config and its latest settlement batch
 pnpm submit-batch    # assemble a native DA blob and submit a batch (no proof)
 ```
 
+## Operate
+
+```sh
+pnpm doctor          # preflight: endpoints, network, config, signer, balance
+pnpm status          # rollup health: status, latest batch, challenge window
+```
+
+`pnpm doctor` is a good first run — it verifies your `.env` is ready before you
+`pnpm create`. The standalone operator CLI `npx @qorechain/rdk-cli` (`qorollup`)
+does the same checks plus `watch`, `pause`, `resume`, and `stop` for a live rollup.
+
 ## Based settlement — no proof system
 
 The gaming profile settles via the **based** paradigm, whose proof system is

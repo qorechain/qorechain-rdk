@@ -1,0 +1,48 @@
+# Deploy this rollup from CI.
+#
+# Manually triggered (workflow_dispatch). It runs `pnpm doctor` (preflight
+# checks) and then `pnpm create` (creates the rollup on the configured network).
+#
+# Before running, set these repository secrets
+# (Settings -> Secrets and variables -> Actions):
+#   QORE_MNEMONIC        the operator's BIP-39 mnemonic (or use a hex key instead)
+#   QORE_RPC_URL         node RPC endpoint
+#   QORE_REST_URL        node REST (LCD) endpoint
+#   QORE_EVM_RPC_URL     EVM JSON-RPC endpoint
+#
+# Optionally set repository variables QORE_NETWORK and QORE_ROLLUP_ID.
+# Never hardcode keys or endpoints in this file.
+
+name: deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      QORE_MNEMONIC: ${{ secrets.QORE_MNEMONIC }}
+      QORE_RPC_URL: ${{ secrets.QORE_RPC_URL }}
+      QORE_REST_URL: ${{ secrets.QORE_REST_URL }}
+      QORE_EVM_RPC_URL: ${{ secrets.QORE_EVM_RPC_URL }}
+      QORE_NETWORK: ${{ vars.QORE_NETWORK || 'testnet' }}
+      QORE_ROLLUP_ID: ${{ vars.QORE_ROLLUP_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Preflight checks
+        run: pnpm doctor
+
+      - name: Create rollup
+        run: pnpm create

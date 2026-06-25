@@ -13,7 +13,8 @@ they ship, build them from the
 
 | Package | Language | Install | Status |
 | --- | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | `npm i @qorechain/rdk` | Available |
+| `@qorechain/rdk` | TypeScript | `npm i @qorechain/rdk` | Available (v0.2.0) |
+| `@qorechain/rdk-cli` (`qorollup`) | CLI | `npm i -g @qorechain/rdk-cli` | Available |
 | `qorechain-rdk` | Python | `pip install qorechain-rdk` | Coming soon |
 | `qorechain-rdk` | Go | `go get github.com/qorechain/qorechain-rdk/packages/go/...` | Coming soon |
 | `qorechain-rdk` | Rust | `cargo add qorechain-rdk` | Coming soon |
@@ -46,6 +47,22 @@ signer in place of the standard one:
 ```bash
 npm i @qorechain/sdk
 ```
+
+## Operator CLI (`qorollup`)
+
+`@qorechain/rdk-cli` installs the `qorollup` binary for creating, operating, and
+monitoring rollups from the command line. It is a thin wrapper over
+`@qorechain/rdk`.
+
+```bash
+npm i -g @qorechain/rdk-cli
+# or run it without installing:
+npx @qorechain/rdk-cli doctor
+```
+
+It targets Node.js 20+. See the [qorollup reference](reference/cli-qorollup.md)
+for every command and flag, and [Zero to a live rollup](guides/zero-to-rollup.md)
+for a guided walkthrough.
 
 ## Python
 

@@ -8,12 +8,13 @@
     "create": "tsx src/create.ts",
     "submit-batch": "tsx src/submit-batch.ts",
     "query-status": "tsx src/query-status.ts",
+    "doctor": "tsx src/doctor.ts",
+    "status": "tsx src/status.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cosmjs/encoding": "^0.39.0",
     "@cosmjs/proto-signing": "^0.39.0",
-    "@qorechain/rdk": "^0.1.0",
+    "@qorechain/rdk": "^0.2.0",
     "dotenv": "^16.4.5"
   },
   "devDependencies": {
