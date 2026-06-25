@@ -16,9 +16,10 @@ export const VERSION = "0.1.0";
 // Network and module constants (documented defaults; read live values from the chain).
 export * from "./constants";
 
-// Configuration: enums, types, the compatibility matrix, validation, and the builder.
+// Configuration: enums, types, networks, the compatibility matrix, validation, and the builder.
 export * from "./config/enums";
 export * from "./config/types";
+export * from "./config/networks";
 export * from "./config/matrix";
 export * from "./config/validate";
 export { RollupConfigError } from "./config/errors";
@@ -52,3 +53,17 @@ export * from "./da/native";
 
 // Events: typed decoding of the rdk module's events.
 export * from "./events/decode";
+
+// Read clients: REST, the qor_ JSON-RPC namespace, typed views, and the facade.
+export * from "./client/http";
+export * from "./client/views";
+export { RestClient, type RestClientOptions } from "./client/rest";
+export { QorClient, type QorClientOptions } from "./client/jsonrpc";
+export {
+  RdkClient,
+  createRdkClient,
+  type CreateRdkClientOptions,
+} from "./client/rdk-client";
+
+// QCAI-assisted profile suggestion.
+export { suggestProfile, type ProfileSuggestion } from "./profiles/suggest";
