@@ -1,4 +1,8 @@
 node_modules/
 .env
-circuits/build/
 *.log
+
+# Circuit build intermediates (r1cs, ptau, zkey stages). The small final
+# artifacts under circuits/artifacts/ ARE checked in so the prover works
+# out of the box.
+circuits/build/

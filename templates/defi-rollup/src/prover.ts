@@ -4,16 +4,18 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const buildDir = join(here, "..", "circuits", "build");
+// Committed Groth16 artifacts for the reference circuit (built by
+// `pnpm circuit:build`; the small final artifacts are checked in).
+const artifactsDir = join(here, "..", "circuits", "artifacts");
 
 /**
  * Generate a SNARK proof for the reference circuit and return it as the bytes
  * for a settlement batch's `proof` field.
  *
- * If the circuit artifacts have been built (`pnpm circuit:build`, which requires
- * the `circom` compiler), this performs a real Groth16 prove + local verify with
- * snarkjs. Otherwise it returns a clearly-labeled placeholder so the
- * create → submit → query flow still runs end-to-end.
+ * The reference Groth16 artifacts ship checked in under `circuits/artifacts/`, so
+ * this performs a real prove + local verify with snarkjs out of the box. (If the
+ * artifacts are ever missing, it returns a clearly-labeled placeholder so the
+ * create → submit → query flow still runs; rebuild them with `pnpm circuit:build`.)
  *
  * The on-chain SNARK verifier defines the exact proof encoding it accepts — align
  * `encodeProof` with your own circuit and the network's verifier.
@@ -21,9 +23,9 @@ const buildDir = join(here, "..", "circuits", "build");
 export async function generateProof(
   input: { a: number; b: number } = { a: 3, b: 11 },
 ): Promise<Uint8Array> {
-  const wasm = join(buildDir, "multiplier_js", "multiplier.wasm");
-  const zkey = join(buildDir, "multiplier_final.zkey");
-  const vkeyPath = join(buildDir, "verification_key.json");
+  const wasm = join(artifactsDir, "multiplier.wasm");
+  const zkey = join(artifactsDir, "multiplier_final.zkey");
+  const vkeyPath = join(artifactsDir, "verification_key.json");
 
   if (existsSync(wasm) && existsSync(zkey) && existsSync(vkeyPath)) {
     const snarkjs = await import("snarkjs");
