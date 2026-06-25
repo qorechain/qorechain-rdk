@@ -27,7 +27,28 @@ export { RollupConfigBuilder } from "./config/builder";
 // Preset profiles.
 export { presets, PRESET_DEFAULTS } from "./presets";
 
-// Utilities: denom conversion, creation-cost economics, and address encoding.
+// Utilities: denom conversion, creation-cost economics, and address/byte encoding.
 export * from "./utils/denom";
 export * from "./utils/economics";
 export * from "./utils/bech32";
+export * from "./utils/bytes";
+
+// Transactions: the rdk registry, friendly message builders, and the tx client.
+export { RDK_TYPES, createRdkRegistry } from "./tx/registry";
+export * from "./tx/messages";
+export {
+  RdkTxClient,
+  type TxFee,
+  type TxOptions,
+  type RdkTxClientConnectOptions,
+  type SignAndBroadcastCapable,
+} from "./tx/client";
+
+// Lifecycle: rollup/batch state-machine awareness and challenge-window math.
+export * from "./lifecycle/state-machine";
+
+// Data availability: native blob assembly and the Celestia "planned" guard.
+export * from "./da/native";
+
+// Events: typed decoding of the rdk module's events.
+export * from "./events/decode";
