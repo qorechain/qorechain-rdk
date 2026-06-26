@@ -15,9 +15,9 @@ registry publications (PyPI / crates.io) — until then, build them from the
 | --- | --- | --- | --- |
 | `@qorechain/rdk` | TypeScript | `npm i @qorechain/rdk` | Available (v0.2.0) |
 | `@qorechain/rdk-cli` (`qorollup`) | CLI | `npm i -g @qorechain/rdk-cli` | Available |
-| `qorechain-rdk` | Python | `pip install qorechain-rdk` | Implemented (v0.2.0); PyPI publish pending |
-| `qorechain-rdk` | Go | `go get github.com/qorechain/qorechain-rdk/packages/go` | Available (v0.2.0) |
-| `qorechain-rdk` | Rust | `cargo add qorechain-rdk` | Implemented (v0.2.0); crates.io publish pending |
+| `qorechain-rdk` | Python | `pip install qorechain-rdk` | Implemented (v0.3.1); PyPI publish pending |
+| `qorechain-rdk` | Go | `go get github.com/qorechain/qorechain-rdk/packages/go` | Available (v0.3.1) |
+| `qorechain-rdk` | Rust | `cargo add qorechain-rdk` | Implemented (v0.3.1); crates.io publish pending |
 | `create-qorechain-rollup` | CLI | `npm create qorechain-rollup` | Available (v0.2.0) |
 
 The Python, Go, and Rust clients are fully implemented and tested in the

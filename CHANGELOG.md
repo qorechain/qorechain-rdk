@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Full **Python**, **Go**, and **Rust** clients (each v0.2.0), mirroring the
+- Full **Python**, **Go**, and **Rust** clients (each v0.3.1), mirroring the
   TypeScript surface: config builder + validation, the five presets, denom /
   economics / bech32 utilities, binary-Merkle and withdrawal-proof helpers,
   rollup manifests, REST and `qor_` JSON-RPC read clients, preflight / health,
