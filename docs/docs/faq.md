@@ -24,11 +24,12 @@ developer kit; the RDK is the rollup-specific toolkit built on top of it.
 
 The TypeScript package (`@qorechain/rdk`) is the reference and at the highest
 polish, alongside the `qorollup` operator CLI and the `create-qorechain-rollup`
-scaffolder (all on npm). The Python, Go, and Rust clients mirror the full surface
-— config, presets, utilities, read clients, accounts, and transaction signing +
-broadcast — and are verified against shared cross-language golden vectors. Go is
-installable today via `go get`; the Python (PyPI) and Rust (crates.io)
-publications are pending.
+scaffolder (all on npm). The Python, Go, Rust, and Java (JVM) clients mirror the
+full surface — config, presets, utilities, read clients, accounts, and
+transaction signing + broadcast — and are verified against shared cross-language
+golden vectors. All are published: Python on PyPI (`pip install qorechain-rdk`,
+imported as `qorrdk`), Rust on crates.io, Go via `go get`, and Java on Maven
+Central (`io.github.qorechain:qorechain-rdk`).
 
 ### Which network does the RDK target by default?
 

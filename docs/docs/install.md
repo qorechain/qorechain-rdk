@@ -21,11 +21,12 @@ registry publications (PyPI / crates.io) — until then, build them from the
 | `io.github.qorechain:qorechain-rdk` | Java (JVM) | Maven/Gradle (`io.github.qorechain:qorechain-rdk:0.3.1`) | Available on Maven Central (v0.3.1) |
 | `create-qorechain-rollup` | CLI | `npm create qorechain-rollup` | Available (v0.2.0) |
 
-The Python, Go, and Rust clients are fully implemented and tested in the
-[monorepo](https://github.com/qorechain/qorechain-rdk) (config, presets,
+The Python, Go, Rust, and Java (JVM) clients are fully implemented and tested in
+the [monorepo](https://github.com/qorechain/qorechain-rdk) (config, presets,
 utilities, read clients, accounts, and transaction signing + broadcast). Python
 is on PyPI (`pip install qorechain-rdk`, imported as `qorrdk`), Rust is on
-crates.io (`cargo add qorechain-rdk`), and Go is installable from the tagged
+crates.io (`cargo add qorechain-rdk`), Java is on Maven Central
+(`io.github.qorechain:qorechain-rdk`), and Go is installable from the tagged
 module.
 
 ## TypeScript

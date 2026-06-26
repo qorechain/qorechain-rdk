@@ -24,11 +24,11 @@ developer-facing front door for launching rollups on the network.
 | `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.3.1) |
 | `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.3.1) |
 
-The Python, Go, and Rust clients mirror the TypeScript surface — config builder
-and validation, presets, utilities, Merkle/withdrawal helpers, manifests, REST
-and `qor_` JSON-RPC read clients, preflight/health, accounts, and transaction
-signing + broadcast — and are verified against shared cross-language golden
-vectors. (Live broadcast requires a node endpoint.)
+The Python, Go, Rust, and Java (JVM) clients mirror the TypeScript surface —
+config builder and validation, presets, utilities, Merkle/withdrawal helpers,
+manifests, REST and `qor_` JSON-RPC read clients, preflight/health, accounts, and
+transaction signing + broadcast — and are verified against shared cross-language
+golden vectors. (Live broadcast requires a node endpoint.)
 
 The TypeScript package is built first and at the highest polish; the other
 language packages mirror the same conceptual surface and are marked "coming

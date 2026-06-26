@@ -56,8 +56,8 @@ primitives the chain implements.
 
 The RDK ships as a family of packages so you can build in your language of
 choice. The TypeScript package is the reference and at the highest polish; the
-Python, Go, and Rust clients mirror the full surface and are verified against
-shared cross-language golden vectors.
+Python, Go, Rust, and Java (JVM) clients mirror the full surface and are verified
+against shared cross-language golden vectors.
 
 | Package | Language | Status |
 | --- | --- | --- |
