@@ -17,14 +17,15 @@ registry publications (PyPI / crates.io) — until then, build them from the
 | `@qorechain/rdk-cli` (`qorollup`) | CLI | `npm i -g @qorechain/rdk-cli` | Available |
 | `qorechain-rdk` | Python | `pip install qorechain-rdk` (imports as `qorrdk`) | Available on PyPI (v0.3.1) |
 | `qorechain-rdk` | Go | `go get github.com/qorechain/qorechain-rdk/packages/go` | Available (v0.3.1) |
-| `qorechain-rdk` | Rust | `cargo add qorechain-rdk` | Implemented (v0.3.1); crates.io publish pending |
+| `qorechain-rdk` | Rust | `cargo add qorechain-rdk` | Available on crates.io (v0.3.1) |
 | `create-qorechain-rollup` | CLI | `npm create qorechain-rollup` | Available (v0.2.0) |
 
 The Python, Go, and Rust clients are fully implemented and tested in the
 [monorepo](https://github.com/qorechain/qorechain-rdk) (config, presets,
 utilities, read clients, accounts, and transaction signing + broadcast). Python
-is on PyPI (`pip install qorechain-rdk`, imported as `qorrdk`) and Go is
-installable from the tagged module; the Rust crates.io publication is pending.
+is on PyPI (`pip install qorechain-rdk`, imported as `qorrdk`), Rust is on
+crates.io (`cargo add qorechain-rdk`), and Go is installable from the tagged
+module.
 
 ## TypeScript
 
@@ -93,8 +94,7 @@ Available today from the tagged module.
 cargo add qorechain-rdk
 ```
 
-> Implemented and tested. crates.io publication is pending; until then, depend on
-> it by path/git from the monorepo (`packages/rust`).
+Available on crates.io.
 
 ## Scaffolding CLI
 

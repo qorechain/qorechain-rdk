@@ -19,7 +19,7 @@ developer-facing front door for launching rollups on the network.
 | `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.2.0) |
 | `qorechain-rdk` (Python) | Python | Available on PyPI (v0.3.1) |
 | `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.3.1) |
-| `qorechain-rdk` (Rust crate) | Rust | Implemented (v0.3.1); crates.io publish pending |
+| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.3.1) |
 
 The Python, Go, and Rust clients mirror the TypeScript surface — config builder
 and validation, presets, utilities, Merkle/withdrawal helpers, manifests, REST
