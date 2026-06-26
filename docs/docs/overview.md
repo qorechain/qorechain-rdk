@@ -65,7 +65,7 @@ shared cross-language golden vectors.
 | `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.1.0) |
 | `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.2.0) |
 | `qorechain-rdk` | Go | Available (v0.3.1, `go get`) |
-| `qorechain-rdk` | Python | Implemented (v0.3.1); PyPI publish pending |
+| `qorechain-rdk` | Python | Available on PyPI (v0.3.1, imports as `qorrdk`) |
 | `qorechain-rdk` | Rust | Implemented (v0.3.1); crates.io publish pending |
 
 The TypeScript core (`@qorechain/rdk`) is the basis for the examples in this
