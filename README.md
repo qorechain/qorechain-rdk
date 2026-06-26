@@ -4,6 +4,8 @@ Rollup Development Kit for designing, launching, configuring, and operating
 application-specific rollups (app-chains) on the QoreChain network — a
 quantum-safe Layer 1 with first-class CosmWasm, EVM/Solidity, and SVM runtimes.
 
+📖 **Documentation:** https://qorechain.github.io/qorechain-rdk/
+
 The RDK is a **client and operator toolkit**. It talks to QoreChain nodes over
 their public RPC / REST / gRPC / JSON-RPC surfaces and drives the on-chain `rdk`
 module: rollup creation, settlement-batch submission, lifecycle management, and
