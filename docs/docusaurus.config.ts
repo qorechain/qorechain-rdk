@@ -8,7 +8,7 @@ const config: Config = {
   favicon: "img/favicon.ico",
 
   url: "https://qorechain.github.io",
-  baseUrl: "/",
+  baseUrl: "/qorechain-rdk/",
 
   organizationName: "qorechain",
   projectName: "qorechain-rdk",
