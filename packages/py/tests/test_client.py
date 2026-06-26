@@ -7,9 +7,9 @@ import json
 
 import pytest
 
-from qorechain_rdk import RestClient, create_rdk_client
-from qorechain_rdk.client.http import HttpResponse
-from qorechain_rdk.client.jsonrpc import QorClient
+from qorrdk import RestClient, create_rdk_client
+from qorrdk.client.http import HttpResponse
+from qorrdk.client.jsonrpc import QorClient
 
 
 class MockTransport:
@@ -203,7 +203,7 @@ def test_tx_client_broadcast_assembly(golden):
                 )
             return HttpResponse(404, "Not Found", "{}")
 
-    from qorechain_rdk import signer_from_private_key
+    from qorrdk import signer_from_private_key
 
     signer = signer_from_private_key(golden["privateKeyHex"])
     client = create_rdk_client(transport=TxTransport())

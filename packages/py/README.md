@@ -29,8 +29,10 @@ Surface (mirrors the TypeScript RDK modules):
 pip install qorechain-rdk
 ```
 
+> Install as `qorechain-rdk`; import as `qorrdk`.
+
 ```python
-from qorechain_rdk import presets, create_rdk_client, signer_from_env
+from qorrdk import presets, create_rdk_client, signer_from_env
 
 # Build and validate a rollup configuration.
 config = presets.defi("my-rollup").set(stake_amount_uqor="10000000000").build()

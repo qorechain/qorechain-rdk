@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from qorechain_rdk import (
+from qorrdk import (
     BatchStatus,
     RollupStatus,
     assert_da_backend_available,
@@ -21,8 +21,8 @@ from qorechain_rdk import (
     presets,
     request_faucet,
 )
-from qorechain_rdk.client.http import HttpResponse
-from qorechain_rdk.enums import DABackend
+from qorrdk.client.http import HttpResponse
+from qorrdk.enums import DABackend
 
 
 # ---- lifecycle ----------------------------------------------------------- #
@@ -115,14 +115,14 @@ class _FakeRest:
         return self._balance
 
     def get_rollup(self, rollup_id):
-        from qorechain_rdk import map_rollup_view
+        from qorrdk import map_rollup_view
 
         return map_rollup_view({"rollup_id": rollup_id, "status": self._rollup_status})
 
     def get_latest_batch(self, rollup_id):
         if self._latest is None:
             raise RuntimeError("no batch")
-        from qorechain_rdk import map_batch_view
+        from qorrdk import map_batch_view
 
         return map_batch_view(self._latest)
 
@@ -142,7 +142,7 @@ class _FakeClient:
         self._params = params
 
     def params(self):
-        from qorechain_rdk import map_params_view
+        from qorrdk import map_params_view
 
         return map_params_view(self._params)
 

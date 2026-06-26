@@ -43,7 +43,7 @@ Repository = "https://github.com/qorechain/qorechain-rdk"
 where = ["src"]
 
 [tool.setuptools.package-data]
-qorechain_rdk = ["py.typed"]
+qorrdk = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

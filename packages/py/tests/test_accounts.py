@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 
-from qorechain_rdk import (
+from qorrdk import (
     Signer,
     derive_native_account,
     generate_mnemonic,

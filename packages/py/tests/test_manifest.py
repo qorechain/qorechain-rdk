@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from qorechain_rdk import (
+from qorrdk import (
     SequencerParams,
     from_manifest,
     parse_manifest,

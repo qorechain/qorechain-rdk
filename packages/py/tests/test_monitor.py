@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 
-from qorechain_rdk import (
+from qorrdk import (
     RollupHealth,
     Watcher,
     events_from_tx_hash,
@@ -69,7 +69,7 @@ def test_watch_rollup_single_tick_then_stop():
         return health
 
     # Patch the symbol used inside the monitor module.
-    import qorechain_rdk.monitor as monitor
+    import qorrdk.monitor as monitor
 
     original = monitor.get_rollup_health
     monitor.get_rollup_health = fake_get_rollup_health
@@ -105,7 +105,7 @@ def test_watch_rollup_reports_errors_and_continues():
     def boom(client, rollup_id, now_secs=None):
         raise RuntimeError("node down")
 
-    import qorechain_rdk.monitor as monitor
+    import qorrdk.monitor as monitor
 
     original = monitor.get_rollup_health
     monitor.get_rollup_health = boom

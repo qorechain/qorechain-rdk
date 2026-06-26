@@ -7,7 +7,7 @@ A transaction is assembled in Cosmos ``SIGN_MODE_DIRECT``: the hand-encoded
 ``SignDoc`` digest (``sha256``), and broadcast as a ``TxRaw`` via the REST
 ``/cosmos/tx/v1beta1/txs`` endpoint (``BROADCAST_MODE_SYNC``).
 
-Signing is delegated to a :class:`~qorechain_rdk.accounts.Signer` (secp256k1).
+Signing is delegated to a :class:`~qorrdk.accounts.Signer` (secp256k1).
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ def _to_any(encoded: EncodedMsg) -> PbAny:
 class SignAndBroadcastBackend(Protocol):
     """The sign-and-broadcast capability ``RdkTxClient`` can delegate to.
 
-    Satisfied by :class:`~qorechain_rdk.tx.mock.MockTxClient` (and by the real
+    Satisfied by :class:`~qorrdk.tx.mock.MockTxClient` (and by the real
     client's own REST path). A backend may additionally implement ``simulate``
     to support dry-run gas estimation offline.
     """
@@ -92,7 +92,7 @@ class RdkTxClient:
     broadcasts it over REST. Pass a ``backend`` (see
     :class:`SignAndBroadcastBackend`) -- or build one with :meth:`from_backend`
     -- to delegate signing and broadcast elsewhere, e.g. the offline
-    :class:`~qorechain_rdk.tx.mock.MockTxClient`.
+    :class:`~qorrdk.tx.mock.MockTxClient`.
     """
 
     def __init__(

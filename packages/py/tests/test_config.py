@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from qorechain_rdk import (
+from qorrdk import (
     ProfileName,
     ProofSystem,
     RollupConfigError,
@@ -16,7 +16,7 @@ from qorechain_rdk import (
     valid_proof_systems,
     validate_rollup_config,
 )
-from qorechain_rdk.config import SETTLEMENT_PROOF_MATRIX
+from qorrdk.config import SETTLEMENT_PROOF_MATRIX
 
 
 def test_matrix_pairings():

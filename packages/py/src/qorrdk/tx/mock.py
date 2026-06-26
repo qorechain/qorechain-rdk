@@ -30,9 +30,9 @@ class MockCall:
 class MockTxClient:
     """A sign-and-broadcast backend that records calls and fakes success.
 
-    Implements the :class:`~qorechain_rdk.tx.client.SignAndBroadcastBackend`
+    Implements the :class:`~qorrdk.tx.client.SignAndBroadcastBackend`
     protocol (including ``simulate``), so it can back an
-    :class:`~qorechain_rdk.tx.client.RdkTxClient` via ``from_backend``.
+    :class:`~qorrdk.tx.client.RdkTxClient` via ``from_backend``.
     """
 
     def __init__(

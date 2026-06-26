@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from qorechain_rdk import presets
-from qorechain_rdk.presets import PRESET_DEFAULTS
+from qorrdk import presets
+from qorrdk.presets import PRESET_DEFAULTS
 
 _BUILDERS = {
     "defi": presets.defi,

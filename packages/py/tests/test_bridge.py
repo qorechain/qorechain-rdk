@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from qorechain_rdk import (
+from qorrdk import (
     assemble_withdrawal_proof,
     binary_merkle_proof,
     binary_merkle_root,

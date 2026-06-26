@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from qorechain_rdk import MockTxClient, RdkTxClient
-from qorechain_rdk.enums import RollupStatus
+from qorrdk import MockTxClient, RdkTxClient
+from qorrdk.enums import RollupStatus
 
 
 def test_mock_records_create_and_full_lifecycle_offline():
@@ -50,7 +50,7 @@ def test_mock_simulate_returns_fixed_gas():
     mock = MockTxClient(address="qor1creator", gas_estimate=99000)
     tx = RdkTxClient.from_backend(mock)
 
-    from qorechain_rdk import CreateRollupInput, create_rollup_msg
+    from qorrdk import CreateRollupInput, create_rollup_msg
 
     msg = create_rollup_msg(
         CreateRollupInput(

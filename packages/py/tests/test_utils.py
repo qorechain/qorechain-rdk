@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from qorechain_rdk import (
+from qorrdk import (
     bech32_prefix,
     bech32_to_hex,
     estimate_creation_cost,

@@ -6,7 +6,7 @@ import hashlib
 
 import pytest
 
-from qorechain_rdk import (
+from qorrdk import (
     ChallengeBatchInput,
     CreateRollupInput,
     ExecuteWithdrawalInput,
@@ -24,7 +24,7 @@ from qorechain_rdk import (
     stop_rollup_msg,
     submit_batch_msg,
 )
-from qorechain_rdk.tx.client import RdkTxClient
+from qorrdk.tx.client import RdkTxClient
 
 
 def test_create_rollup_proto_hex(golden):
