@@ -67,6 +67,7 @@ shared cross-language golden vectors.
 | `qorechain-rdk` | Go | Available (v0.3.1, `go get`) |
 | `qorechain-rdk` | Python | Available on PyPI (v0.3.1, imports as `qorrdk`) |
 | `qorechain-rdk` | Rust | Available on crates.io (v0.3.1) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.3.1) |
 
 The TypeScript core (`@qorechain/rdk`) is the basis for the examples in this
 documentation.

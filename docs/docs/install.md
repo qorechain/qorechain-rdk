@@ -18,6 +18,7 @@ registry publications (PyPI / crates.io) — until then, build them from the
 | `qorechain-rdk` | Python | `pip install qorechain-rdk` (imports as `qorrdk`) | Available on PyPI (v0.3.1) |
 | `qorechain-rdk` | Go | `go get github.com/qorechain/qorechain-rdk/packages/go` | Available (v0.3.1) |
 | `qorechain-rdk` | Rust | `cargo add qorechain-rdk` | Available on crates.io (v0.3.1) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Maven/Gradle (`io.github.qorechain:qorechain-rdk:0.3.1`) | Available on Maven Central (v0.3.1) |
 | `create-qorechain-rollup` | CLI | `npm create qorechain-rollup` | Available (v0.2.0) |
 
 The Python, Go, and Rust clients are fully implemented and tested in the
@@ -95,6 +96,26 @@ cargo add qorechain-rdk
 ```
 
 Available on crates.io.
+
+## Java / JVM
+
+Available on Maven Central as `io.github.qorechain:qorechain-rdk`.
+
+Maven:
+
+```xml
+<dependency>
+  <groupId>io.github.qorechain</groupId>
+  <artifactId>qorechain-rdk</artifactId>
+  <version>0.3.1</version>
+</dependency>
+```
+
+Gradle:
+
+```kotlin
+implementation("io.github.qorechain:qorechain-rdk:0.3.1")
+```
 
 ## Scaffolding CLI
 

@@ -22,6 +22,7 @@ developer-facing front door for launching rollups on the network.
 | `qorechain-rdk` (Python) | Python | Available on PyPI (v0.3.1) |
 | `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.3.1) |
 | `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.3.1) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.3.1) |
 
 The Python, Go, and Rust clients mirror the TypeScript surface — config builder
 and validation, presets, utilities, Merkle/withdrawal helpers, manifests, REST
