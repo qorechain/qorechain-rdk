@@ -30,8 +30,22 @@ type golden struct {
 		Root                string   `json:"root"`
 		ProofIndex1Siblings []string `json:"proofIndex1Siblings"`
 	} `json:"merkle"`
-	MsgProtoHex    map[string]string          `json:"msgProtoHex"`
-	PresetDefaults map[string]json.RawMessage `json:"presetDefaults"`
+	MsgProtoHex     map[string]string          `json:"msgProtoHex"`
+	PresetDefaults  map[string]json.RawMessage `json:"presetDefaults"`
+	AnchorSignBytes struct {
+		LayerID          string `json:"layerId"`
+		LayerHeight      uint64 `json:"layerHeight"`
+		StateRoot        string `json:"stateRoot"`
+		ValidatorSetHash string `json:"validatorSetHash"`
+		ExpectedHex      string `json:"expectedHex"`
+	} `json:"anchorSignBytes"`
+	MldsaVector struct {
+		Algorithm    string `json:"algorithm"`
+		Note         string `json:"note"`
+		MessageUtf8  string `json:"messageUtf8"`
+		PublicKeyHex string `json:"publicKeyHex"`
+		SignatureHex string `json:"signatureHex"`
+	} `json:"mldsaVector"`
 }
 
 func loadGolden(t *testing.T) golden {

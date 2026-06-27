@@ -4,11 +4,15 @@
  */
 import { defaultFetch, type FetchLike } from "./http";
 import {
+  mapAnchorView,
   mapBatchView,
   mapParamsView,
+  mapPqcAccountView,
   mapRollupView,
+  type AnchorView,
   type BatchView,
   type ParamsView,
+  type PqcAccountView,
   type RawRecord,
   type RollupView,
 } from "./views";
@@ -88,6 +92,70 @@ export class RestClient {
   /** Raw data-availability blob details (status, size, expiry). */
   async getBlob(rollupId: string, blobIndex: number | bigint): Promise<RawRecord> {
     return this.get(`/qorechain/rdk/v1/blob/${encodeURIComponent(rollupId)}/${blobIndex}`);
+  }
+
+  /**
+   * The latest state anchor a layer committed to the Main Chain (the
+   * `x/multilayer` Anchor query). `layerId` is the rollup's `layer_id`.
+   */
+  async getAnchor(layerId: string): Promise<AnchorView> {
+    const body = await this.get(
+      `/qorechain/multilayer/v1/anchor/${encodeURIComponent(layerId)}`,
+    );
+    return mapAnchorView(asRecord(body.anchor ?? body));
+  }
+
+  /** Alias for {@link getAnchor} — the chain's Anchor query returns the latest. */
+  async getLatestAnchor(layerId: string): Promise<AnchorView> {
+    return this.getAnchor(layerId);
+  }
+
+  /** All state anchors a layer has committed (newest first). */
+  async getAnchors(layerId: string): Promise<AnchorView[]> {
+    const body = await this.get(
+      `/qorechain/multilayer/v1/anchors/${encodeURIComponent(layerId)}`,
+    );
+    return asArray(body.anchors).map(mapAnchorView);
+  }
+
+  /**
+   * An account's post-quantum key record (the `x/pqc` account query). The
+   * `publicKey` is the registered ML-DSA-87 (Dilithium-5) verification key.
+   */
+  async getPqcAccount(address: string): Promise<PqcAccountView> {
+    const body = await this.get(
+      `/qorechain/pqc/v1/accounts/${encodeURIComponent(address)}`,
+    );
+    return mapPqcAccountView(asRecord(body.account ?? body));
+  }
+
+  // --- QCAI advisory reads (the `ai` REST surface) ---
+
+  /** QCAI fee estimate; `urgency` is one of `low` | `normal` | `high` (optional). */
+  async getFeeEstimate(urgency?: string): Promise<RawRecord> {
+    const q = urgency ? `?urgency=${encodeURIComponent(urgency)}` : "";
+    return this.get(`/qorechain/ai/v1/fee-estimate${q}`);
+  }
+
+  /** QCAI network recommendations (congestion, suggested settings). */
+  async getNetworkRecommendations(): Promise<RawRecord> {
+    return this.get("/qorechain/ai/v1/network/recommendations");
+  }
+
+  /** Open fraud investigations across the network. */
+  async getFraudInvestigations(): Promise<RawRecord[]> {
+    const body = await this.get("/qorechain/ai/v1/fraud/investigations");
+    return asArray(body.investigations ?? body.data ?? body);
+  }
+
+  /** A single fraud investigation by id. */
+  async getFraudInvestigation(id: string): Promise<RawRecord> {
+    return this.get(`/qorechain/ai/v1/fraud/investigations/${encodeURIComponent(id)}`);
+  }
+
+  /** Active QCAI circuit breakers (network safety throttles). */
+  async getCircuitBreakers(): Promise<RawRecord> {
+    return this.get("/qorechain/ai/v1/circuit-breakers");
   }
 
   /** An account's balance for a single denom (default `uqor`), as an integer string. */

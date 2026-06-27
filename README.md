@@ -16,13 +16,32 @@ developer-facing front door for launching rollups on the network.
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | Available (v0.2.0) |
-| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.1.0) |
-| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.2.0) |
-| `qorechain-rdk` (Python) | Python | Available on PyPI (v0.3.1) |
-| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.3.1) |
-| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.3.1) |
-| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.3.1) |
+| `@qorechain/rdk` | TypeScript | Available (v0.4.0) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.4.0) |
+| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.4.0) |
+| `qorechain-rdk` (Python) | Python | Available on PyPI (v0.4.0) |
+| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.4.0) |
+| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.4.0) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.4.0) |
+
+## What's new in 0.4.0
+
+- **QCAI Rollup Copilot** — `getRollupAdvice` aggregates a live fee estimate,
+  network recommendations, fraud investigations, RL-agent status, and
+  plain-language suggestions for a rollup (best-effort; unreachable advisory
+  services degrade to warnings). CLI: `qorollup advise`. *(All five languages.)*
+- **Quantum-safe settlement receipts** — `buildSettlementReceipt` /
+  `verifySettlementReceipt`: a portable receipt proving a settlement batch was
+  anchored to the Main Chain under an ML-DSA-87 (Dilithium-5, FIPS-204)
+  signature, verifiable fully offline. CLI: `qorollup receipt`. *(All five
+  languages; non-TS clients verify via `qorechain-pqc`.)*
+- **Multi-VM tooling** — `encodeCrossVmCalldata` / `functionSelector` and the
+  `CROSS_VM_PRECOMPILE` address for EVM → CosmWasm cross-VM calls, plus a new
+  `multivm-rollup` scaffold template. *(TypeScript.)*
+- **Watchtower** — `watchBatches`, an auto-challenger framework for optimistic
+  rollups that surfaces new batches and challenge-window deadlines and flags
+  batches your validity predicate rejects. CLI: `qorollup watchtower`.
+  *(TypeScript.)*
 
 The Python, Go, Rust, and Java (JVM) clients mirror the TypeScript surface —
 config builder and validation, presets, utilities, Merkle/withdrawal helpers,
@@ -31,8 +50,7 @@ transaction signing + broadcast — and are verified against shared cross-langua
 golden vectors. (Live broadcast requires a node endpoint.)
 
 The TypeScript package is built first and at the highest polish; the other
-language packages mirror the same conceptual surface and are marked "coming
-soon" until filled in. The TypeScript RDK depends on
+language packages mirror the same conceptual surface. The TypeScript RDK depends on
 [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk) for accounts,
 quantum-safe signing, and transport.
 
@@ -89,7 +107,7 @@ advisory service is unavailable.
 
 ## Quickstart (TypeScript)
 
-> The TypeScript package is published at v0.2.0 (`npm i @qorechain/rdk`).
+> The TypeScript package is published at v0.4.0 (`npm i @qorechain/rdk`).
 
 ```sh
 npm install @qorechain/rdk

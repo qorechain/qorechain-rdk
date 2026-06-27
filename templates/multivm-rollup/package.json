@@ -1,0 +1,26 @@
+{
+  "name": "multivm-rollup",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A QoreChain multi-VM rollup (EVM execution with EVM→CosmWasm cross-VM calls) demonstrating the cross-VM precompile.",
+  "scripts": {
+    "create": "tsx src/create.ts",
+    "submit-batch": "tsx src/submit-batch.ts",
+    "query-status": "tsx src/query-status.ts",
+    "crossvm-call": "tsx src/crossvm-call.ts",
+    "doctor": "tsx src/doctor.ts",
+    "status": "tsx src/status.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cosmjs/proto-signing": "^0.39.0",
+    "@qorechain/rdk": "^0.4.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.3"
+  }
+}

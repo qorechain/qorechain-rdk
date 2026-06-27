@@ -137,6 +137,133 @@ def test_jsonrpc_call_and_error():
         qor.get_da_blob_status("r1", 0)
 
 
+def test_rest_anchor_decodes_wire_bytes():
+    sr_hex = "98d658fb28540a2eca2a8a5930c309a9c37f89979d48d025a72c36a77a74510d"
+    vsh_hex = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+    transport = MockTransport(
+        {
+            ("GET", "/qorechain/multilayer/v1/anchor/L1"): {
+                "anchor": {
+                    "layer_id": "L1",
+                    "layer_height": 42,
+                    # base64-encoded proto bytes (jsonpb), as the chain serves them.
+                    "state_root": base64.b64encode(bytes.fromhex(sr_hex)).decode(),
+                    "validator_set_hash": base64.b64encode(bytes.fromhex(vsh_hex)).decode(),
+                    "main_chain_height": 1000,
+                    "anchored_at": 1700000000,
+                    "pqc_aggregate_signature": base64.b64encode(b"\x01\x02\x03").decode(),
+                    "transaction_count": 7,
+                    "compressed_state_proof": "",
+                }
+            }
+        }
+    )
+    rest = RestClient("http://localhost:1317", transport=transport)
+    anchor = rest.get_anchor("L1")
+    assert anchor.layer_id == "L1"
+    assert anchor.layer_height == 42
+    # Decoded back to hex regardless of the base64 wire encoding.
+    assert anchor.state_root == sr_hex
+    assert anchor.validator_set_hash == vsh_hex
+    assert anchor.pqc_signature == "010203"
+    assert anchor.transaction_count == 7
+    # get_latest_anchor is an alias.
+    assert rest.get_latest_anchor("L1").state_root == sr_hex
+
+
+def test_rest_anchors_list_accepts_hex_wire():
+    sr_hex = "98d658fb28540a2eca2a8a5930c309a9c37f89979d48d025a72c36a77a74510d"
+    transport = MockTransport(
+        {
+            ("GET", "/qorechain/multilayer/v1/anchors/L1"): {
+                "anchors": [
+                    {"layer_id": "L1", "layer_height": 1, "state_root": sr_hex},
+                    {"layer_id": "L1", "layer_height": 2, "state_root": ""},
+                ]
+            }
+        }
+    )
+    rest = RestClient("http://localhost:1317", transport=transport)
+    anchors = rest.get_anchors("L1")
+    assert [a.layer_height for a in anchors] == [1, 2]
+    # A 64-char hex root is decoded as hex (no base64 hint), round-tripping to itself.
+    assert anchors[0].state_root == sr_hex
+    assert anchors[1].state_root == ""
+
+
+def test_rest_pqc_account():
+    pk_hex = "deadbeef" * 4
+    transport = MockTransport(
+        {
+            ("GET", "/qorechain/pqc/v1/accounts/qor1abc"): {
+                "account": {
+                    "address": "qor1abc",
+                    "public_key": base64.b64encode(bytes.fromhex(pk_hex)).decode(),
+                    "algorithm_id": 3,
+                    "algorithm_name": "ML-DSA-87",
+                }
+            }
+        }
+    )
+    rest = RestClient("http://localhost:1317", transport=transport)
+    acct = rest.get_pqc_account("qor1abc")
+    assert acct.address == "qor1abc"
+    assert acct.public_key == pk_hex
+    assert acct.algorithm_id == 3
+    assert acct.algorithm_name == "ML-DSA-87"
+
+
+def test_rest_ai_reads():
+    transport = MockTransport(
+        {
+            ("GET", "/qorechain/ai/v1/fee-estimate?urgency=high"): {"gas_price": "0.05uqor"},
+            ("GET", "/qorechain/ai/v1/network/recommendations"): {"congestion": "low"},
+            ("GET", "/qorechain/ai/v1/fraud/investigations/f1"): {"id": "f1", "status": "open"},
+            ("GET", "/qorechain/ai/v1/circuit-breakers"): {"breakers": []},
+        }
+    )
+    rest = RestClient("http://localhost:1317", transport=transport)
+    assert rest.get_fee_estimate("high") == {"gas_price": "0.05uqor"}
+    assert rest.get_network_recommendations() == {"congestion": "low"}
+    assert rest.get_fraud_investigation("f1")["status"] == "open"
+    assert rest.get_circuit_breakers() == {"breakers": []}
+
+
+def test_rest_fraud_investigations_list_shapes():
+    # investigations key
+    t1 = MockTransport(
+        {("GET", "/qorechain/ai/v1/fraud/investigations"): {"investigations": [{"id": "a"}]}}
+    )
+    assert RestClient("http://x", transport=t1).get_fraud_investigations() == [{"id": "a"}]
+    # data key fallback
+    t2 = MockTransport(
+        {("GET", "/qorechain/ai/v1/fraud/investigations"): {"data": [{"id": "b"}]}}
+    )
+    assert RestClient("http://x", transport=t2).get_fraud_investigations() == [{"id": "b"}]
+
+
+def test_jsonrpc_rl_methods():
+    class RlTransport:
+        def __init__(self):
+            self.methods = []
+
+        def __call__(self, method, url, headers=None, body=None):
+            req = json.loads(body)
+            self.methods.append(req["method"])
+            return HttpResponse(200, "OK", json.dumps({"result": {"ok": req["method"]}}))
+
+    transport = RlTransport()
+    qor = QorClient("http://localhost:8545", transport=transport)
+    assert qor.get_rl_agent_status() == {"ok": "qor_getRLAgentStatus"}
+    assert qor.get_rl_observation() == {"ok": "qor_getRLObservation"}
+    assert qor.get_rl_reward() == {"ok": "qor_getRLReward"}
+    assert transport.methods == [
+        "qor_getRLAgentStatus",
+        "qor_getRLObservation",
+        "qor_getRLReward",
+    ]
+
+
 def test_create_rdk_client_resolves_network():
     transport = MockTransport(
         {

@@ -58,9 +58,11 @@ signing, `QORE_RPC_URL`) — or pass `--rest`/`--rpc` — to talk to a real node
 | `-h, --help` | Show help. |
 | `-v, --version` | Print the version. |
 
-Read commands (`status`, `watch`, `params`, `suggest`, `doctor`) need only a
-REST endpoint. Anything that broadcasts a transaction (`create`, `pause`,
-`resume`, `stop`, `withdraw`) also needs a signer and an RPC endpoint.
+Read commands (`status`, `watch`, `params`, `suggest`, `advise`, `receipt`,
+`watchtower`, `doctor`) need only a REST endpoint (the `advise` and `watchtower`
+commands also use the EVM / `qor_` JSON-RPC endpoint for their reads). Anything
+that broadcasts a transaction (`create`, `pause`, `resume`, `stop`, `withdraw`)
+also needs a signer and an RPC endpoint.
 
 ## Commands
 
@@ -161,6 +163,56 @@ description of your app. Falls back to `defi` when the advisory is unavailable.
 qorollup suggest "high-frequency DeFi DEX"
 # Suggested profile: defi (source: advisory)
 ```
+
+### `advise`
+
+Print the QCAI Rollup Copilot's aggregated advice for a rollup: a live fee
+estimate, network recommendations, fraud investigations referencing the rollup,
+the reinforcement-learning agent status, and plain-language suggestions. It is
+best-effort — unreachable advisory services degrade to warnings rather than
+failing the command.
+
+```bash
+qorollup advise my-roll
+qorollup advise my-roll --json
+```
+
+This is the `getRollupAdvice` library call. See the
+[QCAI Rollup Copilot guide](../guides/qcai-copilot.md).
+
+### `receipt`
+
+Build a quantum-safe settlement receipt for a batch — a portable, offline-
+verifiable proof that the batch was anchored to the Main Chain under an
+ML-DSA-87 (Dilithium-5) signature. Optionally verify it inline or write it to a
+file.
+
+```bash
+qorollup receipt my-roll 7            # build and print the receipt
+qorollup receipt my-roll 7 --verify   # build, then verify it
+qorollup receipt my-roll 7 --out receipt.json
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--verify` | Verify the receipt after building it. |
+| `--out <file>` | Write the receipt JSON to a file (otherwise printed). |
+
+This wraps `buildSettlementReceipt` (and `verifySettlementReceipt` with
+`--verify`). See [Quantum-safe settlement receipts](../guides/settlement-receipts.md).
+
+### `watchtower`
+
+Run the auto-challenger framework for an optimistic rollup: follow its batches,
+print each new batch and its challenge-window deadline, until you press Ctrl-C.
+Wire up a validity predicate in code (`watchBatches`) to challenge invalid
+batches automatically.
+
+```bash
+qorollup watchtower my-roll
+```
+
+This is the `watchBatches` helper. See the [Watchtower guide](../guides/watchtower.md).
 
 ### `pause` / `resume` / `stop`
 

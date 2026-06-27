@@ -1,8 +1,10 @@
 package io.github.qorechain.rdk.client;
 
+import io.github.qorechain.rdk.client.Views.AnchorView;
 import io.github.qorechain.rdk.client.Views.Balance;
 import io.github.qorechain.rdk.client.Views.BatchView;
 import io.github.qorechain.rdk.client.Views.ParamsView;
+import io.github.qorechain.rdk.client.Views.PqcAccountView;
 import io.github.qorechain.rdk.client.Views.RollupView;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -90,6 +92,73 @@ public final class RestClient {
     /** Read raw data-availability blob details. */
     public Map<String, Object> getBlob(String rollupId, long blobIndex) {
         return get("/qorechain/rdk/v1/blob/" + pathEscape(rollupId) + "/" + blobIndex);
+    }
+
+    /**
+     * Read the latest state anchor a layer committed to the Main Chain (the {@code x/multilayer}
+     * Anchor query). {@code layerId} is the rollup's {@code layer_id}.
+     */
+    public AnchorView getAnchor(String layerId) {
+        Map<String, Object> body =
+                get("/qorechain/multilayer/v1/anchor/" + pathEscape(layerId));
+        Object a = Views.pick(body, "anchor");
+        return Views.mapAnchorView(a != null ? Views.asRecord(a) : body);
+    }
+
+    /** Alias for {@link #getAnchor} — the chain's Anchor query returns the latest. */
+    public AnchorView getLatestAnchor(String layerId) {
+        return getAnchor(layerId);
+    }
+
+    /** Read all state anchors a layer has committed (newest first). */
+    public List<AnchorView> getAnchors(String layerId) {
+        Map<String, Object> body =
+                get("/qorechain/multilayer/v1/anchors/" + pathEscape(layerId));
+        List<AnchorView> out = new ArrayList<>();
+        for (Map<String, Object> a : Views.asArray(Views.pick(body, "anchors"))) {
+            out.add(Views.mapAnchorView(a));
+        }
+        return out;
+    }
+
+    /**
+     * Read an account's post-quantum key record (the {@code x/pqc} account query). The
+     * {@code publicKey} is the registered ML-DSA-87 (Dilithium-5) verification key.
+     */
+    public PqcAccountView getPqcAccount(String address) {
+        Map<String, Object> body = get("/qorechain/pqc/v1/accounts/" + pathEscape(address));
+        Object a = Views.pick(body, "account");
+        return Views.mapPqcAccountView(a != null ? Views.asRecord(a) : body);
+    }
+
+    // --- QCAI advisory reads (the `ai` REST surface) ---
+
+    /** QCAI fee estimate; {@code urgency} is one of {@code low} | {@code normal} | {@code high} (optional). */
+    public Map<String, Object> getFeeEstimate(String urgency) {
+        String q = (urgency == null || urgency.isEmpty()) ? "" : "?urgency=" + pathEscape(urgency);
+        return get("/qorechain/ai/v1/fee-estimate" + q);
+    }
+
+    /** QCAI network recommendations (congestion, suggested settings). */
+    public Map<String, Object> getNetworkRecommendations() {
+        return get("/qorechain/ai/v1/network/recommendations");
+    }
+
+    /** Read open fraud investigations across the network. */
+    public List<Map<String, Object>> getFraudInvestigations() {
+        Map<String, Object> body = get("/qorechain/ai/v1/fraud/investigations");
+        Object list = Views.pick(body, "investigations", "data");
+        return Views.asArray(list != null ? list : body);
+    }
+
+    /** Read a single fraud investigation by id. */
+    public Map<String, Object> getFraudInvestigation(String id) {
+        return get("/qorechain/ai/v1/fraud/investigations/" + pathEscape(id));
+    }
+
+    /** Read the active QCAI circuit breakers (network safety throttles). */
+    public Map<String, Object> getCircuitBreakers() {
+        return get("/qorechain/ai/v1/circuit-breakers");
     }
 
     /** Read an account's balance for a single denom (default uqor) as an integer string. */

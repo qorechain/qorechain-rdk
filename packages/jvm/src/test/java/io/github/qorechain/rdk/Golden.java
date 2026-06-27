@@ -17,11 +17,28 @@ final class Golden {
     MerkleSection merkle;
     Map<String, String> msgProtoHex;
     Map<String, Map<String, Object>> presetDefaults;
+    AnchorSignBytesSection anchorSignBytes;
+    MldsaVectorSection mldsaVector;
 
     static final class MerkleSection {
         List<String> leavesHex;
         String root;
         List<String> proofIndex1Siblings;
+    }
+
+    static final class AnchorSignBytesSection {
+        String layerId;
+        long layerHeight;
+        String stateRoot;
+        String validatorSetHash;
+        String expectedHex;
+    }
+
+    static final class MldsaVectorSection {
+        String algorithm;
+        String messageUtf8;
+        String publicKeyHex;
+        String signatureHex;
     }
 
     static Golden load() {

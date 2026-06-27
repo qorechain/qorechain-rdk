@@ -11,4 +11,4 @@ pub use facade::{RdkClient, RdkClientOptions};
 pub use http::{HttpError, HttpRequest, HttpResponse, ReqwestTransport, Transport};
 pub use jsonrpc::QorClient;
 pub use rest::{Coin, RestClient};
-pub use views::{BatchView, ParamsView, RollupView};
+pub use views::{AnchorView, BatchView, ParamsView, PqcAccountView, RollupView};

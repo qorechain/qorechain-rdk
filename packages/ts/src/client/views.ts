@@ -5,8 +5,16 @@
  * counters are parsed to numbers.
  */
 
+import { bytesToHex, decodeWireBytes } from "../utils/bytes";
+
 /** A loosely-typed JSON object from the wire. */
 export type RawRecord = Record<string, unknown>;
+
+/** Normalize a wire bytes field (base64 or hex) to a lowercase hex string. */
+function hexBytes(value: unknown): string {
+  const s = str(value);
+  return s === "" ? "" : bytesToHex(decodeWireBytes(s));
+}
 
 function pick(obj: RawRecord, ...keys: string[]): unknown {
   for (const key of keys) {
@@ -65,6 +73,58 @@ export interface BatchView {
   submittedAt: number;
   finalizedAt: number;
   withdrawalsRoot: string;
+}
+
+/**
+ * A subsidiary-layer state anchor committed to the Main Chain (the
+ * `x/multilayer` `StateAnchorView`). Byte fields are normalized to lowercase
+ * hex. The PQC (Dilithium-5) signature covers the canonical message
+ * `layer_id || layer_height(8B BE) || state_root || validator_set_hash`,
+ * signed by the layer creator's registered post-quantum key.
+ */
+export interface AnchorView {
+  layerId: string;
+  layerHeight: number;
+  stateRoot: string;
+  validatorSetHash: string;
+  mainChainHeight: number;
+  anchoredAt: number;
+  pqcSignature: string;
+  transactionCount: number;
+  compressedStateProof: string;
+}
+
+/** A post-quantum account view (the `x/pqc` `PQCAccountView`). */
+export interface PqcAccountView {
+  address: string;
+  publicKey: string;
+  algorithmId: number;
+  algorithmName: string;
+  ecdsaPubkey: string;
+}
+
+export function mapAnchorView(raw: RawRecord): AnchorView {
+  return {
+    layerId: str(pick(raw, "layer_id", "layerId")),
+    layerHeight: num(pick(raw, "layer_height", "layerHeight")),
+    stateRoot: hexBytes(pick(raw, "state_root", "stateRoot")),
+    validatorSetHash: hexBytes(pick(raw, "validator_set_hash", "validatorSetHash")),
+    mainChainHeight: num(pick(raw, "main_chain_height", "mainChainHeight")),
+    anchoredAt: num(pick(raw, "anchored_at", "anchoredAt")),
+    pqcSignature: hexBytes(pick(raw, "pqc_aggregate_signature", "pqcAggregateSignature")),
+    transactionCount: num(pick(raw, "transaction_count", "transactionCount")),
+    compressedStateProof: hexBytes(pick(raw, "compressed_state_proof", "compressedStateProof")),
+  };
+}
+
+export function mapPqcAccountView(raw: RawRecord): PqcAccountView {
+  return {
+    address: str(pick(raw, "address")),
+    publicKey: hexBytes(pick(raw, "public_key", "publicKey")),
+    algorithmId: num(pick(raw, "algorithm_id", "algorithmId")),
+    algorithmName: str(pick(raw, "algorithm_name", "algorithmName")),
+    ecdsaPubkey: hexBytes(pick(raw, "ecdsa_pubkey", "ecdsaPubkey")),
+  };
 }
 
 export function mapParamsView(raw: RawRecord): ParamsView {

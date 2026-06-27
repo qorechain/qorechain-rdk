@@ -1,6 +1,6 @@
 [package]
 name = "qorechain-rdk"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 license = "Apache-2.0"
 readme = "README.md"
@@ -26,7 +26,9 @@ sha2 = "0.10"
 hmac = "0.12"
 pbkdf2 = { version = "0.12", default-features = false }
 hex = "0.4"
+base64 = "0.22"
 thiserror = "2"
+qorechain-pqc = "0.1"
 
 [dev-dependencies]
 k256 = { version = "0.13", features = ["ecdsa"] }

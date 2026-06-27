@@ -61,13 +61,13 @@ against shared cross-language golden vectors.
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | Available (v0.2.0) |
-| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.1.0) |
-| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.2.0) |
-| `qorechain-rdk` | Go | Available (v0.3.1, `go get`) |
-| `qorechain-rdk` | Python | Available on PyPI (v0.3.1, imports as `qorrdk`) |
-| `qorechain-rdk` | Rust | Available on crates.io (v0.3.1) |
-| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.3.1) |
+| `@qorechain/rdk` | TypeScript | Available (v0.4.0) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.4.0) |
+| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.4.0) |
+| `qorechain-rdk` | Go | Available (v0.4.0, `go get`) |
+| `qorechain-rdk` | Python | Available on PyPI (v0.4.0, imports as `qorrdk`) |
+| `qorechain-rdk` | Rust | Available on crates.io (v0.4.0) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.4.0) |
 
 The TypeScript core (`@qorechain/rdk`) is the basis for the examples in this
 documentation.
@@ -84,5 +84,13 @@ documentation.
   based, sovereign.
 - [Guides](guides/profiles.md) — preset profiles, sequencers, proofs, DA, gas,
   lifecycles, and economics.
+- [QCAI Rollup Copilot](guides/qcai-copilot.md) — aggregated, plain-language
+  advice for a rollup.
+- [Quantum-safe settlement receipts](guides/settlement-receipts.md) — portable,
+  offline-verifiable batch-anchor proofs.
+- [Multi-VM (cross-VM calls)](guides/multi-vm.md) — EVM → CosmWasm via the
+  cross-VM precompile.
+- [Watchtower](guides/watchtower.md) — auto-challenger framework for optimistic
+  rollups.
 - [Network & endpoints reference](reference/network.md) — chain ids, ports,
   token.

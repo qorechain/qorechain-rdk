@@ -66,4 +66,19 @@ export class QorClient {
   getDABlobStatus(rollupId: string, blobIndex: number | bigint): Promise<RawRecord> {
     return this.call<RawRecord>("qor_getDABlobStatus", [rollupId, Number(blobIndex)]);
   }
+
+  /** QCAI reinforcement-learning agent status (the fee/routing policy agent). */
+  getRLAgentStatus(): Promise<RawRecord> {
+    return this.call<RawRecord>("qor_getRLAgentStatus", []);
+  }
+
+  /** The RL agent's current observation vector (network state it acts on). */
+  getRLObservation(): Promise<RawRecord> {
+    return this.call<RawRecord>("qor_getRLObservation", []);
+  }
+
+  /** The RL agent's latest reward signal. */
+  getRLReward(): Promise<RawRecord> {
+    return this.call<RawRecord>("qor_getRLReward", []);
+  }
 }

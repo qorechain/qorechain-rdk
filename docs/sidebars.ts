@@ -29,6 +29,10 @@ const sidebars: SidebarsConfig = {
         "guides/monitoring",
         "guides/withdrawals",
         "guides/local-and-dry-run",
+        "guides/qcai-copilot",
+        "guides/settlement-receipts",
+        "guides/multi-vm",
+        "guides/watchtower",
       ],
     },
     {

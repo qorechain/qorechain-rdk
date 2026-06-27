@@ -9,7 +9,22 @@ public RPC / REST / gRPC / JSON-RPC. It depends on
 [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk) for accounts,
 quantum-safe signing, and transport.
 
-> Published at v0.2.0 — `npm i @qorechain/rdk`.
+> Published at v0.4.0 — `npm i @qorechain/rdk`.
+
+## What's new in 0.4.0
+
+- **QCAI Rollup Copilot** — `getRollupAdvice` aggregates a live fee estimate,
+  network recommendations, fraud investigations, RL-agent status, and
+  plain-language suggestions (best-effort; unreachable services degrade to
+  warnings).
+- **Quantum-safe settlement receipts** — `buildSettlementReceipt` /
+  `verifySettlementReceipt`: a portable receipt proving a settlement batch was
+  anchored to the Main Chain under an ML-DSA-87 (Dilithium-5, FIPS-204)
+  signature, verifiable fully offline.
+- **Multi-VM tooling** — `encodeCrossVmCalldata`, `functionSelector`, and the
+  `CROSS_VM_PRECOMPILE` address for EVM → CosmWasm cross-VM calls.
+- **Watchtower** — `watchBatches`, an auto-challenger framework for optimistic
+  rollups (you supply the validity predicate; wire `onInvalid` to a challenge).
 
 ## Install
 

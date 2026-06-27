@@ -64,6 +64,32 @@ type BatchView struct {
 	WithdrawalsRoot string
 }
 
+// AnchorView holds a subsidiary-layer state anchor committed to the Main Chain
+// (the x/multilayer StateAnchorView). Byte fields are normalized to lowercase
+// hex. The PQC (Dilithium-5) signature covers the canonical message
+// layer_id || layer_height(8B BE) || state_root || validator_set_hash, signed by
+// the layer creator's registered post-quantum key.
+type AnchorView struct {
+	LayerID              string
+	LayerHeight          uint64
+	StateRoot            string
+	ValidatorSetHash     string
+	MainChainHeight      uint64
+	AnchoredAt           int64
+	PqcSignature         string
+	TransactionCount     uint64
+	CompressedStateProof string
+}
+
+// PqcAccountView holds a post-quantum account view (the x/pqc PQCAccountView).
+type PqcAccountView struct {
+	Address       string
+	PublicKey     string
+	AlgorithmID   int
+	AlgorithmName string
+	EcdsaPubkey   string
+}
+
 func pick(raw map[string]any, keys ...string) any {
 	for _, k := range keys {
 		if v, ok := raw[k]; ok && v != nil {
@@ -172,6 +198,71 @@ func MapBatchView(raw map[string]any) BatchView {
 		SubmittedAt:     asNum(pick(raw, "submitted_at", "submittedAt"), 0),
 		FinalizedAt:     asNum(pick(raw, "finalized_at", "finalizedAt"), 0),
 		WithdrawalsRoot: asStr(pick(raw, "withdrawals_root", "withdrawalsRoot"), ""),
+	}
+}
+
+func asU64(v any, fallback uint64) uint64 {
+	switch t := v.(type) {
+	case nil:
+		return fallback
+	case float64:
+		return uint64(t)
+	case string:
+		if t == "" {
+			return fallback
+		}
+		if n, err := strconv.ParseUint(t, 10, 64); err == nil {
+			return n
+		}
+		return fallback
+	default:
+		return fallback
+	}
+}
+
+func asI64(v any, fallback int64) int64 {
+	switch t := v.(type) {
+	case nil:
+		return fallback
+	case float64:
+		return int64(t)
+	case string:
+		if t == "" {
+			return fallback
+		}
+		if n, err := strconv.ParseInt(t, 10, 64); err == nil {
+			return n
+		}
+		return fallback
+	default:
+		return fallback
+	}
+}
+
+// MapAnchorView maps a raw anchor payload to an AnchorView, normalizing wire
+// bytes (base64 or hex) to lowercase hex.
+func MapAnchorView(raw map[string]any) AnchorView {
+	return AnchorView{
+		LayerID:              asStr(pick(raw, "layer_id", "layerId"), ""),
+		LayerHeight:          asU64(pick(raw, "layer_height", "layerHeight"), 0),
+		StateRoot:            hexWireBytes(asStr(pick(raw, "state_root", "stateRoot"), "")),
+		ValidatorSetHash:     hexWireBytes(asStr(pick(raw, "validator_set_hash", "validatorSetHash"), "")),
+		MainChainHeight:      asU64(pick(raw, "main_chain_height", "mainChainHeight"), 0),
+		AnchoredAt:           asI64(pick(raw, "anchored_at", "anchoredAt"), 0),
+		PqcSignature:         hexWireBytes(asStr(pick(raw, "pqc_aggregate_signature", "pqcAggregateSignature"), "")),
+		TransactionCount:     asU64(pick(raw, "transaction_count", "transactionCount"), 0),
+		CompressedStateProof: hexWireBytes(asStr(pick(raw, "compressed_state_proof", "compressedStateProof"), "")),
+	}
+}
+
+// MapPqcAccountView maps a raw pqc account payload to a PqcAccountView.
+func MapPqcAccountView(raw map[string]any) PqcAccountView {
+	return PqcAccountView{
+		Address:       asStr(pick(raw, "address"), ""),
+		PublicKey:     hexWireBytes(asStr(pick(raw, "public_key", "publicKey"), "")),
+		AlgorithmID:   asNum(pick(raw, "algorithm_id", "algorithmId"), 0),
+		AlgorithmName: asStr(pick(raw, "algorithm_name", "algorithmName"), ""),
+		EcdsaPubkey:   hexWireBytes(asStr(pick(raw, "ecdsa_pubkey", "ecdsaPubkey"), "")),
 	}
 }
 
@@ -290,6 +381,93 @@ func (c *RestClient) GetLatestBatch(ctx context.Context, rollupID string) (Batch
 // GetBlob reads raw data-availability blob details.
 func (c *RestClient) GetBlob(ctx context.Context, rollupID string, blobIndex uint64) (map[string]any, error) {
 	return c.get(ctx, fmt.Sprintf("/qorechain/rdk/v1/blob/%s/%d", url.PathEscape(rollupID), blobIndex))
+}
+
+// GetAnchor reads the latest state anchor a layer committed to the Main Chain
+// (the x/multilayer Anchor query). layerID is the rollup's layer_id.
+func (c *RestClient) GetAnchor(ctx context.Context, layerID string) (AnchorView, error) {
+	body, err := c.get(ctx, "/qorechain/multilayer/v1/anchor/"+url.PathEscape(layerID))
+	if err != nil {
+		return AnchorView{}, err
+	}
+	if a := pick(body, "anchor"); a != nil {
+		return MapAnchorView(asRecord(a)), nil
+	}
+	return MapAnchorView(body), nil
+}
+
+// GetLatestAnchor is an alias for GetAnchor — the chain's Anchor query returns
+// the latest anchor.
+func (c *RestClient) GetLatestAnchor(ctx context.Context, layerID string) (AnchorView, error) {
+	return c.GetAnchor(ctx, layerID)
+}
+
+// GetAnchors reads all state anchors a layer has committed (newest first).
+func (c *RestClient) GetAnchors(ctx context.Context, layerID string) ([]AnchorView, error) {
+	body, err := c.get(ctx, "/qorechain/multilayer/v1/anchors/"+url.PathEscape(layerID))
+	if err != nil {
+		return nil, err
+	}
+	out := []AnchorView{}
+	for _, a := range asArray(pick(body, "anchors")) {
+		out = append(out, MapAnchorView(a))
+	}
+	return out, nil
+}
+
+// GetPqcAccount reads an account's post-quantum key record (the x/pqc account
+// query). The PublicKey is the registered ML-DSA-87 (Dilithium-5) verification
+// key.
+func (c *RestClient) GetPqcAccount(ctx context.Context, address string) (PqcAccountView, error) {
+	body, err := c.get(ctx, "/qorechain/pqc/v1/accounts/"+url.PathEscape(address))
+	if err != nil {
+		return PqcAccountView{}, err
+	}
+	if a := pick(body, "account"); a != nil {
+		return MapPqcAccountView(asRecord(a)), nil
+	}
+	return MapPqcAccountView(body), nil
+}
+
+// --- QCAI advisory reads (the ai REST surface) ---
+
+// GetFeeEstimate reads the QCAI fee estimate. urgency is one of low | normal |
+// high (optional; empty to omit).
+func (c *RestClient) GetFeeEstimate(ctx context.Context, urgency string) (map[string]any, error) {
+	q := ""
+	if urgency != "" {
+		q = "?urgency=" + url.QueryEscape(urgency)
+	}
+	return c.get(ctx, "/qorechain/ai/v1/fee-estimate"+q)
+}
+
+// GetNetworkRecommendations reads the QCAI network recommendations (congestion,
+// suggested settings).
+func (c *RestClient) GetNetworkRecommendations(ctx context.Context) (map[string]any, error) {
+	return c.get(ctx, "/qorechain/ai/v1/network/recommendations")
+}
+
+// GetFraudInvestigations reads the open fraud investigations across the network.
+func (c *RestClient) GetFraudInvestigations(ctx context.Context) ([]map[string]any, error) {
+	body, err := c.get(ctx, "/qorechain/ai/v1/fraud/investigations")
+	if err != nil {
+		return nil, err
+	}
+	if v := pick(body, "investigations", "data"); v != nil {
+		return asArray(v), nil
+	}
+	return asArray(body), nil
+}
+
+// GetFraudInvestigation reads a single fraud investigation by id.
+func (c *RestClient) GetFraudInvestigation(ctx context.Context, id string) (map[string]any, error) {
+	return c.get(ctx, "/qorechain/ai/v1/fraud/investigations/"+url.PathEscape(id))
+}
+
+// GetCircuitBreakers reads the active QCAI circuit breakers (network safety
+// throttles).
+func (c *RestClient) GetCircuitBreakers(ctx context.Context) (map[string]any, error) {
+	return c.get(ctx, "/qorechain/ai/v1/circuit-breakers")
 }
 
 // GetBalance reads an account's balance for a single denom (default uqor) as an
@@ -500,6 +678,29 @@ func (c *QorClient) SuggestRollupProfile(ctx context.Context, useCase string) (j
 func (c *QorClient) GetDABlobStatus(ctx context.Context, rollupID string, blobIndex uint64) (map[string]any, error) {
 	var out map[string]any
 	err := c.Call(ctx, "qor_getDABlobStatus", []any{rollupID, blobIndex}, &out)
+	return out, err
+}
+
+// GetRLAgentStatus returns the QCAI reinforcement-learning agent status (the
+// fee/routing policy agent).
+func (c *QorClient) GetRLAgentStatus(ctx context.Context) (map[string]any, error) {
+	var out map[string]any
+	err := c.Call(ctx, "qor_getRLAgentStatus", []any{}, &out)
+	return out, err
+}
+
+// GetRLObservation returns the RL agent's current observation vector (the
+// network state it acts on).
+func (c *QorClient) GetRLObservation(ctx context.Context) (map[string]any, error) {
+	var out map[string]any
+	err := c.Call(ctx, "qor_getRLObservation", []any{}, &out)
+	return out, err
+}
+
+// GetRLReward returns the RL agent's latest reward signal.
+func (c *QorClient) GetRLReward(ctx context.Context) (map[string]any, error) {
+	var out map[string]any
+	err := c.Call(ctx, "qor_getRLReward", []any{}, &out)
 	return out, err
 }
 

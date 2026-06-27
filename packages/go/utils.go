@@ -1,6 +1,7 @@
 package rdk
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -32,6 +33,40 @@ func HexToBytes(h string) ([]byte, error) {
 // toBytes helper).
 func ToBytes(input string) ([]byte, error) {
 	return HexToBytes(input)
+}
+
+var nonHexRe = regexp.MustCompile(`[g-zG-Z]`)
+var base64MarkerRe = regexp.MustCompile(`[+/=]`)
+
+// DecodeWireBytes decodes a bytes value as it arrives from the chain's wire
+// surface. The Cosmos gRPC-gateway (jsonpb) encodes proto bytes as base64; some
+// surfaces send hex. The two are disambiguated by alphabet and length (a 32-byte
+// root is 64 hex chars vs ~44 base64 chars with +/=), so both encodings
+// round-trip correctly. It mirrors the TS decodeWireBytes helper.
+func DecodeWireBytes(value string) ([]byte, error) {
+	if value == "" {
+		return []byte{}, nil
+	}
+	isHex := len(value)%2 == 0 && hexRe.MatchString(value)
+	looksBase64 := base64MarkerRe.MatchString(value) || nonHexRe.MatchString(value)
+	if isHex && !looksBase64 {
+		return hex.DecodeString(value)
+	}
+	return base64.StdEncoding.DecodeString(value)
+}
+
+// hexWireBytes normalizes a wire bytes field (base64 or hex) to a lowercase hex
+// string, returning "" for an empty input or on decode failure (tolerant, like
+// the view mappers in the TS reference).
+func hexWireBytes(value string) string {
+	if value == "" {
+		return ""
+	}
+	b, err := DecodeWireBytes(value)
+	if err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b)
 }
 
 // --- bech32 <-> hex helpers ---

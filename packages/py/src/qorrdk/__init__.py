@@ -13,7 +13,7 @@ account derivation) works fully offline.
 
 from __future__ import annotations
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 # Constants.
 from .constants import (  # noqa: E402
@@ -77,9 +77,12 @@ from .presets import PRESET_DEFAULTS, presets  # noqa: E402
 # Utilities.
 from .utils import (  # noqa: E402
     CreationCost,
+    base64_to_bytes,
     bech32_prefix,
     bech32_to_hex,
+    bytes_to_base64,
     bytes_to_hex,
+    decode_wire_bytes,
     estimate_creation_cost,
     hex_to_bech32,
     hex_to_bytes,
@@ -181,9 +184,11 @@ from .accounts import (  # noqa: E402
 
 # Read clients & facade.
 from .client import (  # noqa: E402
+    AnchorView,
     BatchView,
     HttpResponse,
     ParamsView,
+    PqcAccountView,
     QorClient,
     RdkClient,
     RestClient,
@@ -191,9 +196,30 @@ from .client import (  # noqa: E402
     Transport,
     create_rdk_client,
     default_transport,
+    map_anchor_view,
     map_batch_view,
     map_params_view,
+    map_pqc_account_view,
     map_rollup_view,
+)
+
+# Settlement receipts.
+from .receipts import (  # noqa: E402
+    RECEIPT_ALGORITHM,
+    RECEIPT_VERSION,
+    ReceiptChecks,
+    ReceiptVerification,
+    SettlementReceipt,
+    anchor_sign_bytes,
+    build_settlement_receipt,
+    verify_settlement_receipt,
+)
+
+# QCAI rollup copilot.
+from .copilot import (  # noqa: E402
+    CopilotSuggestion,
+    RollupAdvice,
+    get_rollup_advice,
 )
 
 # Profile suggestion.
@@ -271,6 +297,9 @@ __all__ = [
     "bytes_to_hex",
     "hex_to_bytes",
     "to_bytes",
+    "base64_to_bytes",
+    "bytes_to_base64",
+    "decode_wire_bytes",
     # lifecycle
     "ROLLUP_ACTION_FROM",
     "can_perform_rollup_action",
@@ -351,9 +380,26 @@ __all__ = [
     "ParamsView",
     "RollupView",
     "BatchView",
+    "AnchorView",
+    "PqcAccountView",
     "map_params_view",
     "map_rollup_view",
     "map_batch_view",
+    "map_anchor_view",
+    "map_pqc_account_view",
+    # receipts
+    "RECEIPT_ALGORITHM",
+    "RECEIPT_VERSION",
+    "SettlementReceipt",
+    "ReceiptChecks",
+    "ReceiptVerification",
+    "anchor_sign_bytes",
+    "build_settlement_receipt",
+    "verify_settlement_receipt",
+    # copilot
+    "CopilotSuggestion",
+    "RollupAdvice",
+    "get_rollup_advice",
     # profiles
     "ProfileSuggestion",
     "suggest_profile",

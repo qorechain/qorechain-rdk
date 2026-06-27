@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from ..utils.bytes import bytes_to_hex, decode_wire_bytes
+
 RawRecord = dict[str, Any]
 
 
@@ -17,6 +19,12 @@ def _pick(obj: RawRecord, *keys: str) -> Any:
         if obj.get(key) is not None:
             return obj[key]
     return None
+
+
+def _hex_bytes(value: Any) -> str:
+    """Normalize a wire bytes field (base64 or hex) to a lowercase hex string."""
+    s = _str(value)
+    return "" if s == "" else bytes_to_hex(decode_wire_bytes(s))
 
 
 def _str(value: Any, fallback: str = "") -> str:
@@ -82,6 +90,66 @@ class BatchView:
     withdrawals_root: str
 
 
+@dataclass
+class AnchorView:
+    """A subsidiary-layer state anchor committed to the Main Chain.
+
+    The ``x/multilayer`` ``StateAnchorView``. Byte fields are normalized to
+    lowercase hex. The PQC (Dilithium-5) signature covers the canonical message
+    ``layer_id || layer_height(8B BE) || state_root || validator_set_hash``,
+    signed by the layer creator's registered post-quantum key.
+    """
+
+    layer_id: str
+    layer_height: int
+    state_root: str
+    validator_set_hash: str
+    main_chain_height: int
+    anchored_at: int
+    pqc_signature: str
+    transaction_count: int
+    compressed_state_proof: str
+
+
+@dataclass
+class PqcAccountView:
+    """A post-quantum account view (the ``x/pqc`` ``PQCAccountView``)."""
+
+    address: str
+    public_key: str
+    algorithm_id: int
+    algorithm_name: str
+    ecdsa_pubkey: str
+
+
+def map_anchor_view(raw: RawRecord) -> AnchorView:
+    return AnchorView(
+        layer_id=_str(_pick(raw, "layer_id", "layerId")),
+        layer_height=_num(_pick(raw, "layer_height", "layerHeight")),
+        state_root=_hex_bytes(_pick(raw, "state_root", "stateRoot")),
+        validator_set_hash=_hex_bytes(_pick(raw, "validator_set_hash", "validatorSetHash")),
+        main_chain_height=_num(_pick(raw, "main_chain_height", "mainChainHeight")),
+        anchored_at=_num(_pick(raw, "anchored_at", "anchoredAt")),
+        pqc_signature=_hex_bytes(
+            _pick(raw, "pqc_aggregate_signature", "pqcAggregateSignature")
+        ),
+        transaction_count=_num(_pick(raw, "transaction_count", "transactionCount")),
+        compressed_state_proof=_hex_bytes(
+            _pick(raw, "compressed_state_proof", "compressedStateProof")
+        ),
+    )
+
+
+def map_pqc_account_view(raw: RawRecord) -> PqcAccountView:
+    return PqcAccountView(
+        address=_str(_pick(raw, "address")),
+        public_key=_hex_bytes(_pick(raw, "public_key", "publicKey")),
+        algorithm_id=_num(_pick(raw, "algorithm_id", "algorithmId")),
+        algorithm_name=_str(_pick(raw, "algorithm_name", "algorithmName")),
+        ecdsa_pubkey=_hex_bytes(_pick(raw, "ecdsa_pubkey", "ecdsaPubkey")),
+    )
+
+
 def map_params_view(raw: RawRecord) -> ParamsView:
     return ParamsView(
         max_rollups=_num(_pick(raw, "max_rollups", "maxRollups")),
@@ -136,7 +204,11 @@ __all__ = [
     "ParamsView",
     "RollupView",
     "BatchView",
+    "AnchorView",
+    "PqcAccountView",
     "map_params_view",
     "map_rollup_view",
     "map_batch_view",
+    "map_anchor_view",
+    "map_pqc_account_view",
 ]

@@ -130,4 +130,19 @@ impl QorClient {
     ) -> Result<Value, JsonRpcError> {
         self.call("qor_getDABlobStatus", json!([rollup_id, blob_index]))
     }
+
+    /// QCAI reinforcement-learning agent status (the fee/routing policy agent).
+    pub fn get_rl_agent_status(&self) -> Result<Value, JsonRpcError> {
+        self.call("qor_getRLAgentStatus", json!([]))
+    }
+
+    /// The RL agent's current observation vector (network state it acts on).
+    pub fn get_rl_observation(&self) -> Result<Value, JsonRpcError> {
+        self.call("qor_getRLObservation", json!([]))
+    }
+
+    /// The RL agent's latest reward signal.
+    pub fn get_rl_reward(&self) -> Result<Value, JsonRpcError> {
+        self.call("qor_getRLReward", json!([]))
+    }
 }

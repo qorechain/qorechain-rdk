@@ -9,7 +9,7 @@ export interface ParsedCli {
   version: boolean;
 }
 
-const BOOLEAN_FLAGS = new Set(["json", "yes", "dry-run", "help", "version"]);
+const BOOLEAN_FLAGS = new Set(["json", "yes", "dry-run", "verify", "help", "version"]);
 
 export function parseCli(argv: readonly string[]): ParsedCli {
   const out: ParsedCli = { positionals: [], flags: {}, help: false, version: false };

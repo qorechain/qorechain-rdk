@@ -29,6 +29,7 @@ pub mod bridge;
 pub mod client;
 pub mod config;
 pub mod constants;
+pub mod copilot;
 pub mod da;
 pub mod events;
 pub mod faucet;
@@ -37,11 +38,17 @@ pub mod manifest;
 pub mod monitor;
 pub mod preflight;
 pub mod presets;
+pub mod receipts;
 pub mod tx;
 pub mod utils;
 
 pub use accounts::{signer_from_env, NativeAccount, Signer};
-pub use client::{RdkClient, RdkClientOptions};
+pub use client::{AnchorView, PqcAccountView, RdkClient, RdkClientOptions};
+pub use copilot::{get_rollup_advice, CopilotSuggestion, RollupAdvice, SuggestionLevel};
+pub use receipts::{
+    anchor_sign_bytes, build_settlement_receipt, verify_settlement_receipt, ReceiptChecks,
+    ReceiptError, ReceiptVerification, SettlementReceipt, RECEIPT_ALGORITHM, RECEIPT_VERSION,
+};
 pub use config::{
     BatchStatus, DaBackend, GasModel, Profile, ProofSystem, RollupConfig, RollupConfigBuilder,
     RollupConfigError, RollupStatus, Sequencer, SequencerParams, Settlement, ValidationResult,

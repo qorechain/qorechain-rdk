@@ -50,6 +50,12 @@ export const TEMPLATES: readonly TemplateInfo[] = [
     label: "Custom",
     hint: "Fully parameterized config with every field documented and validated.",
   },
+  {
+    id: "multivm-rollup",
+    profile: "custom",
+    label: "Multi-VM",
+    hint: "EVM rollup that calls CosmWasm contracts via the cross-VM precompile (0x…0901).",
+  },
 ] as const;
 
 /** Look up a template by id, or `undefined` if unknown. */

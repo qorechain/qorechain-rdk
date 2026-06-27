@@ -11,12 +11,16 @@ from urllib.parse import quote
 
 from .http import Transport, default_transport
 from .views import (
+    AnchorView,
     BatchView,
     ParamsView,
+    PqcAccountView,
     RawRecord,
     RollupView,
+    map_anchor_view,
     map_batch_view,
     map_params_view,
+    map_pqc_account_view,
     map_rollup_view,
 )
 
@@ -87,6 +91,68 @@ class RestClient:
         return self._get(
             f"/qorechain/rdk/v1/blob/{quote(rollup_id, safe='')}/{blob_index}"
         )
+
+    def get_anchor(self, layer_id: str) -> AnchorView:
+        """The latest state anchor a layer committed to the Main Chain.
+
+        The ``x/multilayer`` Anchor query. ``layer_id`` is the rollup's
+        ``layer_id``.
+        """
+        body = self._get(
+            f"/qorechain/multilayer/v1/anchor/{quote(layer_id, safe='')}"
+        )
+        return map_anchor_view(_as_record(body.get("anchor", body)))
+
+    def get_latest_anchor(self, layer_id: str) -> AnchorView:
+        """Alias for :meth:`get_anchor` — the chain's Anchor query returns the latest."""
+        return self.get_anchor(layer_id)
+
+    def get_anchors(self, layer_id: str) -> list[AnchorView]:
+        """All state anchors a layer has committed (newest first)."""
+        body = self._get(
+            f"/qorechain/multilayer/v1/anchors/{quote(layer_id, safe='')}"
+        )
+        return [map_anchor_view(a) for a in _as_array(body.get("anchors"))]
+
+    def get_pqc_account(self, address: str) -> PqcAccountView:
+        """An account's post-quantum key record (the ``x/pqc`` account query).
+
+        The ``public_key`` is the registered ML-DSA-87 (Dilithium-5)
+        verification key.
+        """
+        body = self._get(
+            f"/qorechain/pqc/v1/accounts/{quote(address, safe='')}"
+        )
+        return map_pqc_account_view(_as_record(body.get("account", body)))
+
+    # --- QCAI advisory reads (the ``ai`` REST surface) ---
+
+    def get_fee_estimate(self, urgency: Optional[str] = None) -> RawRecord:
+        """QCAI fee estimate; ``urgency`` is one of ``low`` | ``normal`` | ``high``."""
+        q = f"?urgency={quote(urgency, safe='')}" if urgency else ""
+        return self._get(f"/qorechain/ai/v1/fee-estimate{q}")
+
+    def get_network_recommendations(self) -> RawRecord:
+        """QCAI network recommendations (congestion, suggested settings)."""
+        return self._get("/qorechain/ai/v1/network/recommendations")
+
+    def get_fraud_investigations(self) -> list[RawRecord]:
+        """Open fraud investigations across the network."""
+        body = self._get("/qorechain/ai/v1/fraud/investigations")
+        for key in ("investigations", "data"):
+            if isinstance(body.get(key), list):
+                return body[key]
+        return _as_array(body)
+
+    def get_fraud_investigation(self, investigation_id: str) -> RawRecord:
+        """A single fraud investigation by id."""
+        return self._get(
+            f"/qorechain/ai/v1/fraud/investigations/{quote(investigation_id, safe='')}"
+        )
+
+    def get_circuit_breakers(self) -> RawRecord:
+        """Active QCAI circuit breakers (network safety throttles)."""
+        return self._get("/qorechain/ai/v1/circuit-breakers")
 
     def get_balance(self, address: str, denom: str = "uqor") -> str:
         """An account's balance for a single denom (default ``uqor``)."""

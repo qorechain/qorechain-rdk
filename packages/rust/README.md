@@ -23,6 +23,18 @@ Surface (mirrors the TypeScript RDK modules):
   transaction client that builds SIGN_MODE_DIRECT transactions for the eight
   `rdk` messages and broadcasts them over REST.
 
+## What's new in 0.4.0
+
+- **QCAI Rollup Copilot** — `get_rollup_advice` aggregates a live fee estimate,
+  network recommendations, fraud investigations, RL-agent status, and
+  plain-language suggestions for a rollup (best-effort; unreachable advisory
+  services degrade to warnings).
+- **Quantum-safe settlement receipts** — `build_settlement_receipt` /
+  `verify_settlement_receipt`: a portable receipt proving a settlement batch was
+  anchored to the Main Chain under an ML-DSA-87 (Dilithium-5, FIPS-204)
+  signature, verifiable fully offline. The ML-DSA-87 verification uses the
+  [`qorechain-pqc`](https://github.com/qorechain) library.
+
 ## Install
 
 ```sh

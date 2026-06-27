@@ -11,7 +11,7 @@
  */
 
 /** RDK package version. */
-export const VERSION = "0.2.0";
+export const VERSION = "0.4.0";
 
 // Network and module constants (documented defaults; read live values from the chain).
 export * from "./constants";
@@ -87,3 +87,15 @@ export * from "./faucet";
 // Bridge: binary-Merkle utilities and withdrawal-proof assembly.
 export * from "./bridge/merkle";
 export * from "./bridge/withdrawal";
+
+// QCAI Rollup Copilot: read-only advisory aggregation over the QCAI/RL surfaces.
+export * from "./copilot";
+
+// Quantum-Safe Settlement Receipts: build + offline ML-DSA-87 verification.
+export * from "./receipts";
+
+// Multi-VM tooling: EVM→CosmWasm cross-VM precompile calldata.
+export * from "./crossvm";
+
+// Watchtower: auto-challenger framework for optimistic rollups.
+export * from "./watchtower";

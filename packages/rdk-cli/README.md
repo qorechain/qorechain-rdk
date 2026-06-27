@@ -35,6 +35,9 @@ qorollup status my-roll             # status + health + challenge-window countdo
 qorollup watch my-roll              # live status (Ctrl-C to stop)
 qorollup params                     # live module parameters
 qorollup suggest "high-frequency DeFi DEX"   # QCAI-assisted profile suggestion
+qorollup advise my-roll             # QCAI Rollup Copilot: aggregated advice
+qorollup receipt my-roll 7 [--verify] [--out receipt.json]  # quantum-safe settlement receipt
+qorollup watchtower my-roll         # auto-challenger framework (optimistic rollups)
 qorollup pause|resume|stop my-roll  # lifecycle (creator only)
 qorollup manifest export --rollup-id my-roll --out rollup.manifest.json
 qorollup manifest import rollup.manifest.json

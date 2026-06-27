@@ -1,5 +1,6 @@
 package io.github.qorechain.rdk.client;
 
+import io.github.qorechain.rdk.util.Bytes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +49,34 @@ public final class Views {
         public int submittedAt;
         public int finalizedAt;
         public String withdrawalsRoot = "";
+    }
+
+    /**
+     * A subsidiary-layer state anchor committed to the Main Chain (the {@code x/multilayer}
+     * {@code StateAnchorView}). Byte fields are normalized to lowercase hex. The PQC
+     * (Dilithium-5) signature covers the canonical message
+     * {@code layer_id || layer_height(8B BE) || state_root || validator_set_hash}, signed by the
+     * layer creator's registered post-quantum key.
+     */
+    public static final class AnchorView {
+        public String layerId = "";
+        public long layerHeight;
+        public String stateRoot = "";
+        public String validatorSetHash = "";
+        public long mainChainHeight;
+        public long anchoredAt;
+        public String pqcSignature = "";
+        public int transactionCount;
+        public String compressedStateProof = "";
+    }
+
+    /** A post-quantum account view (the {@code x/pqc} {@code PQCAccountView}). */
+    public static final class PqcAccountView {
+        public String address = "";
+        public String publicKey = "";
+        public int algorithmId;
+        public String algorithmName = "";
+        public String ecdsaPubkey = "";
     }
 
     /** An account balance for a single denom. */
@@ -112,6 +141,33 @@ public final class Views {
         return fallback;
     }
 
+    static long asLong(Object v, long fallback) {
+        if (v == null) {
+            return fallback;
+        }
+        if (v instanceof Number) {
+            return (long) ((Number) v).doubleValue();
+        }
+        if (v instanceof String) {
+            String s = (String) v;
+            if (s.isEmpty()) {
+                return fallback;
+            }
+            try {
+                return (long) Double.parseDouble(s);
+            } catch (NumberFormatException e) {
+                return fallback;
+            }
+        }
+        return fallback;
+    }
+
+    /** Normalize a wire bytes field (base64 or hex) to a lowercase hex string. */
+    static String hexBytes(Object v) {
+        String s = asStr(v, "");
+        return s.isEmpty() ? "" : Bytes.bytesToHex(Bytes.decodeWireBytes(s));
+    }
+
     @SuppressWarnings("unchecked")
     static Map<String, Object> asRecord(Object v) {
         if (v instanceof Map) {
@@ -159,6 +215,30 @@ public final class Views {
         r.layerId = asStr(pick(raw, "layer_id", "layerId"), "");
         r.createdHeight = asNum(pick(raw, "created_height", "createdHeight"), 0);
         return r;
+    }
+
+    public static AnchorView mapAnchorView(Map<String, Object> raw) {
+        AnchorView a = new AnchorView();
+        a.layerId = asStr(pick(raw, "layer_id", "layerId"), "");
+        a.layerHeight = asLong(pick(raw, "layer_height", "layerHeight"), 0);
+        a.stateRoot = hexBytes(pick(raw, "state_root", "stateRoot"));
+        a.validatorSetHash = hexBytes(pick(raw, "validator_set_hash", "validatorSetHash"));
+        a.mainChainHeight = asLong(pick(raw, "main_chain_height", "mainChainHeight"), 0);
+        a.anchoredAt = asLong(pick(raw, "anchored_at", "anchoredAt"), 0);
+        a.pqcSignature = hexBytes(pick(raw, "pqc_aggregate_signature", "pqcAggregateSignature"));
+        a.transactionCount = asNum(pick(raw, "transaction_count", "transactionCount"), 0);
+        a.compressedStateProof = hexBytes(pick(raw, "compressed_state_proof", "compressedStateProof"));
+        return a;
+    }
+
+    public static PqcAccountView mapPqcAccountView(Map<String, Object> raw) {
+        PqcAccountView p = new PqcAccountView();
+        p.address = asStr(pick(raw, "address"), "");
+        p.publicKey = hexBytes(pick(raw, "public_key", "publicKey"));
+        p.algorithmId = asNum(pick(raw, "algorithm_id", "algorithmId"), 0);
+        p.algorithmName = asStr(pick(raw, "algorithm_name", "algorithmName"), "");
+        p.ecdsaPubkey = hexBytes(pick(raw, "ecdsa_pubkey", "ecdsaPubkey"));
+        return p;
     }
 
     public static BatchView mapBatchView(Map<String, Object> raw) {

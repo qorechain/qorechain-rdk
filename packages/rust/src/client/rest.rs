@@ -9,7 +9,8 @@ use thiserror::Error;
 
 use super::http::{default_transport, HttpError, HttpRequest, Method, SharedTransport};
 use super::views::{
-    map_batch_view, map_params_view, map_rollup_view, BatchView, ParamsView, RollupView,
+    map_anchor_view, map_batch_view, map_params_view, map_pqc_account_view, map_rollup_view,
+    AnchorView, BatchView, ParamsView, PqcAccountView, RollupView,
 };
 
 /// A REST client error.
@@ -173,6 +174,86 @@ impl RestClient {
             urlencode(rollup_id),
             blob_index
         ))
+    }
+
+    /// The latest state anchor a layer committed to the Main Chain (the
+    /// `x/multilayer` Anchor query). `layer_id` is the rollup's `layer_id`.
+    pub fn get_anchor(&self, layer_id: &str) -> Result<AnchorView, RestError> {
+        let body = self.get(&format!(
+            "/qorechain/multilayer/v1/anchor/{}",
+            urlencode(layer_id)
+        ))?;
+        Ok(map_anchor_view(Self::obj_or(&body, &["anchor"])))
+    }
+
+    /// Alias for [`RestClient::get_anchor`] — the chain's Anchor query returns
+    /// the latest.
+    pub fn get_latest_anchor(&self, layer_id: &str) -> Result<AnchorView, RestError> {
+        self.get_anchor(layer_id)
+    }
+
+    /// All state anchors a layer has committed (newest first).
+    pub fn get_anchors(&self, layer_id: &str) -> Result<Vec<AnchorView>, RestError> {
+        let body = self.get(&format!(
+            "/qorechain/multilayer/v1/anchors/{}",
+            urlencode(layer_id)
+        ))?;
+        Ok(body
+            .get("anchors")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().map(map_anchor_view).collect())
+            .unwrap_or_default())
+    }
+
+    /// An account's post-quantum key record (the `x/pqc` account query). The
+    /// `public_key` is the registered ML-DSA-87 (Dilithium-5) verification key.
+    pub fn get_pqc_account(&self, address: &str) -> Result<PqcAccountView, RestError> {
+        let body = self.get(&format!(
+            "/qorechain/pqc/v1/accounts/{}",
+            urlencode(address)
+        ))?;
+        Ok(map_pqc_account_view(Self::obj_or(&body, &["account"])))
+    }
+
+    // --- QCAI advisory reads (the `ai` REST surface) ---
+
+    /// QCAI fee estimate; `urgency` is one of `low` | `normal` | `high`
+    /// (optional).
+    pub fn get_fee_estimate(&self, urgency: Option<&str>) -> Result<Value, RestError> {
+        let q = match urgency {
+            Some(u) => format!("?urgency={}", urlencode(u)),
+            None => String::new(),
+        };
+        self.get(&format!("/qorechain/ai/v1/fee-estimate{q}"))
+    }
+
+    /// QCAI network recommendations (congestion, suggested settings).
+    pub fn get_network_recommendations(&self) -> Result<Value, RestError> {
+        self.get("/qorechain/ai/v1/network/recommendations")
+    }
+
+    /// Open fraud investigations across the network.
+    pub fn get_fraud_investigations(&self) -> Result<Vec<Value>, RestError> {
+        let body = self.get("/qorechain/ai/v1/fraud/investigations")?;
+        let arr = body
+            .get("investigations")
+            .or_else(|| body.get("data"))
+            .and_then(|v| v.as_array())
+            .or_else(|| body.as_array());
+        Ok(arr.cloned().unwrap_or_default())
+    }
+
+    /// A single fraud investigation by id.
+    pub fn get_fraud_investigation(&self, id: &str) -> Result<Value, RestError> {
+        self.get(&format!(
+            "/qorechain/ai/v1/fraud/investigations/{}",
+            urlencode(id)
+        ))
+    }
+
+    /// Active QCAI circuit breakers (network safety throttles).
+    pub fn get_circuit_breakers(&self) -> Result<Value, RestError> {
+        self.get("/qorechain/ai/v1/circuit-breakers")
     }
 
     /// An account's balance for a single denom (default `uqor`), as an integer

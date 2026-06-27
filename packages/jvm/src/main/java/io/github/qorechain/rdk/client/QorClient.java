@@ -65,4 +65,25 @@ public final class QorClient {
         Object result = call("qor_getDABlobStatus", List.of(rollupId, blobIndex));
         return result instanceof Map ? (Map<String, Object>) result : new LinkedHashMap<>();
     }
+
+    /** QCAI reinforcement-learning agent status (the fee/routing policy agent). */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getRLAgentStatus() {
+        Object result = call("qor_getRLAgentStatus", List.of());
+        return result instanceof Map ? (Map<String, Object>) result : new LinkedHashMap<>();
+    }
+
+    /** The RL agent's current observation vector (network state it acts on). */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getRLObservation() {
+        Object result = call("qor_getRLObservation", List.of());
+        return result instanceof Map ? (Map<String, Object>) result : new LinkedHashMap<>();
+    }
+
+    /** The RL agent's latest reward signal. */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getRLReward() {
+        Object result = call("qor_getRLReward", List.of());
+        return result instanceof Map ? (Map<String, Object>) result : new LinkedHashMap<>();
+    }
 }

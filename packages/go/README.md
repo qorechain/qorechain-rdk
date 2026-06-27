@@ -22,6 +22,18 @@ Surface (mirrors the TypeScript RDK modules):
   hand-rolled Cosmos transaction encoding, signing, and broadcast via an
   `RdkTxClient` with lifecycle guards.
 
+## What's new in 0.4.0
+
+- **QCAI Rollup Copilot** — `GetRollupAdvice` aggregates a live fee estimate,
+  network recommendations, fraud investigations, RL-agent status, and
+  plain-language suggestions for a rollup (best-effort; unreachable advisory
+  services degrade to warnings).
+- **Quantum-safe settlement receipts** — `BuildSettlementReceipt` /
+  `VerifySettlementReceipt`: a portable receipt proving a settlement batch was
+  anchored to the Main Chain under an ML-DSA-87 (Dilithium-5, FIPS-204)
+  signature, verifiable fully offline. The ML-DSA-87 verification uses the
+  [`qorechain-pqc`](https://github.com/qorechain) library.
+
 Install:
 
 ```sh

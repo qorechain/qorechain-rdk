@@ -28,6 +28,10 @@ import {
   fromManifest,
   uqorToQor,
   watchRollup,
+  watchBatches,
+  getRollupAdvice,
+  buildSettlementReceipt,
+  verifySettlementReceipt,
   type ProfileName,
   type RawEvent,
 } from "@qorechain/rdk";
@@ -358,6 +362,98 @@ export async function cmdWatch(ctx: CliContext, parsed: ParsedCli): Promise<numb
       onUpdate: (h) =>
         ctx.out.line(
           `[${h.status}] batch #${h.latestBatchIndex ?? "-"} (${h.latestBatchStatus ?? "none"}) ${h.healthy ? "healthy" : "attention"}`,
+        ),
+      onError: (e) => ctx.out.warn(e instanceof Error ? e.message : String(e)),
+    });
+    controller.signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+  return 0;
+}
+
+export async function cmdAdvise(ctx: CliContext, parsed: ParsedCli): Promise<number> {
+  const rollupId = rollupIdArg(parsed);
+  if (!rollupId) {
+    ctx.out.error("usage: qorollup advise <rollup-id>");
+    return 1;
+  }
+  const advice = await getRollupAdvice(ctx.client, rollupId);
+  if (ctx.json) {
+    ctx.out.json(advice);
+    return 0;
+  }
+  ctx.out.line(`QCAI Copilot — ${rollupId} (status: ${advice.status})`);
+  for (const s of advice.suggestions) {
+    const tag = s.level === "action" ? "ACTION" : s.level === "warn" ? "WARN " : "info ";
+    ctx.out.line(`  [${tag}] ${s.message}`);
+  }
+  if (advice.fraudInvestigations.length > 0) {
+    ctx.out.line(`  ${advice.fraudInvestigations.length} fraud investigation(s) reference this rollup.`);
+  }
+  for (const w of advice.warnings) ctx.out.warn(`advisory unavailable — ${w}`);
+  return 0;
+}
+
+export async function cmdReceipt(ctx: CliContext, parsed: ParsedCli): Promise<number> {
+  const rollupId = rollupIdArg(parsed);
+  const idxRaw = parsed.positionals[1] ?? flagStr(parsed.flags, "batch");
+  if (!rollupId || idxRaw === undefined) {
+    ctx.out.error("usage: qorollup receipt <rollup-id> <batch-index> [--verify] [--out <file>]");
+    return 1;
+  }
+  const batchIndex = Number(idxRaw);
+  const receipt = await buildSettlementReceipt(ctx.client, rollupId, batchIndex);
+
+  let verification: Awaited<ReturnType<typeof verifySettlementReceipt>> | undefined;
+  if (flagBool(parsed.flags, "verify")) {
+    verification = await verifySettlementReceipt(receipt, { client: ctx.client });
+  }
+
+  const outFile = flagStr(parsed.flags, "out");
+  if (outFile) writeFileSync(outFile, `${JSON.stringify(receipt, null, 2)}\n`);
+
+  if (ctx.json) {
+    ctx.out.json({ receipt, verification });
+    return verification && !verification.valid ? 1 : 0;
+  }
+  ctx.out.line(`Settlement receipt — ${rollupId} batch #${batchIndex}`);
+  ctx.out.line(`  layer:        ${receipt.layerId} @ height ${receipt.layerHeight}`);
+  ctx.out.line(`  state root:   ${receipt.stateRoot}`);
+  ctx.out.line(`  main height:  ${receipt.mainChainHeight}`);
+  ctx.out.line(`  algorithm:    ${receipt.algorithm}`);
+  ctx.out.line(`  signature:    ${receipt.pqcSignature.slice(0, 24)}… (${receipt.pqcSignature.length / 2} bytes)`);
+  if (outFile) ctx.out.line(`  written to:   ${outFile}`);
+  if (verification) {
+    if (verification.valid) {
+      ctx.out.success("Verified — quantum-safe anchor signature and state-root binding hold.");
+    } else {
+      ctx.out.error(`Verification FAILED — ${verification.reason}`);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+export async function cmdWatchtower(ctx: CliContext, parsed: ParsedCli): Promise<number> {
+  const rollupId = rollupIdArg(parsed);
+  if (!rollupId) {
+    ctx.out.error("usage: qorollup watchtower <rollup-id> [--interval <ms>]");
+    return 1;
+  }
+  const intervalMs = Number(flagStr(parsed.flags, "interval") ?? "5000");
+  ctx.out.line(`Watchtower on ${rollupId} (every ${intervalMs}ms; Ctrl-C to stop).`);
+  ctx.out.line("Note: supply your own validity check to auto-flag batches; this CLI only reports.");
+  await new Promise<void>((resolve) => {
+    const controller = new AbortController();
+    const onSig = (): void => controller.abort();
+    if (typeof process !== "undefined") process.once("SIGINT", onSig);
+    watchBatches(ctx.client, rollupId, {
+      intervalMs,
+      signal: controller.signal,
+      onBatch: (b) =>
+        ctx.out.line(`new batch #${b.batchIndex} (${b.status}) state ${b.stateRoot.slice(0, 16)}…`),
+      onDeadline: (info) =>
+        ctx.out.warn(
+          `batch #${info.batch.batchIndex} challenge window closes in ${info.secondsRemaining}s`,
         ),
       onError: (e) => ctx.out.warn(e instanceof Error ? e.message : String(e)),
     });

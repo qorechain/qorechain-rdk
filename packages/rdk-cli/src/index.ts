@@ -8,7 +8,7 @@ import { ConsoleOutput } from "./output";
 import { buildContext } from "./context";
 import * as cmd from "./commands";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.4.0";
 
 export const HELP = `qorollup — operate QoreChain rollups.
 
@@ -19,6 +19,9 @@ Commands:
   create --rollup-id <id>    Create a rollup (--profile, --stake-uqor, --dry-run)
   status <id>                Rollup status + health
   watch <id>                 Live status (--interval <ms>)
+  advise <id>                QCAI Copilot advice (fees, network, fraud, RL agent)
+  receipt <id> <batch>       Quantum-safe settlement receipt (--verify, --out <file>)
+  watchtower <id>            Auto-challenger: watch batches + challenge deadlines
   params                     Live module parameters
   suggest "<use case>"       QCAI-assisted profile suggestion
   pause|resume|stop <id>     Lifecycle transitions (creator only)
@@ -61,6 +64,12 @@ export async function run(argv: readonly string[]): Promise<number> {
         return await cmd.cmdStatus(ctx, parsed);
       case "watch":
         return await cmd.cmdWatch(ctx, parsed);
+      case "advise":
+        return await cmd.cmdAdvise(ctx, parsed);
+      case "receipt":
+        return await cmd.cmdReceipt(ctx, parsed);
+      case "watchtower":
+        return await cmd.cmdWatchtower(ctx, parsed);
       case "params":
         return await cmd.cmdParams(ctx);
       case "suggest":

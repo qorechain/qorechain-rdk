@@ -64,5 +64,17 @@ class QorClient:
         """Data-availability blob storage status."""
         return self.call("qor_getDABlobStatus", [rollup_id, int(blob_index)])
 
+    def get_rl_agent_status(self) -> Any:
+        """QCAI reinforcement-learning agent status (the fee/routing policy agent)."""
+        return self.call("qor_getRLAgentStatus", [])
+
+    def get_rl_observation(self) -> Any:
+        """The RL agent's current observation vector (network state it acts on)."""
+        return self.call("qor_getRLObservation", [])
+
+    def get_rl_reward(self) -> Any:
+        """The RL agent's latest reward signal."""
+        return self.call("qor_getRLReward", [])
+
 
 __all__ = ["QorClient"]

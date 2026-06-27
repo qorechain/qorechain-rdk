@@ -37,6 +37,21 @@ Testnet (`qorechain-diana`). Select `mainnet` (`qorechain-vladi`) explicitly to
 target the live network. Both presets ship localhost endpoint defaults, so pass
 `endpoints` to reach a real node.
 
+### What's new in v0.4.0?
+
+Four features. The **QCAI Rollup Copilot** (`getRollupAdvice`) aggregates a live
+fee estimate, network recommendations, fraud investigations, RL-agent status,
+and plain-language suggestions for a rollup. **Quantum-safe settlement receipts**
+(`buildSettlementReceipt` / `verifySettlementReceipt`) are portable,
+offline-verifiable proofs that a batch was anchored under an ML-DSA-87
+(Dilithium-5) signature. **Multi-VM tooling** (`encodeCrossVmCalldata` and the
+`CROSS_VM_PRECOMPILE` address) drives EVM → CosmWasm cross-VM calls, with a new
+`multivm-rollup` template. The **Watchtower** (`watchBatches`) is an
+auto-challenger framework for optimistic rollups. The Copilot and receipts ship
+in all five languages; the multi-VM tooling and Watchtower are TypeScript. See
+the [Copilot](guides/qcai-copilot.md), [receipts](guides/settlement-receipts.md),
+[multi-VM](guides/multi-vm.md), and [Watchtower](guides/watchtower.md) guides.
+
 ### How do I choose a settlement paradigm?
 
 See [Settlement paradigms](concepts/settlement-paradigms.md). In short:
