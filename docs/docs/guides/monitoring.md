@@ -20,7 +20,7 @@ and its latest settlement batch.
 ```ts
 import { createRdkClient, getRollupHealth } from "@qorechain/rdk";
 
-const rdk = createRdkClient({ endpoints: { rest: "https://rest.testnet.example" } });
+const rdk = createRdkClient({ endpoints: { rest: "https://api-testnet.qore.host" } });
 
 const health = await getRollupHealth(rdk, "my-roll");
 

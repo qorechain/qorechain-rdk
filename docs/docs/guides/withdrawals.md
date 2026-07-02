@@ -100,7 +100,7 @@ optimistic settlement, or proof-verified for ZK).
 ```ts
 import { buildExecuteWithdrawalInput } from "@qorechain/rdk";
 
-const tx = await rdk.connectTx(signer, { gasPrice: "0.025uqor" });
+const tx = await rdk.connectTx(signer, { gasPrice: "0.15uqor" });
 
 const input = buildExecuteWithdrawalInput({
   submitter: tx.address,

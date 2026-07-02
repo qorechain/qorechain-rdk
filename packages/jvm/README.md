@@ -54,6 +54,16 @@ Read paths and offline signing work without a node. **Live broadcast requires a 
 node**: point `RdkClient` / `RestClient` at the node's REST (LCD) endpoint, supply the signer
 sequence and account number from the chain's auth query, and call `RdkTxClient.broadcast`.
 
+> **Mainnet PQC signing requirement.** QoreChain mainnet requires the hybrid
+> post-quantum signature extension (ML-DSA-87 + secp256k1) on native-lane
+> transactions. The Java transaction path currently signs classical-only
+> (SIGN_MODE_DIRECT, secp256k1), so native-lane broadcasts to mainnet will be
+> rejected — use it on permissive networks (testnet, local devnets) or pair it
+> with the [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc)
+> bindings in a custom backend. The TypeScript RDK supports hybrid signing via
+> [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk). Read paths,
+> offline signing, and settlement-receipt verification are unaffected.
+
 ## Building
 
 ```sh

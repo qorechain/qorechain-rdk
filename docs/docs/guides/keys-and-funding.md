@@ -54,8 +54,12 @@ import { signerFromEnv } from "@qorechain/rdk";
 const signer = await signerFromEnv(); // reads process.env by default
 if (!signer) throw new Error("set QORE_OPERATOR_PRIVATE_KEY_HEX or QORE_MNEMONIC");
 
-const tx = await rdk.connectTx(signer, { gasPrice: "0.025uqor" });
+const tx = await rdk.connectTx(signer, { gasPrice: "0.15uqor" });
 ```
+
+> The chain enforces a minimum gas price (fee floor) of **0.1uqor per gas unit**
+> on both mainnet and testnet. Transactions priced below the floor are rejected
+> at the mempool; `0.15uqor` is a comfortable default.
 
 The `qorollup` CLI uses the same precedence and also accepts `--key` and
 `--mnemonic` flags, which override the environment.
@@ -85,7 +89,7 @@ no other code changes.
 import { HybridSigner } from "@qorechain/rdk";
 
 // Construct a hybrid signer per the @qorechain/sdk docs, then:
-const tx = await rdk.connectTx(hybridSigner, { gasPrice: "0.025uqor" });
+const tx = await rdk.connectTx(hybridSigner, { gasPrice: "0.15uqor" });
 ```
 
 The kit also re-exports `PqcSigner`, `generatePqcKeypair`, `pqcSign`, and

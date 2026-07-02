@@ -35,7 +35,7 @@ export QORE_EVM_RPC_URL=https://evm...    # EVM + qor_ JSON-RPC
 export QORE_MNEMONIC="word word ..."      # signer (mnemonic)
 # or, instead of a mnemonic:
 export QORE_OPERATOR_PRIVATE_KEY_HEX=0x...  # signer (raw hex key)
-export QORE_GAS_PRICE=0.025uqor           # gas price for "auto" fees
+export QORE_GAS_PRICE=0.15uqor           # gas price for "auto" fees (chain fee floor: 0.1uqor/gas)
 export QORE_FAUCET_URL=https://faucet...  # testnet faucet endpoint (no fixed default)
 ```
 
@@ -76,7 +76,7 @@ hint. Exit code is `0` only when nothing failed (warnings are allowed).
 
 ```bash
 qorollup doctor
-qorollup doctor --profile defi --rest https://rest.testnet.example
+qorollup doctor --profile defi --rest https://api-testnet.qore.host
 qorollup doctor --json
 ```
 

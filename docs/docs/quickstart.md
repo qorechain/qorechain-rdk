@@ -40,9 +40,9 @@ const rdk = createRdkClient();
 // Point at a real node by overriding endpoints.
 const remote = createRdkClient({
   endpoints: {
-    rest: "https://rest.testnet.example",   // Cosmos REST (LCD)
-    rpc: "https://rpc.testnet.example",      // consensus RPC (for signing)
-    evmRpc: "https://evm.testnet.example",   // EVM + qor_ JSON-RPC
+    rest: "https://api-testnet.qore.host",   // Cosmos REST (LCD)
+    rpc: "https://rpc-testnet.qore.host",      // consensus RPC (for signing)
+    evmRpc: "https://evm-testnet.qore.host",   // EVM + qor_ JSON-RPC
   },
 });
 ```
@@ -124,7 +124,7 @@ const signer = await DirectSecp256k1Wallet.fromKey(
 const [account] = await signer.getAccounts();
 
 // Connect a signing tx client.
-const tx = await rdk.connectTx(signer, { gasPrice: "0.025uqor" });
+const tx = await rdk.connectTx(signer, { gasPrice: "0.15uqor" });
 
 // Turn the config into a create message (commit a stake), then broadcast.
 const createMsg = config.toCreateMsg(account.address, {

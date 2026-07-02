@@ -22,8 +22,8 @@ import { createRdkClient, watchBatches, challengeBatch } from "@qorechain/rdk";
 
 const rdk = createRdkClient({
   endpoints: {
-    rest: "https://rest.testnet.example",
-    rpc: "https://rpc.testnet.example", // needed to broadcast a challenge
+    rest: "https://api-testnet.qore.host",
+    rpc: "https://rpc-testnet.qore.host", // needed to broadcast a challenge
   },
 });
 

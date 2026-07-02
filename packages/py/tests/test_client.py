@@ -216,14 +216,14 @@ def test_rest_pqc_account():
 def test_rest_ai_reads():
     transport = MockTransport(
         {
-            ("GET", "/qorechain/ai/v1/fee-estimate?urgency=high"): {"gas_price": "0.05uqor"},
+            ("GET", "/qorechain/ai/v1/fee-estimate?urgency=high"): {"gas_price": "0.15uqor"},
             ("GET", "/qorechain/ai/v1/network/recommendations"): {"congestion": "low"},
             ("GET", "/qorechain/ai/v1/fraud/investigations/f1"): {"id": "f1", "status": "open"},
             ("GET", "/qorechain/ai/v1/circuit-breakers"): {"breakers": []},
         }
     )
     rest = RestClient("http://localhost:1317", transport=transport)
-    assert rest.get_fee_estimate("high") == {"gas_price": "0.05uqor"}
+    assert rest.get_fee_estimate("high") == {"gas_price": "0.15uqor"}
     assert rest.get_network_recommendations() == {"congestion": "low"}
     assert rest.get_fraud_investigation("f1")["status"] == "open"
     assert rest.get_circuit_breakers() == {"breakers": []}

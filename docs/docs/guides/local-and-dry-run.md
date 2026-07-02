@@ -20,7 +20,7 @@ it throws if the client cannot simulate.
 ```ts
 import { createRollupMsg } from "@qorechain/rdk";
 
-const tx = await rdk.connectTx(signer, { gasPrice: "0.025uqor" });
+const tx = await rdk.connectTx(signer, { gasPrice: "0.15uqor" });
 
 const msg = createRollupMsg({
   creator: tx.address,

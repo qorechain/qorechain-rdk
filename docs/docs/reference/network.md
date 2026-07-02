@@ -33,6 +33,22 @@ sidebar_position: 1
 > **The RDK defaults to testnet** (`qorechain-diana`). Select `mainnet`
 > explicitly to target the live network.
 
+## Public endpoints
+
+The network operates public endpoints you can use directly (or run your own
+node and point the RDK at it):
+
+| Endpoint | Mainnet | Testnet |
+| --- | --- | --- |
+| Consensus RPC | `https://rpc.qore.host` | `https://rpc-testnet.qore.host` |
+| Cosmos REST (LCD) | `https://api.qore.host` | `https://api-testnet.qore.host` |
+| EVM / `qor_` JSON-RPC | `https://evm.qore.host` | `https://evm-testnet.qore.host` |
+| EVM WebSocket | — | `wss://evm-ws-testnet.qore.host` |
+| SVM RPC | `https://svm.qore.host` | `https://svm-testnet.qore.host` |
+| Consensus WebSocket | `wss://rpc.qore.host/websocket` | `wss://rpc-testnet.qore.host/websocket` |
+
+The public block explorer is [explore.qore.network](https://explore.qore.network).
+
 ## Default ports
 
 `createRdkClient()` uses these localhost ports by default. Override `endpoints`
@@ -52,9 +68,9 @@ import { createRdkClient } from "@qorechain/rdk";
 
 const rdk = createRdkClient({
   endpoints: {
-    rest: "https://rest.testnet.example",   // REST (LCD)
-    rpc: "https://rpc.testnet.example",      // consensus RPC
-    evmRpc: "https://evm.testnet.example",   // EVM + qor_ JSON-RPC
+    rest: "https://api-testnet.qore.host",   // REST (LCD)
+    rpc: "https://rpc-testnet.qore.host",      // consensus RPC
+    evmRpc: "https://evm-testnet.qore.host",   // EVM + qor_ JSON-RPC
   },
 });
 ```
@@ -62,15 +78,15 @@ const rdk = createRdkClient({
 ## Targeting mainnet
 
 Both presets ship the same localhost defaults; select `mainnet` and override the
-endpoints with your node URLs:
+endpoints with the public mainnet endpoints (or your own node URLs):
 
 ```ts
 const main = createRdkClient({
   network: "mainnet",       // chain id qorechain-vladi
   endpoints: {
-    rest: "https://rest.mainnet.example",
-    rpc: "https://rpc.mainnet.example",
-    evmRpc: "https://evm.mainnet.example",
+    rest: "https://api.qore.host",
+    rpc: "https://rpc.qore.host",
+    evmRpc: "https://evm.qore.host",
   },
 });
 ```

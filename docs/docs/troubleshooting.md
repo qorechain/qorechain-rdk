@@ -50,9 +50,9 @@ node. Pass explicit `endpoints` for your target network:
 ```ts
 const rdk = createRdkClient({
   endpoints: {
-    rest: "https://rest.testnet.example",
-    rpc: "https://rpc.testnet.example",
-    evmRpc: "https://evm.testnet.example",
+    rest: "https://api-testnet.qore.host",
+    rpc: "https://rpc-testnet.qore.host",
+    evmRpc: "https://evm-testnet.qore.host",
   },
 });
 ```
@@ -110,7 +110,7 @@ as failed, or reads hang, you are pointing at localhost without a local node. Se
 the REST endpoint for your target network:
 
 ```bash
-export QORE_REST_URL=https://rest.testnet.example
+export QORE_REST_URL=https://api-testnet.qore.host
 ```
 
 Or pass `--rest <url>` to `qorollup`, or `endpoints.rest` to `createRdkClient`.

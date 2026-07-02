@@ -7,7 +7,7 @@ package rdk
 // with the rdk params query surface before acting on them.
 
 // Version is the RDK package version (kept in lockstep with the TypeScript RDK).
-const Version = "0.4.0"
+const Version = "0.4.1"
 
 const (
 	// DisplayDenom is the display denomination.

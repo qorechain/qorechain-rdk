@@ -28,8 +28,8 @@ Point it at the testnet:
 
 ```bash
 export QORE_NETWORK=testnet
-export QORE_REST_URL=https://rest.testnet.example
-export QORE_RPC_URL=https://rpc.testnet.example
+export QORE_REST_URL=https://api-testnet.qore.host
+export QORE_RPC_URL=https://rpc-testnet.qore.host
 ```
 
 ## 2. Generate an operator key
@@ -126,8 +126,8 @@ import {
 const rdk = createRdkClient({
   network: "testnet",
   endpoints: {
-    rest: "https://rest.testnet.example",
-    rpc: "https://rpc.testnet.example",
+    rest: "https://api-testnet.qore.host",
+    rpc: "https://rpc-testnet.qore.host",
   },
 });
 
@@ -152,7 +152,7 @@ if (!preflight.ok) {
 
 // Create the rollup.
 const params = await rdk.params();
-const tx = await rdk.connectTx(signer, { gasPrice: "0.025uqor" });
+const tx = await rdk.connectTx(signer, { gasPrice: "0.15uqor" });
 const createMsg = config.toCreateMsg(account.address, {
   stakeAmount: params.minStakeForRollup,
 });

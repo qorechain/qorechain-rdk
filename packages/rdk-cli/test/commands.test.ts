@@ -35,7 +35,7 @@ function makeCtx(
     yes: opts.yes ?? true,
     network: "testnet",
     signerEnv: opts.signerEnv ?? {},
-    gasPrice: "0.025uqor",
+    gasPrice: "0.15uqor",
     faucetUrl: "https://faucet.example",
     fetch,
     connectTx: async () => RdkTxClient.fromClient(mock, "qor1me"),

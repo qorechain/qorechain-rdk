@@ -57,7 +57,7 @@ export function buildContext(options: BuildContextOptions): CliContext {
     QORE_OPERATOR_PRIVATE_KEY_HEX: flagStr(flags, "key") ?? env.QORE_OPERATOR_PRIVATE_KEY_HEX,
     QORE_MNEMONIC: flagStr(flags, "mnemonic") ?? env.QORE_MNEMONIC,
   };
-  const gasPrice = flagStr(flags, "gas-price") ?? env.QORE_GAS_PRICE ?? "0.025uqor";
+  const gasPrice = flagStr(flags, "gas-price") ?? env.QORE_GAS_PRICE ?? "0.15uqor";
   const faucetUrl = flagStr(flags, "faucet-url") ?? env.QORE_FAUCET_URL;
 
   return {

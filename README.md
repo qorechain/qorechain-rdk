@@ -16,13 +16,13 @@ developer-facing front door for launching rollups on the network.
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | Available (v0.4.0) |
-| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.4.0) |
-| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.4.0) |
-| `qorechain-rdk` (Python) | Python | Available on PyPI (v0.4.0) |
-| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.4.0) |
-| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.4.0) |
-| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.4.0) |
+| `@qorechain/rdk` | TypeScript | Available (v0.4.1) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.4.1) |
+| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.4.1) |
+| `qorechain-rdk` (Python) | Python | Available on PyPI (v0.4.1) |
+| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.4.1) |
+| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.4.1) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.4.1) |
 
 ## What's new in 0.4.0
 
@@ -48,6 +48,15 @@ config builder and validation, presets, utilities, Merkle/withdrawal helpers,
 manifests, REST and `qor_` JSON-RPC read clients, preflight/health, accounts, and
 transaction signing + broadcast — and are verified against shared cross-language
 golden vectors. (Live broadcast requires a node endpoint.)
+
+> **Mainnet PQC signing requirement.** QoreChain mainnet requires the hybrid
+> post-quantum signature extension (ML-DSA-87 + secp256k1) on native-lane
+> transactions. The Python, Go, Rust, and Java transaction paths currently sign
+> classical-only (SIGN_MODE_DIRECT), so use them on permissive networks
+> (testnet, local devnets) or pair them with the
+> [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc) bindings; the
+> TypeScript path supports hybrid signing via
+> [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk).
 
 The TypeScript package is built first and at the highest polish; the other
 language packages mirror the same conceptual surface. The TypeScript RDK depends on
@@ -107,7 +116,7 @@ advisory service is unavailable.
 
 ## Quickstart (TypeScript)
 
-> The TypeScript package is published at v0.4.0 (`npm i @qorechain/rdk`).
+> The TypeScript package is published at v0.4.1 (`npm i @qorechain/rdk`).
 
 ```sh
 npm install @qorechain/rdk
@@ -120,9 +129,9 @@ import { createRdkClient, presets } from "@qorechain/rdk";
 // Override endpoints to reach a real node.
 const rdk = createRdkClient({
   endpoints: {
-    rest: "https://rest.testnet.example",
-    rpc: "https://rpc.testnet.example",
-    evmRpc: "https://evm.testnet.example",
+    rest: "https://api-testnet.qore.host",
+    rpc: "https://rpc-testnet.qore.host",
+    evmRpc: "https://evm-testnet.qore.host",
   },
 });
 

@@ -16,8 +16,8 @@ github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 h1:5RVFMOWjMyRy8cARdy79nAmgYw3h
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1/go.mod h1:ZXNYxsqcloTdSy/rNShjYzMhyjf0LaoftYK0p+A3h40=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/qorechain/qorechain-pqc/go v0.1.0 h1:h4LIv24EECv7DmwM7Vphf8QFkjMARzJW+KzqthwWt3U=
-github.com/qorechain/qorechain-pqc/go v0.1.0/go.mod h1:glxp9681K5V1aqpbkxnPDfeix+vPx/pkZP9q+ArUl5s=
+github.com/qorechain/qorechain-pqc/go v0.1.1 h1:WTBqAMX1O2ZA26HZsnsejNrLbmSbHNEOtrnPzb9nMQQ=
+github.com/qorechain/qorechain-pqc/go v0.1.1/go.mod h1:glxp9681K5V1aqpbkxnPDfeix+vPx/pkZP9q+ArUl5s=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.1.5-0.20170601210322-f6abca593680/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=
 github.com/stretchr/testify v1.6.1 h1:hDPOHmpOpP40lSULcqw7IrRb/u7w6RpDC9399XyoNd0=

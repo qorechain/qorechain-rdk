@@ -25,6 +25,16 @@ Surface (mirrors the TypeScript RDK modules):
   and a faucet helper. Live broadcast requires a reachable node endpoint; the
   HTTP transport is injectable for testing.
 
+> **Mainnet PQC signing requirement.** QoreChain mainnet requires the hybrid
+> post-quantum signature extension (ML-DSA-87 + secp256k1) on native-lane
+> transactions. The Python transaction path currently signs classical-only
+> (SIGN_MODE_DIRECT, secp256k1), so native-lane broadcasts to mainnet will be
+> rejected — use it on permissive networks (testnet, local devnets) or pair it
+> with the [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc)
+> bindings in a custom backend. The TypeScript RDK supports hybrid signing via
+> [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk). Read paths,
+> offline signing, and settlement-receipt verification are unaffected.
+
 ## What's new in 0.4.0
 
 - **QCAI Rollup Copilot** — `get_rollup_advice` aggregates a live fee estimate,

@@ -8,7 +8,7 @@ import { ConsoleOutput } from "./output";
 import { buildContext } from "./context";
 import * as cmd from "./commands";
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.4.1";
 
 export const HELP = `qorollup — operate QoreChain rollups.
 

@@ -39,7 +39,7 @@ import {
 } from "@qorechain/rdk";
 
 const rdk = createRdkClient({
-  endpoints: { rest: "https://rest.testnet.example" },
+  endpoints: { rest: "https://api-testnet.qore.host" },
 });
 
 // Build a portable receipt for one batch.

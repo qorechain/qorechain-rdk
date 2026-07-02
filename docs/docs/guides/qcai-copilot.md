@@ -23,8 +23,8 @@ import { createRdkClient, getRollupAdvice } from "@qorechain/rdk";
 
 const rdk = createRdkClient({
   endpoints: {
-    rest: "https://rest.testnet.example",
-    evmRpc: "https://evm.testnet.example", // qor_ JSON-RPC for RL agent reads
+    rest: "https://api-testnet.qore.host",
+    evmRpc: "https://evm-testnet.qore.host", // qor_ JSON-RPC for RL agent reads
   },
 });
 

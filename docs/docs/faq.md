@@ -35,7 +35,9 @@ Central (`io.github.qorechain:qorechain-rdk`).
 
 Testnet (`qorechain-diana`). Select `mainnet` (`qorechain-vladi`) explicitly to
 target the live network. Both presets ship localhost endpoint defaults, so pass
-`endpoints` to reach a real node.
+`endpoints` to reach a real node — see the
+[network reference](reference/network.md) for the public endpoints and the
+[explorer](https://explore.qore.network).
 
 ### What's new in v0.4.0?
 

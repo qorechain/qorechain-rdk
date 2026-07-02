@@ -51,7 +51,7 @@ import {
 
 const rdk = createRdkClient({
   network: "mainnet",
-  endpoints: { rest: "https://api.qore.network" }, // your QoreChain node REST
+  endpoints: { rest: "https://api.qore.host" }, // QoreChain mainnet REST
 });
 
 // Build a portable receipt for batch #42 of "my-rollup".

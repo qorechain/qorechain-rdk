@@ -43,7 +43,7 @@ export interface SimulateCapable {
 }
 
 export interface RdkTxClientConnectOptions {
-  /** Gas price for `"auto"` fee estimation, e.g. `"0.025uqor"`. */
+  /** Gas price for `"auto"` fee estimation, e.g. `"0.15uqor"`. */
   gasPrice?: GasPrice | string;
 }
 

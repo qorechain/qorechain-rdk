@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.4.1
+
+### Changed
+
+- Raised all gas-price defaults and examples from `0.025uqor` to `0.15uqor`
+  (the chain now enforces a fee floor of 0.1uqor per gas unit on both
+  networks): `qorollup` CLI default, scaffold templates, examples, and docs.
+- Docs, templates, and examples now reference the live public endpoints
+  (`rpc/api/evm/svm[-testnet].qore.host`, `wss://rpc[-testnet].qore.host/websocket`)
+  and the public explorer (explore.qore.network) instead of placeholder hosts.
+- `@qorechain/sdk` dependency raised to `^0.5.1` (deterministic ML-DSA-87
+  hybrid signing, as required by the chain).
+- `qorechain-pqc` dependency ranges raised to accept the deterministic 0.1.1
+  release: Python `>=0.1.1,<0.2`, Rust `0.1.1`, Go `v0.1.1`, Maven `[0.1.0,0.2)`.
+
+### Documentation
+
+- Added an explicit note to the Python, Go, Rust, and Java (JVM) packages:
+  mainnet requires the hybrid PQC signature extension on native-lane
+  transactions; those clients currently sign classical-only (SIGN_MODE_DIRECT)
+  and should be used on permissive networks or paired with the `qorechain-pqc`
+  bindings. The TypeScript path supports hybrid signing via `@qorechain/sdk`.
+
 ## 0.3.0
 
 ### Added

@@ -32,7 +32,7 @@ def test_advice_aggregates_and_flags_fraud_and_congestion():
         ("GET", "/qorechain/rdk/v1/rollup/r1"): {
             "rollup": {"rollup_id": "r1", "status": "paused", "layer_id": "L1"}
         },
-        ("GET", "/qorechain/ai/v1/fee-estimate"): {"gas_price": "0.025uqor"},
+        ("GET", "/qorechain/ai/v1/fee-estimate"): {"gas_price": "0.15uqor"},
         ("GET", "/qorechain/ai/v1/network/recommendations"): {
             "note": "network is congested, raise fees"
         },
@@ -48,7 +48,7 @@ def test_advice_aggregates_and_flags_fraud_and_congestion():
 
     assert advice.rollup_id == "r1"
     assert advice.status == "paused"
-    assert advice.fee_estimate == {"gas_price": "0.025uqor"}
+    assert advice.fee_estimate == {"gas_price": "0.15uqor"}
     assert advice.rl_agent_status == {"epoch": 5}
     # Only the fraud investigation that mentions r1.
     assert len(advice.fraud_investigations) == 1

@@ -33,7 +33,7 @@ import { fromHex } from "@cosmjs/encoding";
 
 const PREFIX = "qor";
 const ROLLUP_ID = process.env.QORE_ROLLUP_ID ?? "demo-rollup";
-const GAS_PRICE = process.env.QORE_GAS_PRICE ?? "0.025uqor";
+const GAS_PRICE = process.env.QORE_GAS_PRICE ?? "0.15uqor";
 
 /** Build an offline signer from QORE_OPERATOR_PRIVATE_KEY_HEX or QORE_MNEMONIC. */
 async function getSigner(): Promise<OfflineSigner> {

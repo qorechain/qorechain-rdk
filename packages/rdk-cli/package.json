@@ -1,7 +1,7 @@
 {
   "name": "@qorechain/rdk-cli",
-  "version": "0.4.0",
-  "description": "qorollup — the operator command line for creating, operating, and monitoring QoreChain rollups.",
+  "version": "0.4.1",
+  "description": "qorollup \u2014 the operator command line for creating, operating, and monitoring QoreChain rollups.",
   "license": "Apache-2.0",
   "author": "QoreChain",
   "type": "module",
@@ -35,8 +35,9 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.7.0",
+    "@qorechain/evm": "^0.5.1",
     "@qorechain/rdk": "workspace:*",
-    "@qorechain/sdk": "^0.1.0",
+    "@qorechain/sdk": "^0.5.1",
     "picocolors": "^1.1.0"
   },
   "devDependencies": {

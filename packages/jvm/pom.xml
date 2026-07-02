@@ -6,7 +6,7 @@
 
   <groupId>io.github.qorechain</groupId>
   <artifactId>qorechain-rdk</artifactId>
-  <version>0.4.0</version>
+  <version>0.4.1</version>
   <packaging>jar</packaging>
 
   <name>QoreChain Rollup Development Kit (JVM)</name>
@@ -44,7 +44,7 @@
     <web3j.version>4.12.3</web3j.version>
     <gson.version>2.11.0</gson.version>
     <junit.version>5.10.2</junit.version>
-    <qorechain-pqc.version>0.1.0</qorechain-pqc.version>
+    <qorechain-pqc.version>[0.1.0,0.2)</qorechain-pqc.version>
   </properties>
 
   <dependencies>
