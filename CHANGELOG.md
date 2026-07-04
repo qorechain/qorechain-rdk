@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.4.2
+
+### Added
+
+- **Public network endpoints in the presets.** The `mainnet` and `testnet`
+  presets now ship the live `qore.host` / `*-testnet.qore.host` endpoints, so
+  `createRdkClient({ network })` reaches the chain out of the box. Localhost
+  defaults remain available (`LOCALHOST_ENDPOINTS`) for local nodes. (All five
+  language clients.)
+- **`native` VM type** — the QoreChain Native (Wasm) runtime. New helpers
+  `isVmType`, `vmTypeWireValue`, and `vmTypeLabel`. (All five clients.)
+
+### Changed
+
+- **Rebrand to "QoreChain Native".** The Wasm rollup VM is now `native`
+  throughout the docs, labels, and the `nft` preset. `cosmwasm` remains an
+  accepted legacy alias, and both `native` and `cosmwasm` map to `cosmwasm` on
+  the wire (the chain, explorer, and dashboard are unchanged). Multi-VM tooling
+  now reads as "EVM → QoreChain Native"; the cross-VM precompile ABI
+  (`executeCrossVMCall`) is unchanged.
+- Documented unified-key / Phantom compatibility: a single unified key
+  (qor1/0x/svm) signs RDK operator transactions like any signer (chain v3.1.83).
+
 ## 0.4.1
 
 ### Changed
