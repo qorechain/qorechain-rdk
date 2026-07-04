@@ -90,24 +90,79 @@ var GasModels = []GasModel{
 	GasSubsidized,
 }
 
-// VmType is the execution environment the rollup exposes. "custom" denotes an
-// application-defined VM; the wire value may be any identifier the network
-// recognizes.
+// VmType is the execution environment the rollup exposes.
+//
+//   - "evm"    -- Ethereum/Solidity.
+//   - "native" -- the QoreChain Native runtime (Wasm smart contracts).
+//   - "svm"    -- the Solana VM.
+//   - "custom" -- an application-defined VM.
+//
+// "cosmwasm" is accepted as a legacy alias of "native" and is what both map to
+// on the wire (the network, explorer, and dashboard use "cosmwasm"). Do not
+// localize or re-case these values.
 type VmType string
 
 const (
 	VmEVM      VmType = "evm"
-	VmCosmWasm VmType = "cosmwasm"
+	VmNative   VmType = "native"
 	VmSVM      VmType = "svm"
 	VmCustom   VmType = "custom"
+	VmCosmWasm VmType = "cosmwasm"
 )
 
-// VmTypes enumerates the well-known VmType values.
+// VmTypes enumerates the advertised VmType values. "native" is the QoreChain
+// Native runtime; the "cosmwasm" legacy alias is accepted (see IsVMType) but
+// deliberately kept out of the advertised list.
 var VmTypes = []VmType{
 	VmEVM,
-	VmCosmWasm,
+	VmNative,
 	VmSVM,
 	VmCustom,
+}
+
+// acceptedVMTypes is the set of VM types IsVMType accepts: the four advertised
+// values plus the "cosmwasm" legacy alias.
+var acceptedVMTypes = map[string]struct{}{
+	string(VmEVM):      {},
+	string(VmNative):   {},
+	string(VmSVM):      {},
+	string(VmCustom):   {},
+	string(VmCosmWasm): {},
+}
+
+// IsVMType reports whether value is a VM type the RDK accepts (the four
+// advertised values plus the "cosmwasm" legacy alias).
+func IsVMType(value string) bool {
+	_, ok := acceptedVMTypes[value]
+	return ok
+}
+
+// VMTypeWireValue returns the on-chain wire value for a VM type. The QoreChain
+// Native runtime ("native") is transmitted as "cosmwasm" for consistency with
+// the network, explorer, and dashboard; all other values pass through
+// unchanged. The wire value is never "native".
+func VMTypeWireValue(vmType string) string {
+	if vmType == string(VmNative) {
+		return string(VmCosmWasm)
+	}
+	return vmType
+}
+
+// VMTypeLabel returns a human-readable label for a VM type. The Wasm runtime
+// (native/cosmwasm) reads as "QoreChain Native".
+func VMTypeLabel(vmType string) string {
+	switch vmType {
+	case string(VmNative), string(VmCosmWasm):
+		return "QoreChain Native"
+	case string(VmEVM):
+		return "EVM"
+	case string(VmSVM):
+		return "SVM"
+	case string(VmCustom):
+		return "Custom"
+	default:
+		return vmType
+	}
 }
 
 // RollupStatus is a rollup lifecycle state.

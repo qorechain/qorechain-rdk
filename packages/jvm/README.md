@@ -17,9 +17,21 @@ native account derivation, and full transaction signing and broadcast for the `r
 <dependency>
   <groupId>io.github.qorechain</groupId>
   <artifactId>qorechain-rdk</artifactId>
-  <version>0.4.0</version>
+  <version>0.4.1</version>
 </dependency>
 ```
+
+## What's new in 0.4.1
+
+- **Public network endpoints** — the `mainnet` and `testnet` presets now ship the
+  live public endpoints (`api`/`rpc`/`evm`/`grpc`[`-testnet`]`.qore.host`) so a
+  client works out of the box; `Networks.localhostEndpoints()` remains available
+  for local dev.
+- **QoreChain Native VM type** — `VmType.NATIVE` (advertised as `native`) is the
+  QoreChain Native runtime; the legacy `cosmwasm` alias is still accepted.
+  `Enums.vmTypeWireValue` maps `native` to the `cosmwasm` wire value for
+  `MsgCreateRollup` (the chain never sees `native`), and the `nft` preset now uses
+  `native`.
 
 ## What's new in 0.4.0
 

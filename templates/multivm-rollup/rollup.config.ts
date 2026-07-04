@@ -30,7 +30,7 @@ export function buildConfig(): RollupConfigBuilder {
     gasModel: "standard",
 
     // The execution environment the rollup exposes.
-    // "evm" | "cosmwasm" | "svm" | "custom".
+    // "evm" | "native" | "svm" | "custom".
     vmType: "evm",
 
     // Target block time, in milliseconds.

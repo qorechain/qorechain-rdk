@@ -96,6 +96,22 @@ The kit also re-exports `PqcSigner`, `generatePqcKeypair`, `pqcSign`, and
 `pqcVerify` for lower-level post-quantum use. The kit exposes exactly the
 primitives the SDK and chain implement — nothing more.
 
+## Unified keys & Phantom
+
+QoreChain supports a **unified account**: one key controls all three address
+forms — `qor1…` (QoreChain Native), `0x…` (EVM), and the SVM address — as a
+single identity, and that same key can sign on every lane (one balance across
+them). Wallets such as **Phantom** can derive and hold this unified key.
+
+The RDK is agnostic to how your signer was produced: it signs operator
+transactions with **any `@cosmjs` `OfflineSigner`**, so a unified eth-native key
+(or a Phantom-derived one) works exactly like a classic `qor`-derived signer —
+the operator address is simply whatever your signer presents, with no RDK
+configuration changes. Generating and managing the unified wallet itself (the
+three addresses, Phantom derivation) is the job of
+[`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk) and the QoreChain
+wallet adapter — build the signer there, then hand it to the RDK's tx client.
+
 ## Funding an account
 
 Creating a rollup commits a stake and burns a small percentage on creation, so

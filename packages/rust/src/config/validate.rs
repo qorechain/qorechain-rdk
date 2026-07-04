@@ -1,6 +1,6 @@
 //! Client-side validation of a rollup configuration against the on-chain rules.
 
-use super::enums::{DaBackend, Sequencer};
+use super::enums::{is_vm_type, DaBackend, Sequencer};
 use super::errors::RollupConfigError;
 use super::matrix::{is_proof_compatible, requires_based_sequencer, valid_proof_systems};
 use super::types::RollupConfig;
@@ -36,8 +36,17 @@ pub fn validate_rollup_config(config: &RollupConfig) -> ValidationResult {
         errors.push("rollupId must be a non-empty string".to_string());
     }
 
-    // The strongly typed enums guarantee valid value sets; the matrix and the
-    // based-sequencer constraint are the remaining cross-field rules.
+    // The strongly typed enums guarantee valid value sets; this mirrors the
+    // reference's `isVmType` check (the wire value of any `VmType` is accepted).
+    if !is_vm_type(config.vm_type.as_str()) {
+        errors.push(format!(
+            "vmType \"{}\" is not a valid VM type",
+            config.vm_type.as_str()
+        ));
+    }
+
+    // The matrix and the based-sequencer constraint are the remaining
+    // cross-field rules.
     if !is_proof_compatible(config.settlement, config.proof_system) {
         let allowed: Vec<&str> = valid_proof_systems(config.settlement)
             .iter()

@@ -10,7 +10,7 @@ sidebar_position: 1
 The QoreChain RDK (Rollup Development Kit) is the developer toolkit for
 designing, launching, configuring, and operating application-specific rollups
 (app-chains) on **QoreChain** — a quantum-safe Layer 1 network with first-class
-CosmWasm, EVM/Solidity, and SVM runtimes.
+QoreChain Native, EVM/Solidity, and SVM runtimes.
 
 The RDK is a **client and operator toolkit**. It talks to QoreChain nodes over
 their public RPC / REST / gRPC / JSON-RPC surfaces and drives rollup creation,
@@ -37,7 +37,7 @@ You configure four orthogonal dimensions per rollup:
 - **Settlement paradigm** — `optimistic`, `zk`, `based`, or `sovereign`.
 - **Sequencer mode** — `dedicated`, `shared`, or `based`.
 - **Data availability** — `native`, `celestia` (planned), or `both`.
-- **Execution VM** — `evm`, `cosmwasm`, `svm`, or `custom`.
+- **Execution VM** — `evm`, `native`, `svm`, or `custom`.
 
 Plus a gas model and per-rollup limits. The RDK enforces the compatibility
 matrix between these dimensions before anything is submitted on-chain.
@@ -61,13 +61,13 @@ against shared cross-language golden vectors.
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | Available (v0.4.0) |
-| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.4.0) |
-| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.4.0) |
-| `qorechain-rdk` | Go | Available (v0.4.0, `go get`) |
-| `qorechain-rdk` | Python | Available on PyPI (v0.4.0, imports as `qorrdk`) |
-| `qorechain-rdk` | Rust | Available on crates.io (v0.4.0) |
-| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.4.0) |
+| `@qorechain/rdk` | TypeScript | Available (v0.4.1) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.4.1) |
+| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.4.1) |
+| `qorechain-rdk` | Go | Available (v0.4.1, `go get`) |
+| `qorechain-rdk` | Python | Available on PyPI (v0.4.1, imports as `qorrdk`) |
+| `qorechain-rdk` | Rust | Available on crates.io (v0.4.1) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.4.1) |
 
 The TypeScript core (`@qorechain/rdk`) is the basis for the examples in this
 documentation.
@@ -88,7 +88,7 @@ documentation.
   advice for a rollup.
 - [Quantum-safe settlement receipts](guides/settlement-receipts.md) — portable,
   offline-verifiable batch-anchor proofs.
-- [Multi-VM (cross-VM calls)](guides/multi-vm.md) — EVM → CosmWasm via the
+- [Multi-VM (cross-VM calls)](guides/multi-vm.md) — EVM → QoreChain Native via the
   cross-VM precompile.
 - [Watchtower](guides/watchtower.md) — auto-challenger framework for optimistic
   rollups.

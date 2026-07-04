@@ -19,18 +19,38 @@ type NetworkConfig struct {
 	Endpoints Endpoints `json:"endpoints"`
 }
 
-var localhostEndpoints = Endpoints{
+// LocalhostEndpoints are the defaults for running against a local node.
+// Override a preset's Endpoints with these for local development.
+var LocalhostEndpoints = Endpoints{
 	Rest:   "http://localhost:1317",
 	RPC:    "http://localhost:26657",
 	GRPC:   "localhost:9090",
 	EvmRPC: "http://localhost:8545",
 }
 
-// Networks are the built-in network presets. Endpoint defaults point at
-// localhost; override them to reach a real node.
+// mainnetEndpoints are the public mainnet endpoints (qorechain-vladi).
+var mainnetEndpoints = Endpoints{
+	Rest:   "https://api.qore.host",
+	RPC:    "https://rpc.qore.host",
+	GRPC:   "grpc.qore.host:443",
+	EvmRPC: "https://evm.qore.host",
+}
+
+// testnetEndpoints are the public testnet endpoints (qorechain-diana).
+var testnetEndpoints = Endpoints{
+	Rest:   "https://api-testnet.qore.host",
+	RPC:    "https://rpc-testnet.qore.host",
+	GRPC:   "grpc-testnet.qore.host:443",
+	EvmRPC: "https://evm-testnet.qore.host",
+}
+
+// Networks are the built-in network presets. Each ships the network's public
+// endpoints so GetNetwork works out of the box; override a preset's Endpoints
+// with LocalhostEndpoints to reach a local node, or with your own
+// infrastructure.
 var Networks = map[string]NetworkConfig{
-	"testnet": {Name: "testnet", ChainID: TestnetChainID, Endpoints: localhostEndpoints},
-	"mainnet": {Name: "mainnet", ChainID: MainnetChainID, Endpoints: localhostEndpoints},
+	"testnet": {Name: "testnet", ChainID: TestnetChainID, Endpoints: testnetEndpoints},
+	"mainnet": {Name: "mainnet", ChainID: MainnetChainID, Endpoints: mainnetEndpoints},
 }
 
 // GetNetwork looks up a network preset by name. An empty name defaults to

@@ -36,7 +36,7 @@ var PresetDefaults = map[Profile]RollupConfig{
 		DA:                  DACelestia,
 		ProofSystem:         ProofFraud,
 		GasModel:            GasStandard,
-		VmType:              VmCosmWasm,
+		VmType:              VmNative,
 		BlockTimeMs:         2000,
 		MaxTxPerBlock:       5000,
 		ChallengeWindowSecs: DefaultChallengeWindowSecs,

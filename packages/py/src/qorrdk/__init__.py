@@ -48,11 +48,17 @@ from .enums import (  # noqa: E402
     SequencerMode,
     SettlementParadigm,
     VmType,
+    is_vm_type,
+    vm_type_label,
+    vm_type_wire_value,
 )
 
 # Configuration: types, networks, matrix, validation, builder.
 from .config import (  # noqa: E402
+    LOCALHOST_ENDPOINTS,
+    MAINNET_ENDPOINTS,
     NETWORKS,
+    TESTNET_ENDPOINTS,
     CreateRollupMsgInput,
     Endpoints,
     NetworkConfig,
@@ -264,6 +270,9 @@ __all__ = [
     "ROLLUP_STATUSES",
     "BATCH_STATUSES",
     "PROFILE_NAMES",
+    "is_vm_type",
+    "vm_type_wire_value",
+    "vm_type_label",
     # config
     "RollupConfig",
     "SequencerParams",
@@ -280,6 +289,9 @@ __all__ = [
     "Endpoints",
     "NetworkConfig",
     "NETWORKS",
+    "LOCALHOST_ENDPOINTS",
+    "MAINNET_ENDPOINTS",
+    "TESTNET_ENDPOINTS",
     "get_network",
     "list_networks",
     # presets

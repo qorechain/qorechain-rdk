@@ -13,7 +13,7 @@ a quantum-safe Layer 1.
 
 ## The execution layer
 
-Your rollup executes transactions in its own runtime — `evm`, `cosmwasm`, `svm`,
+Your rollup executes transactions in its own runtime — `evm`, `native`, `svm`,
 or a `custom` VM — at its own block time and throughput. This is where your
 application's activity lives: trades, game state, mints, enterprise workflows.
 The Main Chain is not in the hot path for these transactions, which is what lets

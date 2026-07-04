@@ -23,7 +23,7 @@ const config = presets.defi({ rollupId: "my-defi-rollup" });
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `defi` | zk (snark) | dedicated | native | 500 ms | eip1559 | EVM | 10,000 |
 | `gaming` | based | based | native | 200 ms | flat | custom | 50,000 |
-| `nft` | optimistic | dedicated | celestia | 2,000 ms | standard | CosmWasm | 5,000 |
+| `nft` | optimistic | dedicated | celestia | 2,000 ms | standard | QoreChain Native | 5,000 |
 | `enterprise` | based | based | native | 1,000 ms | subsidized | EVM | 20,000 |
 | `custom` | optimistic | dedicated | native | 1,000 ms | standard | EVM | 10,000 |
 
@@ -39,7 +39,7 @@ const config = presets.defi({ rollupId: "my-defi-rollup" });
 - **`gaming`** — high-throughput, low-latency apps. Based settlement and a
   based sequencer with flat gas on a custom VM, tuned for many small
   transactions per block.
-- **`nft`** — general-purpose minting and marketplaces on CosmWasm with
+- **`nft`** — general-purpose minting and marketplaces on QoreChain Native with
   optimistic settlement and a simple standard gas model.
 - **`enterprise`** — permissioned-friendly EVM rollups with subsidized gas and
   based settlement for predictable, host-coupled finality.

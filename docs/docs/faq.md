@@ -47,7 +47,7 @@ and plain-language suggestions for a rollup. **Quantum-safe settlement receipts*
 (`buildSettlementReceipt` / `verifySettlementReceipt`) are portable,
 offline-verifiable proofs that a batch was anchored under an ML-DSA-87
 (Dilithium-5) signature. **Multi-VM tooling** (`encodeCrossVmCalldata` and the
-`CROSS_VM_PRECOMPILE` address) drives EVM → CosmWasm cross-VM calls, with a new
+`CROSS_VM_PRECOMPILE` address) drives EVM → QoreChain Native cross-VM calls, with a new
 `multivm-rollup` template. The **Watchtower** (`watchBatches`) is an
 auto-challenger framework for optimistic rollups. The Copilot and receipts ship
 in all five languages; the multi-VM tooling and Watchtower are TypeScript. See

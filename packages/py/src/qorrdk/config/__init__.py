@@ -11,7 +11,10 @@ from .matrix import (
     valid_proof_systems,
 )
 from .networks import (
+    LOCALHOST_ENDPOINTS,
+    MAINNET_ENDPOINTS,
     NETWORKS,
+    TESTNET_ENDPOINTS,
     Endpoints,
     NetworkConfig,
     get_network,
@@ -40,6 +43,9 @@ __all__ = [
     "Endpoints",
     "NetworkConfig",
     "NETWORKS",
+    "LOCALHOST_ENDPOINTS",
+    "MAINNET_ENDPOINTS",
+    "TESTNET_ENDPOINTS",
     "get_network",
     "list_networks",
 ]

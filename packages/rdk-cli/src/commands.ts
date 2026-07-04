@@ -32,6 +32,7 @@ import {
   getRollupAdvice,
   buildSettlementReceipt,
   verifySettlementReceipt,
+  vmTypeLabel,
   type ProfileName,
   type RawEvent,
 } from "@qorechain/rdk";
@@ -153,7 +154,7 @@ export async function cmdStatus(ctx: CliContext, parsed: ParsedCli): Promise<num
   ctx.out.line(`  profile:    ${rollup.profile}`);
   ctx.out.line(`  settlement: ${rollup.settlementMode}`);
   ctx.out.line(`  DA:         ${rollup.daBackend}`);
-  ctx.out.line(`  VM:         ${rollup.vmType}`);
+  ctx.out.line(`  VM:         ${vmTypeLabel(rollup.vmType)}`);
   if (health.hasBatches) {
     ctx.out.line(`  latest batch #${health.latestBatchIndex} (${health.latestBatchStatus}), age ${health.batchAgeSecs}s`);
     if (health.secondsUntilChallengeDeadline !== undefined) {

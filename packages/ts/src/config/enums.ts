@@ -32,12 +32,52 @@ export type GasModel = "standard" | "eip1559" | "flat" | "subsidized";
 export const GAS_MODELS: readonly GasModel[] = ["standard", "eip1559", "flat", "subsidized"];
 
 /**
- * The execution environment the rollup exposes. `custom` denotes an
- * application-defined VM; the wire value may be any identifier the network
- * recognizes.
+ * The execution environment the rollup exposes.
+ *
+ * - `evm` — Ethereum/Solidity.
+ * - `native` — the QoreChain Native runtime (Wasm smart contracts).
+ * - `svm` — the Solana VM.
+ * - `custom` — an application-defined VM.
+ *
+ * `cosmwasm` is accepted as a legacy alias of `native` and is what both map to
+ * on the wire (the network, explorer, and dashboard use `cosmwasm`).
  */
-export type VmType = "evm" | "cosmwasm" | "svm" | "custom";
-export const VM_TYPES: readonly VmType[] = ["evm", "cosmwasm", "svm", "custom"];
+export type VmType = "evm" | "native" | "svm" | "custom" | "cosmwasm";
+/** The advertised VM types (`native` is the QoreChain Native runtime). */
+export const VM_TYPES: readonly VmType[] = ["evm", "native", "svm", "custom"];
+
+const ACCEPTED_VM_TYPES = new Set<string>([...VM_TYPES, "cosmwasm"]);
+
+/** Whether `value` is a VM type the RDK accepts (includes the `cosmwasm` alias). */
+export function isVmType(value: string): boolean {
+  return ACCEPTED_VM_TYPES.has(value);
+}
+
+/**
+ * The on-chain wire value for a VM type. The QoreChain Native runtime (`native`)
+ * is transmitted as `cosmwasm` for consistency with the network, explorer, and
+ * dashboard; all other values pass through unchanged.
+ */
+export function vmTypeWireValue(vmType: string): string {
+  return vmType === "native" ? "cosmwasm" : vmType;
+}
+
+/** A human-readable label for a VM type (the Wasm runtime reads as QoreChain Native). */
+export function vmTypeLabel(vmType: string): string {
+  switch (vmType) {
+    case "native":
+    case "cosmwasm":
+      return "QoreChain Native";
+    case "evm":
+      return "EVM";
+    case "svm":
+      return "SVM";
+    case "custom":
+      return "Custom";
+    default:
+      return vmType;
+  }
+}
 
 /** Rollup lifecycle states. */
 export type RollupStatus = "pending" | "active" | "paused" | "stopped";

@@ -24,7 +24,7 @@ is the only kit that can express it — in TypeScript, Python, Go, Rust, and Jav
 | --- | --- | --- |
 | **Quantum-safe settlement receipts** | 🟢 Unique (first-mover) | Needs a post-quantum L1 — impossible on a non-PQC base layer |
 | **QCAI Rollup Copilot** | 🟢 Unique through the chain | Wraps QoreChain-only on-chain AI/RL endpoints |
-| **Multi-VM cross-VM calls** | 🟡 Distinctive | QoreChain runs EVM + CosmWasm + SVM under one chain |
+| **Multi-VM cross-VM calls** | 🟡 Distinctive | QoreChain runs EVM + QoreChain Native + SVM under one chain |
 
 ---
 
@@ -125,19 +125,19 @@ See [QCAI Copilot](guides/qcai-copilot.md).
 
 ## 3. Multi-VM cross-VM calls
 
-> 🟡 **Distinctive.** QoreChain runs EVM, CosmWasm, and SVM under one chain, with
-> a precompile that bridges EVM → CosmWasm.
+> 🟡 **Distinctive.** QoreChain runs EVM, QoreChain Native, and SVM under one chain, with
+> a precompile that bridges EVM → QoreChain Native.
 
-Your EVM (Solidity) rollup contract can call an existing **CosmWasm** contract
+Your EVM (Solidity) rollup contract can call an existing **QoreChain Native (Wasm)** contract
 through a fixed precompile at `0x…0901`. The RDK builds the calldata for you, so
-you can reuse a CosmWasm oracle, token, or registry from Solidity without
+you can reuse a QoreChain Native oracle, token, or registry from Solidity without
 re-implementing it.
 
 ```ts
 import { encodeCrossVmCalldata, CROSS_VM_PRECOMPILE } from "@qorechain/rdk";
 
 const calldata = encodeCrossVmCalldata({
-  contract: "qor1examplecontract…",       // target CosmWasm contract
+  contract: "qor1examplecontract…",       // target QoreChain Native (Wasm) contract
   msg: JSON.stringify({ increment: {} }),  // its execute message
 });
 
@@ -150,7 +150,7 @@ Or directly from Solidity on your rollup:
 ```solidity
 address constant CROSS_VM_PRECOMPILE = 0x0000000000000000000000000000000000000901;
 
-function callCosmWasm(string calldata contractAddr, bytes calldata msg_)
+function callNative(string calldata contractAddr, bytes calldata msg_)
     external returns (bytes memory)
 {
     bytes memory data =
@@ -162,7 +162,7 @@ function callCosmWasm(string calldata contractAddr, bytes calldata msg_)
 ```
 
 Scaffold a starter with `npm create qorechain-rollup my-app -- --template multivm-rollup`.
-(EVM↔CosmWasm only; SVM cross-calls are separate.) See [Multi-VM](guides/multi-vm.md).
+(EVM↔QoreChain Native only; SVM cross-calls are separate.) See [Multi-VM](guides/multi-vm.md).
 
 ---
 

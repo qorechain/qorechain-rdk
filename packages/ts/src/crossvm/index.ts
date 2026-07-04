@@ -1,22 +1,22 @@
 /**
- * Multi-VM tooling — helpers for the EVM→CosmWasm cross-VM precompile.
+ * Multi-VM tooling — helpers for the EVM→QoreChain Native cross-VM precompile.
  *
  * QoreChain exposes a precompile at a fixed address that lets EVM (Solidity)
- * contracts call into CosmWasm contracts. This module builds the EVM calldata
+ * contracts call into QoreChain Native (Wasm) contracts. This module builds the EVM calldata
  * for that precompile. The precompile's function signature is chain-defined;
  * the documented default below is used to derive the 4-byte selector, and you
  * can override it to match the exact ABI your node exposes.
  *
- * Note: this is the EVM↔CosmWasm bridge only. SVM cross-calls are separate.
+ * Note: this is the EVM↔QoreChain Native bridge only. SVM cross-calls are separate.
  */
 import { keccak256 } from "@cosmjs/crypto";
 import { bytesToHex, toBytes } from "../utils/bytes";
 
-/** The fixed address of the cross-VM precompile (EVM→CosmWasm). */
+/** The fixed address of the cross-VM precompile (EVM→QoreChain Native). */
 export const CROSS_VM_PRECOMPILE = "0x0000000000000000000000000000000000000901";
 
 /**
- * The documented default precompile signature: a CosmWasm contract address
+ * The documented default precompile signature: a QoreChain Native (Wasm) contract address
  * (bech32 string) and the execute message (bytes, typically UTF-8 JSON).
  * Confirm against your node's precompile ABI before relying on the selector.
  */
@@ -75,11 +75,11 @@ export function encodeDynamicTuple(items: Uint8Array[]): Uint8Array {
   return concat([...offsets, ...tail]);
 }
 
-/** A cross-VM call from an EVM context into a CosmWasm contract. */
+/** A cross-VM call from an EVM context into a QoreChain Native contract. */
 export interface CrossVmCall {
-  /** The target CosmWasm contract (bech32 `qor…` address). */
+  /** The target QoreChain Native (Wasm) contract (bech32 `qor…` address). */
   contract: string;
-  /** The CosmWasm execute message (UTF-8 JSON string or raw bytes). */
+  /** The QoreChain Native (Wasm) execute message (UTF-8 JSON string or raw bytes). */
   msg: string | Uint8Array;
   /** Override the precompile signature if your node's ABI differs. */
   signature?: string;

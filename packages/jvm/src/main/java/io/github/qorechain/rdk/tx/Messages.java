@@ -1,5 +1,6 @@
 package io.github.qorechain.rdk.tx;
 
+import io.github.qorechain.rdk.config.Enums;
 import io.github.qorechain.rdk.util.Bytes;
 import java.util.ArrayList;
 import java.util.List;
@@ -242,7 +243,8 @@ public final class Messages {
         m.creator = in.creator;
         m.rollupId = in.rollupId;
         m.profile = in.profile;
-        m.vmType = in.vmType;
+        // The QoreChain Native runtime ("native") goes on the wire as "cosmwasm"; never emit "native".
+        m.vmType = Enums.vmTypeWireValue(in.vmType);
         m.stakeAmount = in.stakeAmount;
         return m;
     }

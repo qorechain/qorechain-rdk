@@ -77,7 +77,7 @@
       "da": "celestia",
       "proofSystem": "fraud",
       "gasModel": "standard",
-      "vmType": "cosmwasm",
+      "vmType": "native",
       "blockTimeMs": 2000,
       "maxTxPerBlock": 5000,
       "challengeWindowSecs": 604800,

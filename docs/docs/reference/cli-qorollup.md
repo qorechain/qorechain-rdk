@@ -29,7 +29,7 @@ environment variables. Flags always win over environment variables.
 
 ```bash
 export QORE_NETWORK=testnet              # or mainnet (default: testnet)
-export QORE_REST_URL=https://rest...     # Cosmos REST (LCD) — reads
+export QORE_REST_URL=https://rest...     # REST (LCD) — reads
 export QORE_RPC_URL=https://rpc...        # consensus RPC — signing/broadcast
 export QORE_EVM_RPC_URL=https://evm...    # EVM + qor_ JSON-RPC
 export QORE_MNEMONIC="word word ..."      # signer (mnemonic)

@@ -9,7 +9,7 @@ sidebar_position: 2
 `create-qorechain-rollup` scaffolds a complete, ready-to-run rollup starter
 project. Each template is built around one of the five [preset
 profiles](../guides/profiles.md), plus a `multivm-rollup` starter for cross-VM
-(EVM → CosmWasm) calls.
+(EVM → QoreChain Native) calls.
 
 > Published on npm as `create-qorechain-rollup` (run via `npm create
 > qorechain-rollup`). To operate an existing rollup, see the
@@ -51,10 +51,10 @@ prompts.
 | --- | --- | --- |
 | `defi-rollup` | `defi` | zk-SNARK / dedicated / native / EIP-1559 / EVM. Includes a reference SNARK prover. |
 | `gaming-rollup` | `gaming` | based / based / native / flat gas / custom VM. High throughput, low latency. |
-| `nft-rollup` | `nft` | optimistic / dedicated / CosmWasm. Includes the challenge flow and Celestia notice. |
+| `nft-rollup` | `nft` | optimistic / dedicated / QoreChain Native. Includes the challenge flow and Celestia notice. |
 | `enterprise-rollup` | `enterprise` | based / based / native / subsidized gas / EVM. Permissioned-friendly. |
 | `custom-rollup` | `custom` | Fully parameterized config with every field documented and validated. |
-| `multivm-rollup` | `custom` | EVM rollup that calls CosmWasm via the cross-VM precompile. Includes a `contracts/CrossVmCaller.sol` snippet (EVM → CosmWasm). |
+| `multivm-rollup` | `custom` | EVM rollup that calls QoreChain Native via the cross-VM precompile. Includes a `contracts/CrossVmCaller.sol` snippet (EVM → QoreChain Native). |
 
 ## Examples
 

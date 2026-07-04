@@ -138,9 +138,12 @@ fn preset_defaults_match_golden() {
             gd["gasModel"].as_str().unwrap(),
             "{key} gasModel"
         );
+        // The golden records the resolved client-side config value ("native");
+        // VmType::as_str() gives the on-chain wire value ("cosmwasm" for native),
+        // so map the fixture through vm_type_wire_value to compare like-for-like.
         assert_eq!(
             d.vm_type.as_str(),
-            gd["vmType"].as_str().unwrap(),
+            qorechain_rdk::config::vm_type_wire_value(gd["vmType"].as_str().unwrap()),
             "{key} vmType"
         );
         assert_eq!(

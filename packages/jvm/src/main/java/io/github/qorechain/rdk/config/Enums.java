@@ -1,5 +1,8 @@
 package io.github.qorechain.rdk.config;
 
+import java.util.List;
+import java.util.Set;
+
 /**
  * The closed value sets accepted by the QoreChain {@code rdk} module.
  *
@@ -145,14 +148,25 @@ public final class Enums {
     }
 
     /**
-     * The execution environment the rollup exposes. {@code CUSTOM} denotes an application-defined
-     * VM; the wire value may be any identifier the network recognizes.
+     * The execution environment the rollup exposes.
+     *
+     * <ul>
+     *   <li>{@code EVM} — Ethereum/Solidity.
+     *   <li>{@code NATIVE} — the QoreChain Native runtime (Wasm smart contracts).
+     *   <li>{@code SVM} — the Solana VM.
+     *   <li>{@code CUSTOM} — an application-defined VM.
+     * </ul>
+     *
+     * <p>{@code COSMWASM} is accepted as a legacy alias of {@code NATIVE} and is what both map to on
+     * the wire of an on-chain {@code MsgCreateRollup} (the network, explorer, and dashboard use
+     * {@code cosmwasm}). See {@link #vmTypeWireValue(String)} and {@link #vmTypeLabel(String)}.
      */
     public enum VmType {
         EVM("evm"),
-        COSMWASM("cosmwasm"),
+        NATIVE("native"),
         SVM("svm"),
-        CUSTOM("custom");
+        CUSTOM("custom"),
+        COSMWASM("cosmwasm");
 
         private final String wire;
 
@@ -171,6 +185,46 @@ public final class Enums {
                 }
             }
             return null;
+        }
+    }
+
+    /** The advertised VM types ({@code native} is the QoreChain Native runtime). */
+    public static final List<String> VM_TYPES = List.of("evm", "native", "svm", "custom");
+
+    private static final Set<String> ACCEPTED_VM_TYPES =
+            Set.of("evm", "native", "svm", "custom", "cosmwasm");
+
+    /** Whether {@code value} is a VM type the RDK accepts (includes the {@code cosmwasm} alias). */
+    public static boolean isVmType(String value) {
+        return value != null && ACCEPTED_VM_TYPES.contains(value);
+    }
+
+    /**
+     * The on-chain wire value for a VM type. The QoreChain Native runtime ({@code native}) is
+     * transmitted as {@code cosmwasm} for consistency with the network, explorer, and dashboard; all
+     * other values pass through unchanged. The wire value is never {@code native}.
+     */
+    public static String vmTypeWireValue(String vmType) {
+        return "native".equals(vmType) ? "cosmwasm" : vmType;
+    }
+
+    /** A human-readable label for a VM type (the Wasm runtime reads as QoreChain Native). */
+    public static String vmTypeLabel(String vmType) {
+        if (vmType == null) {
+            return null;
+        }
+        switch (vmType) {
+            case "native":
+            case "cosmwasm":
+                return "QoreChain Native";
+            case "evm":
+                return "EVM";
+            case "svm":
+                return "SVM";
+            case "custom":
+                return "Custom";
+            default:
+                return vmType;
         }
     }
 

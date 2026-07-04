@@ -41,7 +41,7 @@ node and point the RDK at it):
 | Endpoint | Mainnet | Testnet |
 | --- | --- | --- |
 | Consensus RPC | `https://rpc.qore.host` | `https://rpc-testnet.qore.host` |
-| Cosmos REST (LCD) | `https://api.qore.host` | `https://api-testnet.qore.host` |
+| REST (LCD) | `https://api.qore.host` | `https://api-testnet.qore.host` |
 | EVM / `qor_` JSON-RPC | `https://evm.qore.host` | `https://evm-testnet.qore.host` |
 | EVM WebSocket | — | `wss://evm-ws-testnet.qore.host` |
 | SVM RPC | `https://svm.qore.host` | `https://svm-testnet.qore.host` |
@@ -51,12 +51,13 @@ The public block explorer is [explore.qore.network](https://explore.qore.network
 
 ## Default ports
 
-`createRdkClient()` uses these localhost ports by default. Override `endpoints`
-to point at a real node.
+`createRdkClient({ network })` ships each network's public endpoints by default
+(see above). To run against a **local node**, override `endpoints` with these
+localhost ports:
 
 | Endpoint | Port | Purpose |
 | --- | --- | --- |
-| Cosmos REST (LCD) | `1317` | rollup queries, batches, blobs, module params |
+| REST (LCD) | `1317` | rollup queries, batches, blobs, module params |
 | Consensus RPC | `26657` | signing/broadcasting rollup txs |
 | gRPC | `9090` | gRPC queries |
 | EVM / `qor_` JSON-RPC | `8545` | `qor_*` calls, including the profile advisory |
@@ -77,8 +78,8 @@ const rdk = createRdkClient({
 
 ## Targeting mainnet
 
-Both presets ship the same localhost defaults; select `mainnet` and override the
-endpoints with the public mainnet endpoints (or your own node URLs):
+Selecting `mainnet` uses the public mainnet endpoints automatically. Override
+`endpoints` only to point at your own node URLs:
 
 ```ts
 const main = createRdkClient({

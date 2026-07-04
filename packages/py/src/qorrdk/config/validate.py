@@ -11,7 +11,7 @@ from ..enums import (
     PROOF_SYSTEMS,
     SEQUENCER_MODES,
     SETTLEMENT_PARADIGMS,
-    VM_TYPES,
+    is_vm_type,
 )
 from .errors import RollupConfigError
 from .matrix import (
@@ -84,7 +84,7 @@ def validate_rollup_config(config: RollupConfig) -> ValidationResult:
         errors.append(f'da "{da}" is not a valid data-availability backend')
     if gas_model not in GAS_MODELS:
         errors.append(f'gas_model "{gas_model}" is not a valid gas model')
-    if vm_type not in VM_TYPES:
+    if not is_vm_type(vm_type):
         errors.append(f'vm_type "{vm_type}" is not a valid VM type')
 
     # Compatibility matrix (only meaningful once both values are valid).

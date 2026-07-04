@@ -3,6 +3,8 @@
 
 use cosmrs::Any;
 
+use crate::config::vm_type_wire_value;
+
 use super::codecs::{
     MsgChallengeBatch, MsgCreateRollup, MsgExecuteWithdrawal, MsgPauseRollup, MsgResolveChallenge,
     MsgResumeRollup, MsgStopRollup, MsgSubmitBatch, RdkMsg,
@@ -38,7 +40,9 @@ impl CreateRollupInput {
             creator: self.creator.clone(),
             rollup_id: self.rollup_id.clone(),
             profile: self.profile.clone(),
-            vm_type: self.vm_type.clone(),
+            // The QoreChain Native runtime (`native`) is transmitted as
+            // `cosmwasm`; every other value passes through unchanged.
+            vm_type: vm_type_wire_value(&self.vm_type).to_string(),
             stake_amount: self.stake_amount,
         }
     }

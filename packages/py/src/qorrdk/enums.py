@@ -56,14 +56,22 @@ class GasModel(str, Enum):
 class VmType(str, Enum):
     """The execution environment the rollup exposes.
 
-    ``custom`` denotes an application-defined VM; the wire value may be any
-    identifier the network recognizes.
+    - ``EVM`` -- Ethereum/Solidity.
+    - ``NATIVE`` -- the QoreChain Native runtime (Wasm smart contracts).
+    - ``SVM`` -- the Solana VM.
+    - ``CUSTOM`` -- an application-defined VM.
+
+    ``COSMWASM`` is accepted as a legacy alias of ``NATIVE`` and is what both map
+    to on the wire (the network, explorer, and dashboard use ``cosmwasm``). It is
+    not part of the advertised :data:`VM_TYPES`.
     """
 
     EVM = "evm"
-    COSMWASM = "cosmwasm"
+    NATIVE = "native"
     SVM = "svm"
     CUSTOM = "custom"
+    #: Legacy alias of :attr:`NATIVE`; the on-chain wire value both resolve to.
+    COSMWASM = "cosmwasm"
 
 
 class RollupStatus(str, Enum):
@@ -99,10 +107,45 @@ SEQUENCER_MODES: tuple[str, ...] = tuple(m.value for m in SequencerMode)
 PROOF_SYSTEMS: tuple[str, ...] = tuple(m.value for m in ProofSystem)
 DA_BACKENDS: tuple[str, ...] = tuple(m.value for m in DABackend)
 GAS_MODELS: tuple[str, ...] = tuple(m.value for m in GasModel)
-VM_TYPES: tuple[str, ...] = tuple(m.value for m in VmType)
+#: The advertised VM types (``native`` is the QoreChain Native runtime). The
+#: ``cosmwasm`` legacy alias is accepted by :func:`is_vm_type` but not advertised.
+VM_TYPES: tuple[str, ...] = ("evm", "native", "svm", "custom")
 ROLLUP_STATUSES: tuple[str, ...] = tuple(m.value for m in RollupStatus)
 BATCH_STATUSES: tuple[str, ...] = tuple(m.value for m in BatchStatus)
 PROFILE_NAMES: tuple[str, ...] = tuple(m.value for m in ProfileName)
+
+_ACCEPTED_VM_TYPES: frozenset[str] = frozenset((*VM_TYPES, "cosmwasm"))
+
+
+def is_vm_type(value: object) -> bool:
+    """Whether ``value`` is a VM type the RDK accepts (includes the ``cosmwasm`` alias)."""
+    return getattr(value, "value", value) in _ACCEPTED_VM_TYPES
+
+
+def vm_type_wire_value(vm_type: object) -> str:
+    """The on-chain wire value for a VM type.
+
+    The QoreChain Native runtime (``native``) is transmitted as ``cosmwasm`` for
+    consistency with the network, explorer, and dashboard; all other values pass
+    through unchanged.
+    """
+    value = str(getattr(vm_type, "value", vm_type))
+    return "cosmwasm" if value == "native" else value
+
+
+def vm_type_label(vm_type: object) -> str:
+    """A human-readable label for a VM type (the Wasm runtime reads as QoreChain Native)."""
+    value = str(getattr(vm_type, "value", vm_type))
+    if value in ("native", "cosmwasm"):
+        return "QoreChain Native"
+    if value == "evm":
+        return "EVM"
+    if value == "svm":
+        return "SVM"
+    if value == "custom":
+        return "Custom"
+    return value
+
 
 __all__ = [
     "SettlementParadigm",
@@ -123,4 +166,7 @@ __all__ = [
     "ROLLUP_STATUSES",
     "BATCH_STATUSES",
     "PROFILE_NAMES",
+    "is_vm_type",
+    "vm_type_wire_value",
+    "vm_type_label",
 ]

@@ -50,8 +50,11 @@ public final class Validate {
         if (config.gasModel == null) {
             errors.add("gasModel \"null\" is not a valid gas model");
         }
-        if (config.vmType == null) {
-            errors.add("vmType \"null\" is not a valid VM type");
+        if (config.vmType == null || !Enums.isVmType(config.vmType.wire())) {
+            errors.add(
+                    "vmType \""
+                            + (config.vmType == null ? "null" : config.vmType.wire())
+                            + "\" is not a valid VM type");
         }
 
         // Compatibility matrix (only meaningful once both values are valid).

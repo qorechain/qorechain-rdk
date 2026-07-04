@@ -6,11 +6,11 @@ sidebar_position: 14
 
 # Multi-VM (cross-VM calls)
 
-A multi-VM rollup runs an EVM execution layer that can call into CosmWasm
+A multi-VM rollup runs an EVM execution layer that can call into QoreChain Native (Wasm)
 contracts through a dedicated **cross-VM precompile**. The RDK ships the
 TypeScript tooling to encode those calls and a scaffold template to start from.
 
-> This tooling covers **EVM → CosmWasm** only. SVM is a separate runtime and is
+> This tooling covers **EVM → QoreChain Native** only. SVM is a separate runtime and is
 > not part of the cross-VM precompile.
 
 ## The precompile
@@ -26,14 +26,14 @@ console.log(CROSS_VM_PRECOMPILE); // 0x…0901
 ## Encoding a cross-VM call
 
 `encodeCrossVmCalldata` builds the calldata your EVM contract sends to the
-precompile to invoke a CosmWasm contract. `functionSelector` computes the 4-byte
+precompile to invoke a QoreChain Native (Wasm) contract. `functionSelector` computes the 4-byte
 selector for a Solidity function signature.
 
 ```ts
 import { encodeCrossVmCalldata, functionSelector } from "@qorechain/rdk";
 
 const calldata = encodeCrossVmCalldata({
-  contract: "qor1cosmwasmcontractaddress...",
+  contract: "qor1nativecontractaddress...",
   msg: { transfer: { recipient: "qor1...", amount: "100" } },
 });
 
@@ -59,7 +59,7 @@ function callCosmwasm(bytes memory calldata_) internal returns (bytes memory) {
 
 ## Scaffold a multi-VM rollup
 
-A new template, `multivm-rollup`, scaffolds an EVM rollup wired to call CosmWasm,
+A new template, `multivm-rollup`, scaffolds an EVM rollup wired to call QoreChain Native (Wasm),
 including the `CrossVmCaller.sol` snippet:
 
 ```bash

@@ -4,7 +4,7 @@ import {
   PROOF_SYSTEMS,
   SEQUENCER_MODES,
   SETTLEMENT_PARADIGMS,
-  VM_TYPES,
+  isVmType,
 } from "./enums";
 import { isProofCompatible, requiresBasedSequencer, validProofSystems } from "./matrix";
 import type { RollupConfig } from "./types";
@@ -55,7 +55,7 @@ export function validateRollupConfig(config: RollupConfig): ValidationResult {
   if (!GAS_MODELS.includes(config.gasModel)) {
     errors.push(`gasModel "${config.gasModel}" is not a valid gas model`);
   }
-  if (!VM_TYPES.includes(config.vmType)) {
+  if (!isVmType(config.vmType)) {
     errors.push(`vmType "${config.vmType}" is not a valid VM type`);
   }
 

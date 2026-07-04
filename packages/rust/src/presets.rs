@@ -69,7 +69,7 @@ pub fn preset_defaults(profile: Profile) -> PresetDefaults {
             da: DaBackend::Celestia,
             proof_system: ProofSystem::Fraud,
             gas_model: GasModel::Standard,
-            vm_type: VmType::CosmWasm,
+            vm_type: VmType::Native,
             block_time_ms: 2000,
             max_tx_per_block: 5000,
             challenge_window_secs: Some(DEFAULT_CHALLENGE_WINDOW_SECS as i64),

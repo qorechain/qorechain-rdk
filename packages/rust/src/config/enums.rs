@@ -133,14 +133,125 @@ wire_enum! {
     }
 }
 
-wire_enum! {
-    /// The execution environment the rollup exposes. `Custom` denotes an
-    /// application-defined VM.
-    VmType, "VM type", VM_TYPES => {
-        Evm => "evm",
-        CosmWasm => "cosmwasm",
-        Svm => "svm",
-        Custom => "custom",
+/// The execution environment the rollup exposes.
+///
+/// - `Evm` — Ethereum/Solidity.
+/// - `Native` — the QoreChain Native runtime (Wasm smart contracts).
+/// - `Svm` — the Solana VM.
+/// - `Custom` — an application-defined VM.
+///
+/// `CosmWasm` is a legacy alias of `Native`: both serialize to `cosmwasm` on the
+/// wire (the network, explorer, and dashboard use `cosmwasm`), and the alias is
+/// accepted when deserializing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum VmType {
+    /// Wire value `evm`.
+    Evm,
+    /// The QoreChain Native runtime (Wasm). Wire value `cosmwasm`.
+    Native,
+    /// Legacy alias of [`VmType::Native`]. Wire value `cosmwasm`.
+    CosmWasm,
+    /// Wire value `svm`.
+    Svm,
+    /// Wire value `custom`.
+    Custom,
+}
+
+impl VmType {
+    /// The wire value the chain expects. The QoreChain Native runtime (both
+    /// `Native` and the `CosmWasm` alias) is transmitted as `cosmwasm`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            VmType::Evm => "evm",
+            VmType::Native | VmType::CosmWasm => "cosmwasm",
+            VmType::Svm => "svm",
+            VmType::Custom => "custom",
+        }
+    }
+
+    /// A human-readable label. The Wasm runtime reads as `QoreChain Native`.
+    pub const fn label(self) -> &'static str {
+        match self {
+            VmType::Native | VmType::CosmWasm => "QoreChain Native",
+            VmType::Evm => "EVM",
+            VmType::Svm => "SVM",
+            VmType::Custom => "Custom",
+        }
+    }
+}
+
+impl fmt::Display for VmType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for VmType {
+    type Err = ParseEnumError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "evm" => Ok(VmType::Evm),
+            // The advertised runtime name and its legacy wire alias both map to
+            // the QoreChain Native runtime.
+            "native" | "cosmwasm" => Ok(VmType::Native),
+            "svm" => Ok(VmType::Svm),
+            "custom" => Ok(VmType::Custom),
+            other => Err(ParseEnumError {
+                kind: "VM type",
+                value: other.to_string(),
+            }),
+        }
+    }
+}
+
+impl TryFrom<String> for VmType {
+    type Error = ParseEnumError;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl From<VmType> for String {
+    fn from(v: VmType) -> String {
+        v.as_str().to_string()
+    }
+}
+
+/// The advertised VM types (`Native` is the QoreChain Native runtime). The
+/// `CosmWasm` alias is accepted but intentionally kept out of this list.
+pub const VM_TYPES: &[VmType] = &[VmType::Evm, VmType::Native, VmType::Svm, VmType::Custom];
+
+/// The advertised VM-type wire-ish names, as strings (`native` is advertised in
+/// place of the `cosmwasm` alias).
+const ADVERTISED_VM_TYPE_NAMES: &[&str] = &["evm", "native", "svm", "custom"];
+
+/// Whether `value` names a VM type the RDK accepts (the four advertised names
+/// plus the `cosmwasm` legacy alias).
+pub fn is_vm_type(value: &str) -> bool {
+    ADVERTISED_VM_TYPE_NAMES.contains(&value) || value == "cosmwasm"
+}
+
+/// The on-chain wire value for a VM-type name. The QoreChain Native runtime
+/// (`native`) is transmitted as `cosmwasm` for consistency with the network,
+/// explorer, and dashboard; every other value passes through unchanged.
+pub fn vm_type_wire_value(vm_type: &str) -> &str {
+    if vm_type == "native" {
+        "cosmwasm"
+    } else {
+        vm_type
+    }
+}
+
+/// A human-readable label for a VM-type name (the Wasm runtime reads as
+/// `QoreChain Native`). Unknown values pass through unchanged.
+pub fn vm_type_label(vm_type: &str) -> &str {
+    match vm_type {
+        "native" | "cosmwasm" => "QoreChain Native",
+        "evm" => "EVM",
+        "svm" => "SVM",
+        "custom" => "Custom",
+        other => other,
     }
 }
 

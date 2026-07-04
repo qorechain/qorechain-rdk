@@ -12,9 +12,10 @@ mod validate;
 
 pub use builder::RollupConfigBuilder;
 pub use enums::{
-    BatchStatus, DaBackend, GasModel, Profile, ProofSystem, RollupStatus, Sequencer, Settlement,
-    VmType, BATCH_STATUSES, DA_BACKENDS, GAS_MODELS, PROFILE_NAMES, PROOF_SYSTEMS, ROLLUP_STATUSES,
-    SEQUENCER_MODES, SETTLEMENT_PARADIGMS, VM_TYPES,
+    is_vm_type, vm_type_label, vm_type_wire_value, BatchStatus, DaBackend, GasModel, Profile,
+    ProofSystem, RollupStatus, Sequencer, Settlement, VmType, BATCH_STATUSES, DA_BACKENDS,
+    GAS_MODELS, PROFILE_NAMES, PROOF_SYSTEMS, ROLLUP_STATUSES, SEQUENCER_MODES,
+    SETTLEMENT_PARADIGMS, VM_TYPES,
 };
 pub use errors::RollupConfigError;
 pub use matrix::{

@@ -57,7 +57,7 @@ public final class Presets {
         nft.da = DABackend.CELESTIA;
         nft.proofSystem = ProofSystem.FRAUD;
         nft.gasModel = GasModel.STANDARD;
-        nft.vmType = VmType.COSMWASM;
+        nft.vmType = VmType.NATIVE;
         nft.blockTimeMs = 2000;
         nft.maxTxPerBlock = 5000;
         nft.challengeWindowSecs = Constants.DEFAULT_CHALLENGE_WINDOW_SECS;

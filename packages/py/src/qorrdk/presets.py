@@ -56,7 +56,7 @@ PRESET_DEFAULTS: dict[ProfileName, dict] = {
         "da": DABackend.CELESTIA,
         "proof_system": ProofSystem.FRAUD,
         "gas_model": GasModel.STANDARD,
-        "vm_type": VmType.COSMWASM,
+        "vm_type": VmType.NATIVE,
         "block_time_ms": 2000,
         "max_tx_per_block": 5000,
         "challenge_window_secs": _DEFAULT_CHALLENGE_WINDOW,

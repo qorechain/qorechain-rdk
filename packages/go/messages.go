@@ -194,13 +194,15 @@ type CreateRollupInput struct {
 	StakeAmount int64
 }
 
-// CreateRollupMsg builds a MsgCreateRollup from input.
+// CreateRollupMsg builds a MsgCreateRollup from input. The VmType is mapped to
+// its on-chain wire value (the QoreChain Native runtime "native" is transmitted
+// as "cosmwasm"); "native" is never emitted on the wire.
 func CreateRollupMsg(in CreateRollupInput) MsgCreateRollup {
 	return MsgCreateRollup{
 		Creator:     in.Creator,
 		RollupID:    in.RollupID,
 		Profile:     in.Profile,
-		VmType:      in.VmType,
+		VmType:      VMTypeWireValue(in.VmType),
 		StakeAmount: in.StakeAmount,
 	}
 }

@@ -43,7 +43,7 @@ export const PRESET_DEFAULTS: Record<ProfileName, PresetDefaults> = {
     da: "celestia",
     proofSystem: "fraud",
     gasModel: "standard",
-    vmType: "cosmwasm",
+    vmType: "native",
     blockTimeMs: 2000,
     maxTxPerBlock: 5000,
     challengeWindowSecs: DEFAULT_RDK_PARAMS.defaultChallengeWindow,

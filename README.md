@@ -2,7 +2,7 @@
 
 Rollup Development Kit for designing, launching, configuring, and operating
 application-specific rollups (app-chains) on the QoreChain network — a
-quantum-safe Layer 1 with first-class CosmWasm, EVM/Solidity, and SVM runtimes.
+quantum-safe Layer 1 with first-class QoreChain Native, EVM/Solidity, and SVM runtimes.
 
 📖 **Documentation:** https://qorechain.github.io/qorechain-rdk/
 
@@ -24,6 +24,20 @@ developer-facing front door for launching rollups on the network.
 | `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.4.1) |
 | `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.4.1) |
 
+## What's new in 0.4.1
+
+- **Works against the live network out of the box** — the `mainnet` and
+  `testnet` presets now ship the public `qore.host` endpoints, so
+  `createRdkClient({ network })` reaches the chain with no manual `endpoints`
+  (override for a local node). *(All five languages.)*
+- **QoreChain Native runtime** — the Wasm VM type is now `native` (the
+  QoreChain Native runtime); `cosmwasm` stays accepted as a legacy alias and is
+  what both map to on the wire. New helpers: `vmTypeLabel`, `vmTypeWireValue`,
+  `isVmType`. *(All five languages.)*
+- **Unified keys & Phantom** — documented: a single unified key (qor1/0x/svm,
+  Phantom-compatible) signs RDK operator transactions like any signer; no code
+  changes needed.
+
 ## What's new in 0.4.0
 
 - **QCAI Rollup Copilot** — `getRollupAdvice` aggregates a live fee estimate,
@@ -36,7 +50,7 @@ developer-facing front door for launching rollups on the network.
   signature, verifiable fully offline. CLI: `qorollup receipt`. *(All five
   languages; non-TS clients verify via `qorechain-pqc`.)*
 - **Multi-VM tooling** — `encodeCrossVmCalldata` / `functionSelector` and the
-  `CROSS_VM_PRECOMPILE` address for EVM → CosmWasm cross-VM calls, plus a new
+  `CROSS_VM_PRECOMPILE` address for EVM → QoreChain Native cross-VM calls, plus a new
   `multivm-rollup` scaffold template. *(TypeScript.)*
 - **Watchtower** — `watchBatches`, an auto-challenger framework for optimistic
   rollups that surfaces new batches and challenge-window deadlines and flags
@@ -106,7 +120,7 @@ field by field:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `defi` | zk (snark) | dedicated | native | 500 ms | eip1559 | EVM | 10,000 |
 | `gaming` | based | based | native | 200 ms | flat | custom | 50,000 |
-| `nft` | optimistic | dedicated | celestia | 2,000 ms | standard | CosmWasm | 5,000 |
+| `nft` | optimistic | dedicated | celestia | 2,000 ms | standard | QoreChain Native | 5,000 |
 | `enterprise` | based | based | native | 1,000 ms | subsidized | EVM | 20,000 |
 | `custom` | optimistic | dedicated | native | 1,000 ms | standard | EVM | 10,000 |
 

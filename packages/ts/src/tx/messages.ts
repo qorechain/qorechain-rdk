@@ -7,6 +7,7 @@
 import type { EncodeObject } from "@cosmjs/proto-signing";
 import * as codecs from "./codecs";
 import { toBytes } from "../utils/bytes";
+import { vmTypeWireValue } from "../config/enums";
 
 type Numeric = string | number | bigint;
 type Bytes = string | Uint8Array;
@@ -80,7 +81,7 @@ export function createRollupMsg(input: CreateRollupInput): EncodeObject {
       creator: input.creator,
       rollupId: input.rollupId,
       profile: input.profile,
-      vmType: input.vmType,
+      vmType: vmTypeWireValue(input.vmType),
       stakeAmount: big(input.stakeAmount),
     }),
   };

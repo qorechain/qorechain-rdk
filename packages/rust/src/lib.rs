@@ -50,9 +50,9 @@ pub use receipts::{
     ReceiptError, ReceiptVerification, SettlementReceipt, RECEIPT_ALGORITHM, RECEIPT_VERSION,
 };
 pub use config::{
-    BatchStatus, DaBackend, GasModel, Profile, ProofSystem, RollupConfig, RollupConfigBuilder,
-    RollupConfigError, RollupStatus, Sequencer, SequencerParams, Settlement, ValidationResult,
-    VmType,
+    is_vm_type, vm_type_label, vm_type_wire_value, BatchStatus, DaBackend, GasModel, Profile,
+    ProofSystem, RollupConfig, RollupConfigBuilder, RollupConfigError, RollupStatus, Sequencer,
+    SequencerParams, Settlement, ValidationResult, VmType,
 };
 pub use constants::*;
 pub use da::{

@@ -40,7 +40,7 @@ const rdk = createRdkClient();
 // Point at a real node by overriding endpoints.
 const remote = createRdkClient({
   endpoints: {
-    rest: "https://api-testnet.qore.host",   // Cosmos REST (LCD)
+    rest: "https://api-testnet.qore.host",   // REST (LCD)
     rpc: "https://rpc-testnet.qore.host",      // consensus RPC (for signing)
     evmRpc: "https://evm-testnet.qore.host",   // EVM + qor_ JSON-RPC
   },

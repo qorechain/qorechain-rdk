@@ -23,24 +23,45 @@ export interface NetworkConfig {
   endpoints: Endpoints;
 }
 
-const LOCALHOST_ENDPOINTS: Endpoints = {
+/** Localhost defaults, for running against a local node. */
+export const LOCALHOST_ENDPOINTS: Endpoints = {
   rest: "http://localhost:1317",
   rpc: "http://localhost:26657",
   grpc: "localhost:9090",
   evmRpc: "http://localhost:8545",
 };
 
-/** Built-in network presets. */
+/** Public mainnet endpoints (`qorechain-vladi`). */
+const MAINNET_ENDPOINTS: Endpoints = {
+  rest: "https://api.qore.host",
+  rpc: "https://rpc.qore.host",
+  grpc: "grpc.qore.host:443",
+  evmRpc: "https://evm.qore.host",
+};
+
+/** Public testnet endpoints (`qorechain-diana`). */
+const TESTNET_ENDPOINTS: Endpoints = {
+  rest: "https://api-testnet.qore.host",
+  rpc: "https://rpc-testnet.qore.host",
+  grpc: "grpc-testnet.qore.host:443",
+  evmRpc: "https://evm-testnet.qore.host",
+};
+
+/**
+ * Built-in network presets. Each ships the network's public endpoints so
+ * `createRdkClient({ network })` works out of the box; override `endpoints` to
+ * point at a local node ({@link LOCALHOST_ENDPOINTS}) or your own infrastructure.
+ */
 export const NETWORKS: Record<NetworkName, NetworkConfig> = {
   testnet: {
     name: "testnet",
     chainId: CHAIN_IDS.testnet,
-    endpoints: { ...LOCALHOST_ENDPOINTS },
+    endpoints: { ...TESTNET_ENDPOINTS },
   },
   mainnet: {
     name: "mainnet",
     chainId: CHAIN_IDS.mainnet,
-    endpoints: { ...LOCALHOST_ENDPOINTS },
+    endpoints: { ...MAINNET_ENDPOINTS },
   },
 };
 

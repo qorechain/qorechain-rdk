@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Union
 
+from ..enums import vm_type_wire_value
 from ..utils.bytes import to_bytes
 from . import codecs
 
@@ -103,7 +104,7 @@ def create_rollup_msg(inp: CreateRollupInput) -> EncodedMsg:
         creator=inp.creator,
         rollup_id=inp.rollup_id,
         profile=inp.profile,
-        vm_type=inp.vm_type,
+        vm_type=vm_type_wire_value(inp.vm_type),
         stake_amount=_big(inp.stake_amount),
     )
     return EncodedMsg(msg.type_url, msg.encode())

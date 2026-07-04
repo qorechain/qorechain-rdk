@@ -174,7 +174,7 @@ func ValidateRollupConfig(config RollupConfig) ValidationResult {
 	if !contains(GasModels, config.GasModel) {
 		errs = append(errs, fmt.Sprintf("gasModel %q is not a valid gas model", config.GasModel))
 	}
-	if !contains(VmTypes, config.VmType) {
+	if !IsVMType(string(config.VmType)) {
 		errs = append(errs, fmt.Sprintf("vmType %q is not a valid VM type", config.VmType))
 	}
 

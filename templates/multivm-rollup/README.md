@@ -1,21 +1,21 @@
 # multivm-rollup
 
 A QoreChain **multi-VM** rollup starter: an **EVM** rollup that calls into
-**CosmWasm** contracts through QoreChain's cross-VM precompile, built on
+**QoreChain Native** contracts through QoreChain's cross-VM precompile, built on
 [`@qorechain/rdk`](https://github.com/qorechain/qorechain-rdk).
 
 Use this template when your app runs Solidity on the rollup but needs to invoke
-existing CosmWasm contracts on the network — for example reusing a CosmWasm
+existing QoreChain Native (Wasm) contracts on the network — for example reusing a QoreChain Native (Wasm)
 oracle, token, or registry from EVM code.
 
 ## Multi-VM at a glance
 
 - Execution VM: **EVM** (Solidity).
-- Cross-VM bridge: the **EVM→CosmWasm** precompile at
+- Cross-VM bridge: the **EVM→QoreChain Native** precompile at
   `0x0000000000000000000000000000000000000901`.
 - `src/crossvm-call.ts` encodes the precompile calldata with the RDK's
   `encodeCrossVmCalldata` helper; `contracts/CrossVmCaller.sol` shows the
-  equivalent on-chain Solidity call. (EVM↔CosmWasm only — SVM is separate.)
+  equivalent on-chain Solidity call. (EVM↔QoreChain Native only — SVM is separate.)
 - Confirm the precompile's exact ABI signature against your node before relying
   on the derived 4-byte selector.
 
@@ -72,7 +72,7 @@ every overridable field inline:
 - `da` — `native` | `celestia` | `both` (celestia is planned / not yet active)
 - `proofSystem` — `fraud` | `snark` | `stark` | `none`
 - `gasModel` — `standard` | `eip1559` | `flat` | `subsidized`
-- `vmType` — `evm` | `cosmwasm` | `svm` | `custom`
+- `vmType` — `evm` | `native` | `svm` | `custom`
 - `blockTimeMs` — target block time in milliseconds
 - `maxTxPerBlock` — maximum transactions per rollup block
 

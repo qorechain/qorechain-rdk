@@ -46,6 +46,8 @@ func TestPresetsMatchGolden(t *testing.T) {
 		if string(got.GasModel) != want.GasModel {
 			t.Errorf("%s gasModel: got %s want %s", name, got.GasModel, want.GasModel)
 		}
+		// The golden fixture records the resolved client-side config value
+		// (the nft preset resolves to "native", the QoreChain Native runtime).
 		if string(got.VmType) != want.VmType {
 			t.Errorf("%s vmType: got %s want %s", name, got.VmType, want.VmType)
 		}

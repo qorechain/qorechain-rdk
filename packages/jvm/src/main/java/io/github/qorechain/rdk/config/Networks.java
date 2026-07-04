@@ -3,8 +3,9 @@ package io.github.qorechain.rdk.config;
 import java.util.List;
 
 /**
- * Named network presets. The RDK defaults to testnet. Endpoint defaults point at localhost —
- * override them to reach a real node.
+ * Named network presets. The RDK defaults to testnet. Each preset ships the network's public
+ * endpoints so a client works out of the box; override the endpoints to point at a local node
+ * ({@link #localhostEndpoints()}) or your own infrastructure.
  */
 public final class Networks {
     private Networks() {}
@@ -53,12 +54,41 @@ public final class Networks {
         }
     }
 
-    private static Endpoints localhostEndpoints() {
+    /** Localhost defaults, for running against a local node. */
+    public static Endpoints localhostEndpoints() {
         return new Endpoints(
                 "http://localhost:1317",
                 "http://localhost:26657",
                 "localhost:9090",
                 "http://localhost:8545");
+    }
+
+    /** Public mainnet endpoints ({@code qorechain-vladi}). */
+    public static Endpoints mainnetEndpoints() {
+        return new Endpoints(
+                "https://api.qore.host",
+                "https://rpc.qore.host",
+                "grpc.qore.host:443",
+                "https://evm.qore.host");
+    }
+
+    /** Public testnet endpoints ({@code qorechain-diana}). */
+    public static Endpoints testnetEndpoints() {
+        return new Endpoints(
+                "https://api-testnet.qore.host",
+                "https://rpc-testnet.qore.host",
+                "grpc-testnet.qore.host:443",
+                "https://evm-testnet.qore.host");
+    }
+
+    private static Endpoints endpointsFor(String name) {
+        if ("mainnet".equals(name)) {
+            return mainnetEndpoints();
+        }
+        if ("testnet".equals(name)) {
+            return testnetEndpoints();
+        }
+        return localhostEndpoints();
     }
 
     /** Look up a network preset by name. An empty/unknown name defaults to testnet. */
@@ -69,7 +99,7 @@ public final class Networks {
             n = "testnet";
             chainId = Constants.TESTNET_CHAIN_ID;
         }
-        return new NetworkConfig(n, chainId, localhostEndpoints());
+        return new NetworkConfig(n, chainId, endpointsFor(n));
     }
 
     /** List the available network names. */
