@@ -1,6 +1,6 @@
 {
   "name": "@qorechain/rdk",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Official TypeScript Rollup Development Kit for launching and operating app-specific rollups on the QoreChain network.",
   "license": "Apache-2.0",
   "author": "QoreChain",

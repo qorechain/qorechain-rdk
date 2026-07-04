@@ -13,13 +13,13 @@ registry publications (PyPI / crates.io) — until then, build them from the
 
 | Package | Language | Install | Status |
 | --- | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | `npm i @qorechain/rdk` | Available (v0.4.1) |
-| `@qorechain/rdk-cli` (`qorollup`) | CLI | `npm i -g @qorechain/rdk-cli` | Available (v0.4.1) |
-| `qorechain-rdk` | Python | `pip install qorechain-rdk` (imports as `qorrdk`) | Available on PyPI (v0.4.1) |
-| `qorechain-rdk` | Go | `go get github.com/qorechain/qorechain-rdk/packages/go` | Available (v0.4.1) |
-| `qorechain-rdk` | Rust | `cargo add qorechain-rdk` | Available on crates.io (v0.4.1) |
-| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Maven/Gradle (`io.github.qorechain:qorechain-rdk:0.4.1`) | Available on Maven Central (v0.4.1) |
-| `create-qorechain-rollup` | CLI | `npm create qorechain-rollup` | Available (v0.4.1) |
+| `@qorechain/rdk` | TypeScript | `npm i @qorechain/rdk` | Available (v0.4.2) |
+| `@qorechain/rdk-cli` (`qorollup`) | CLI | `npm i -g @qorechain/rdk-cli` | Available (v0.4.2) |
+| `qorechain-rdk` | Python | `pip install qorechain-rdk` (imports as `qorrdk`) | Available on PyPI (v0.4.2) |
+| `qorechain-rdk` | Go | `go get github.com/qorechain/qorechain-rdk/packages/go` | Available (v0.4.2) |
+| `qorechain-rdk` | Rust | `cargo add qorechain-rdk` | Available on crates.io (v0.4.2) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Maven/Gradle (`io.github.qorechain:qorechain-rdk:0.4.2`) | Available on Maven Central (v0.4.2) |
+| `create-qorechain-rollup` | CLI | `npm create qorechain-rollup` | Available (v0.4.2) |
 
 The Python, Go, Rust, and Java (JVM) clients are fully implemented and tested in
 the [monorepo](https://github.com/qorechain/qorechain-rdk) (config, presets,
@@ -108,14 +108,14 @@ Maven:
 <dependency>
   <groupId>io.github.qorechain</groupId>
   <artifactId>qorechain-rdk</artifactId>
-  <version>0.4.1</version>
+  <version>0.4.2</version>
 </dependency>
 ```
 
 Gradle:
 
 ```kotlin
-implementation("io.github.qorechain:qorechain-rdk:0.4.1")
+implementation("io.github.qorechain:qorechain-rdk:0.4.2")
 ```
 
 ## Scaffolding CLI

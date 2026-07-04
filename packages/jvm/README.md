@@ -17,11 +17,11 @@ native account derivation, and full transaction signing and broadcast for the `r
 <dependency>
   <groupId>io.github.qorechain</groupId>
   <artifactId>qorechain-rdk</artifactId>
-  <version>0.4.1</version>
+  <version>0.4.2</version>
 </dependency>
 ```
 
-## What's new in 0.4.1
+## What's new in 0.4.2
 
 - **Public network endpoints** — the `mainnet` and `testnet` presets now ship the
   live public endpoints (`api`/`rpc`/`evm`/`grpc`[`-testnet`]`.qore.host`) so a

@@ -16,15 +16,15 @@ developer-facing front door for launching rollups on the network.
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | Available (v0.4.1) |
-| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.4.1) |
-| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.4.1) |
-| `qorechain-rdk` (Python) | Python | Available on PyPI (v0.4.1) |
-| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.4.1) |
-| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.4.1) |
-| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.4.1) |
+| `@qorechain/rdk` | TypeScript | Available (v0.4.2) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.4.2) |
+| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.4.2) |
+| `qorechain-rdk` (Python) | Python | Available on PyPI (v0.4.2) |
+| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.4.2) |
+| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.4.2) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.4.2) |
 
-## What's new in 0.4.1
+## What's new in 0.4.2
 
 - **Works against the live network out of the box** — the `mainnet` and
   `testnet` presets now ship the public `qore.host` endpoints, so
@@ -37,6 +37,18 @@ developer-facing front door for launching rollups on the network.
 - **Unified keys & Phantom** — documented: a single unified key (qor1/0x/svm,
   Phantom-compatible) signs RDK operator transactions like any signer; no code
   changes needed.
+
+## What's new in 0.4.1
+
+- **Mainnet fee floor** — gas defaults raised to `0.15uqor` (the chain's fee
+  floor is `0.1uqor`/gas on both networks).
+- **Live public endpoints** across docs, templates, and examples
+  (`rpc/api/evm/svm[-testnet].qore.host`).
+- **Deterministic PQC** — `@qorechain/sdk` ≥ 0.5.1 and `qorechain-pqc` ≥ 0.1.1
+  (deterministic ML-DSA-87 hybrid signing). Note: mainnet native-lane txs require
+  the hybrid PQC signature — the TypeScript path signs hybrid via
+  `@qorechain/sdk`; the other clients sign classical and should pair with
+  `qorechain-pqc` or target permissive networks.
 
 ## What's new in 0.4.0
 
@@ -130,7 +142,7 @@ advisory service is unavailable.
 
 ## Quickstart (TypeScript)
 
-> The TypeScript package is published at v0.4.1 (`npm i @qorechain/rdk`).
+> The TypeScript package is published at v0.4.2 (`npm i @qorechain/rdk`).
 
 ```sh
 npm install @qorechain/rdk
