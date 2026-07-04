@@ -107,10 +107,15 @@ The RDK is agnostic to how your signer was produced: it signs operator
 transactions with **any `@cosmjs` `OfflineSigner`**, so a unified eth-native key
 (or a Phantom-derived one) works exactly like a classic `qor`-derived signer —
 the operator address is simply whatever your signer presents, with no RDK
-configuration changes. Generating and managing the unified wallet itself (the
-three addresses, Phantom derivation) is the job of
-[`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk) and the QoreChain
-wallet adapter — build the signer there, then hand it to the RDK's tx client.
+configuration changes.
+
+Generating and managing the unified wallet itself is the job of
+[`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk) and
+[`@qorechain/wallet-adapter`](https://www.npmjs.com/package/@qorechain/wallet-adapter)
+— the wallet adapter derives all three addresses from one key
+(`generateQoreWallet`, `walletFromMnemonic`) and supports the Phantom flow via
+`walletFromSeed` (`shake256(phantomSignature)` → qor1/0x/svm). Build the signer
+there, then hand it to the RDK's tx client.
 
 ## Funding an account
 
