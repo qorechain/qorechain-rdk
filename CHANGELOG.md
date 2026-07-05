@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.4.3
+
+### Fixed
+
+- **Hybrid-signature transaction encoding** — bumped the `@qorechain/sdk`
+  dependency from `^0.5.1` to `^0.6.1`, which carries the fix for a
+  consensus-critical bug: the `/qorechain.pqc.v1.PQCHybridSignature` tx-body
+  extension was serialized as JSON into `Any.value` instead of protobuf, so the
+  chain rejected every hybrid-signed transaction at CheckTx (the leading `0x7b`
+  `{` was misread as protobuf field 15 `start_group`). With `@qorechain/sdk`
+  ≥ 0.6.1 the extension is protobuf-encoded (value begins `0x08`) and hybrid
+  transactions are accepted. Affects only the TypeScript hybrid-signing path
+  (`HybridSigner`); the Python, Go, Rust, and Java clients sign classical-only
+  and were never impacted (version-aligned to 0.4.3 only).
+
 ## 0.4.2
 
 ### Added

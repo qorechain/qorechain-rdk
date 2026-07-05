@@ -126,8 +126,8 @@ importers:
         specifier: ^0.5.1
         version: 0.5.1(viem@2.54.1(typescript@5.9.3))
       '@qorechain/sdk':
-        specifier: ^0.5.1
-        version: 0.5.1(@qorechain/evm@0.5.1(viem@2.54.1(typescript@5.9.3)))(viem@2.54.1(typescript@5.9.3))
+        specifier: ^0.6.1
+        version: 0.6.1(viem@2.54.1(typescript@5.9.3))
       bech32:
         specifier: ^2.0.0
         version: 2.0.0
@@ -898,6 +898,14 @@ packages:
     peerDependenciesMeta:
       '@qorechain/evm':
         optional: true
+      viem:
+        optional: true
+
+  '@qorechain/sdk@0.6.1':
+    resolution: {integrity: sha512-ilOn7ooPC/KuZJw5X1iP+Sswl8hovPJP8QlUPYj+N4VWIBoXdnT5McX8dWEl3LSCriFQHd3HQOiLQAv4VRqgbQ==}
+    peerDependencies:
+      viem: ^2.0.0
+    peerDependenciesMeta:
       viem:
         optional: true
 
@@ -2957,6 +2965,30 @@ snapshots:
       micro-key-producer: 0.9.0
     optionalDependencies:
       '@qorechain/evm': 0.5.1(viem@2.54.1(typescript@5.9.3))
+      viem: 2.54.1(typescript@5.9.3)
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@qorechain/sdk@0.6.1(viem@2.54.1(typescript@5.9.3))':
+    dependencies:
+      '@bufbuild/protobuf': 2.12.1
+      '@cosmjs/amino': 0.39.0
+      '@cosmjs/cosmwasm-stargate': 0.39.0
+      '@cosmjs/proto-signing': 0.39.0
+      '@cosmjs/stargate': 0.39.0
+      '@cosmjs/tendermint-rpc': 0.39.0
+      '@noble/curves': 1.9.7
+      '@noble/hashes': 1.8.0
+      '@qorechain/evm': 0.5.1(viem@2.54.1(typescript@5.9.3))
+      '@qorechain/pqc': 0.1.1
+      '@scure/base': 1.2.6
+      '@scure/bip32': 1.7.0
+      '@scure/bip39': 1.6.0
+      bech32: 2.0.0
+      cosmjs-types: 0.11.0
+      micro-key-producer: 0.9.0
+    optionalDependencies:
       viem: 2.54.1(typescript@5.9.3)
     transitivePeerDependencies:
       - bufferutil
