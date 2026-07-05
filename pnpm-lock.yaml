@@ -126,8 +126,8 @@ importers:
         specifier: ^0.5.1
         version: 0.5.1(viem@2.54.1(typescript@5.9.3))
       '@qorechain/sdk':
-        specifier: ^0.6.1
-        version: 0.6.1(viem@2.54.1(typescript@5.9.3))
+        specifier: ^0.7.0
+        version: 0.7.0(viem@2.54.1(typescript@5.9.3))
       bech32:
         specifier: ^2.0.0
         version: 2.0.0
@@ -901,8 +901,8 @@ packages:
       viem:
         optional: true
 
-  '@qorechain/sdk@0.6.1':
-    resolution: {integrity: sha512-ilOn7ooPC/KuZJw5X1iP+Sswl8hovPJP8QlUPYj+N4VWIBoXdnT5McX8dWEl3LSCriFQHd3HQOiLQAv4VRqgbQ==}
+  '@qorechain/sdk@0.7.0':
+    resolution: {integrity: sha512-hHd00s0xbhakhHTkAYHoImofSrd/qpnB/53nH3gSfSEoqPTC4SF5ntmta6a1nApgsG1zSH+MNVrCAtoBfa916A==}
     peerDependencies:
       viem: ^2.0.0
     peerDependenciesMeta:
@@ -2970,7 +2970,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@qorechain/sdk@0.6.1(viem@2.54.1(typescript@5.9.3))':
+  '@qorechain/sdk@0.7.0(viem@2.54.1(typescript@5.9.3))':
     dependencies:
       '@bufbuild/protobuf': 2.12.1
       '@cosmjs/amino': 0.39.0

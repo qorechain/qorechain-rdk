@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.4.4
+
+### Changed
+
+- **Bumped `@qorechain/sdk` to `^0.7.0`** — the SDK's "authenticator lanes"
+  release (chain v3.1.85). Purely additive: a linked external key (Phantom
+  ed25519 or a MetaMask secp256k1 key) can spend from the one canonical
+  PQC-required account through a relayer under least-privilege, spending-limited,
+  revocable terms (`MsgExecuteEVM`/`MsgExecuteCosmos`), plus same-algorithm PQC
+  key rotation (`MsgRotatePQCKey`) and Phantom/MetaMask execute builders. No RDK
+  API change — the new capabilities are available to TypeScript users directly
+  through `@qorechain/sdk`. `@qorechain/evm` stays `^0.5.1` (the SDK 0.7.x line
+  still uses it). All packages version-aligned to 0.4.4.
+
 ## 0.4.3
 
 ### Fixed

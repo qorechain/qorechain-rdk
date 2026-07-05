@@ -1,6 +1,6 @@
 {
   "name": "@qorechain/rdk-cli",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "qorollup \u2014 the operator command line for creating, operating, and monitoring QoreChain rollups.",
   "license": "Apache-2.0",
   "author": "QoreChain",

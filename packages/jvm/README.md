@@ -17,7 +17,7 @@ native account derivation, and full transaction signing and broadcast for the `r
 <dependency>
   <groupId>io.github.qorechain</groupId>
   <artifactId>qorechain-rdk</artifactId>
-  <version>0.4.3</version>
+  <version>0.4.4</version>
 </dependency>
 ```
 
