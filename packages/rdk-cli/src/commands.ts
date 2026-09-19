@@ -35,6 +35,8 @@ import {
   vmTypeLabel,
   type ProfileName,
   type RawEvent,
+  type ReceiptVerification,
+  type SettlementReceipt,
 } from "@qorechain/rdk";
 import { flagBool, flagStr, type ParsedCli } from "./args";
 import type { CliContext } from "./context";
@@ -394,11 +396,125 @@ export async function cmdAdvise(ctx: CliContext, parsed: ParsedCli): Promise<num
   return 0;
 }
 
+/** The fields a receipt must carry before it is worth sending to the verifier. */
+const RECEIPT_FIELDS = [
+  "version",
+  "rollupId",
+  "layerId",
+  "batchIndex",
+  "creator",
+  "algorithm",
+  "stateRoot",
+  "layerHeight",
+  "validatorSetHash",
+  "mainChainHeight",
+  "anchoredAt",
+  "pqcSignature",
+] as const;
+
+/**
+ * Read a receipt handed to us by someone else. Every byte of it is untrusted
+ * input: it is parsed as data, shape-checked so a malformed file gives a clear
+ * error instead of a confusing verification failure, and never otherwise acted
+ * on. `-` reads stdin.
+ */
+function readReceiptFile(path: string): SettlementReceipt {
+  let raw: string;
+  try {
+    raw = path === "-" ? readFileSync(0, "utf8") : readFileSync(path, "utf8");
+  } catch (err) {
+    throw new Error(`cannot read receipt ${path === "-" ? "from stdin" : `"${path}"`}: ${(err as Error).message}`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`receipt is not valid JSON: ${(err as Error).message}`);
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("receipt is not a JSON object");
+  }
+  const obj = parsed as Record<string, unknown>;
+  const missing = RECEIPT_FIELDS.filter((f) => obj[f] === undefined);
+  if (missing.length > 0) {
+    throw new Error(`receipt is missing required field(s): ${missing.join(", ")}`);
+  }
+  return obj as unknown as SettlementReceipt;
+}
+
+/** Human-readable label for each check, in the order they are performed. */
+const CHECK_LABELS: ReadonlyArray<readonly [keyof ReceiptVerification["checks"], string]> = [
+  ["rollupLayerBinding", "rollup belongs to the receipt's layer"],
+  ["batchStateRoot", "chain's batch carries the receipt's state root"],
+  ["anchorOnChain", "a matching anchor exists on chain"],
+  ["creatorAuthority", "creator matches the chain and has a registered key"],
+  ["pqcSignature", "quantum-safe anchor signature verifies"],
+];
+
+/**
+ * `qorollup receipt verify <file>` — verify a receipt **somebody handed you**
+ * against live chain state. This is the relying-party path: an auditor, an
+ * exchange, or a counterparty who received a receipt and must decide whether to
+ * believe it. It never rebuilds the receipt from chain, so what is checked is
+ * exactly what the holder presented.
+ */
+async function cmdReceiptVerify(ctx: CliContext, parsed: ParsedCli): Promise<number> {
+  const path = parsed.positionals[1];
+  if (!path) {
+    ctx.out.error("usage: qorollup receipt verify <file>   (use - for stdin)");
+    return 1;
+  }
+
+  let receipt: SettlementReceipt;
+  try {
+    receipt = readReceiptFile(path);
+  } catch (err) {
+    if (ctx.json) ctx.out.json({ valid: false, reason: (err as Error).message });
+    else ctx.out.error((err as Error).message);
+    return 1;
+  }
+
+  const verification = await verifySettlementReceipt(receipt, { client: ctx.client });
+
+  if (ctx.json) {
+    ctx.out.json({ receipt, verification });
+    return verification.valid ? 0 : 1;
+  }
+
+  ctx.out.line(`Receipt claims — ${receipt.rollupId} batch #${receipt.batchIndex}`);
+  ctx.out.line(`  layer:        ${receipt.layerId} @ height ${receipt.layerHeight}`);
+  ctx.out.line(`  state root:   ${receipt.stateRoot}`);
+  ctx.out.line(`  creator:      ${receipt.creator}`);
+  ctx.out.line(`  checked on:   ${ctx.network}`);
+  ctx.out.line();
+  for (const [key, label] of CHECK_LABELS) {
+    ctx.out.line(`  ${verification.checks[key] ? "PASS" : "FAIL"}  ${label}`);
+  }
+  ctx.out.line();
+
+  if (verification.valid) {
+    ctx.out.success(
+      "Receipt is genuine — every field was reproduced from live chain state on " +
+        `${ctx.network}. Your trust anchor is the node you queried.`,
+    );
+    return 0;
+  }
+  ctx.out.error(`Receipt is NOT verified — ${verification.reason ?? "unknown reason"}`);
+  return 1;
+}
+
 export async function cmdReceipt(ctx: CliContext, parsed: ParsedCli): Promise<number> {
+  // `receipt verify <file>` checks a receipt somebody handed us; the bare form
+  // builds one from chain for a rollup we operate.
+  if (parsed.positionals[0] === "verify") return cmdReceiptVerify(ctx, parsed);
+
   const rollupId = rollupIdArg(parsed);
   const idxRaw = parsed.positionals[1] ?? flagStr(parsed.flags, "batch");
   if (!rollupId || idxRaw === undefined) {
-    ctx.out.error("usage: qorollup receipt <rollup-id> <batch-index> [--verify] [--out <file>]");
+    ctx.out.error(
+      "usage: qorollup receipt <rollup-id> <batch-index> [--verify] [--out <file>]\n" +
+        "       qorollup receipt verify <file>   (verify a receipt you were given; - for stdin)",
+    );
     return 1;
   }
   const batchIndex = Number(idxRaw);
@@ -425,7 +541,9 @@ export async function cmdReceipt(ctx: CliContext, parsed: ParsedCli): Promise<nu
   if (outFile) ctx.out.line(`  written to:   ${outFile}`);
   if (verification) {
     if (verification.valid) {
-      ctx.out.success("Verified — quantum-safe anchor signature and state-root binding hold.");
+      ctx.out.success(
+        "Verified against chain state — the anchor exists on chain and its quantum-safe signature checks out under the creator's registered key.",
+      );
     } else {
       ctx.out.error(`Verification FAILED — ${verification.reason}`);
       return 1;

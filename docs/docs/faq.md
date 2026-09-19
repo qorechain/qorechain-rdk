@@ -44,8 +44,7 @@ target the live network. Both presets ship localhost endpoint defaults, so pass
 Four features. The **QCAI Rollup Copilot** (`getRollupAdvice`) aggregates a live
 fee estimate, network recommendations, fraud investigations, RL-agent status,
 and plain-language suggestions for a rollup. **Quantum-safe settlement receipts**
-(`buildSettlementReceipt` / `verifySettlementReceipt`) are portable,
-offline-verifiable proofs that a batch was anchored under an ML-DSA-87
+(`buildSettlementReceipt` / `verifySettlementReceipt`) are portable records that a batch was anchored under an ML-DSA-87
 (Dilithium-5) signature. **Multi-VM tooling** (`encodeCrossVmCalldata` and the
 `CROSS_VM_PRECOMPILE` address) drives EVM → QoreChain Native cross-VM calls, with a new
 `multivm-rollup` template. The **Watchtower** (`watchBatches`) is an
@@ -92,8 +91,11 @@ resulting configuration. See [Preset profiles](guides/profiles.md).
 ### Which signer should I use?
 
 The RDK accepts any `@cosmjs` `OfflineSigner`. For local development, a
-`DirectSecp256k1Wallet` from a raw key works. For hybrid post-quantum signing,
-use the signer from [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk).
+`DirectSecp256k1Wallet` from a raw key works. On a network that requires the
+post-quantum signature (mainnet `qorechain-vladi`, testnet `qorechain-diana`) you
+need a **direct** signer plus a `pqcKeypair` on connect, so the TypeScript client
+signs hybrid — see
+[Signing on a PQC-required network](guides/keys-and-funding.md).
 
 ### Where is the full API reference?
 

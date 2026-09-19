@@ -11,7 +11,7 @@
  */
 
 /** RDK package version. */
-export const VERSION = "0.4.4";
+export const VERSION = "0.5.0";
 
 // Network and module constants (documented defaults; read live values from the chain).
 export * from "./constants";
@@ -42,8 +42,18 @@ export {
   type TxFee,
   type TxOptions,
   type RdkTxClientConnectOptions,
+  type HybridSigningOptions,
   type SignAndBroadcastCapable,
+  type HybridTxCapable,
 } from "./tx/client";
+
+// Hybrid (post-quantum) sign-bytes helpers, re-exported from @qorechain/sdk for
+// operators who need to inspect or override what the `"auto"` lookup resolves.
+export {
+  resolveSignBytesVersion,
+  isHybridSignBytesRejection,
+  type SignBytesVersionOption,
+} from "@qorechain/sdk";
 
 // Lifecycle: rollup/batch state-machine awareness and challenge-window math.
 export * from "./lifecycle/state-machine";

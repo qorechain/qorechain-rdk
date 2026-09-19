@@ -13,7 +13,7 @@ account derivation) works fully offline.
 
 from __future__ import annotations
 
-__version__ = "0.4.4"
+__version__ = "0.5.0"
 
 # Constants.
 from .constants import (  # noqa: E402
@@ -211,10 +211,13 @@ from .client import (  # noqa: E402
 
 # Settlement receipts.
 from .receipts import (  # noqa: E402
+    MODE_CHAIN,
+    MODE_SIGNATURE_ONLY,
     RECEIPT_ALGORITHM,
     RECEIPT_VERSION,
     ReceiptChecks,
     ReceiptVerification,
+    ReceiptVerificationMode,
     SettlementReceipt,
     anchor_sign_bytes,
     build_settlement_receipt,
@@ -402,9 +405,12 @@ __all__ = [
     # receipts
     "RECEIPT_ALGORITHM",
     "RECEIPT_VERSION",
+    "MODE_CHAIN",
+    "MODE_SIGNATURE_ONLY",
     "SettlementReceipt",
     "ReceiptChecks",
     "ReceiptVerification",
+    "ReceiptVerificationMode",
     "anchor_sign_bytes",
     "build_settlement_receipt",
     "verify_settlement_receipt",

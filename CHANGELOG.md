@@ -7,6 +7,140 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.5.0
+
+### Added
+
+- **`qorollup receipt verify <file>` — verify a receipt somebody handed you.**
+  The existing `--verify` flag only ever checked a receipt the same command had
+  just built from chain, so the relying party the feature exists for — an
+  auditor, an exchange, a counterparty handed a receipt file — had no way to
+  check one at all. The new subcommand reads a receipt (file or stdin), verifies
+  exactly what was presented without rebuilding it, and reports each check
+  individually so a failure says *which* claim did not hold. Exit code is `0`
+  only for a genuine receipt, so it works as a CI gate. A malformed or truncated
+  file is reported as such, naming the missing fields, so "this file is broken"
+  is distinguishable from "this receipt is a lie".
+- **Real hybrid (post-quantum) transaction signing in the TypeScript tx client.**
+  Passing `pqcKeypair` to `RdkClient.connectTx` / `RdkTxClient.connect` makes the
+  client sign and broadcast every transaction through `@qorechain/sdk`'s
+  `signAndBroadcastHybrid`, so the ML-DSA-87 half travels as the transaction-body
+  extension the chain requires alongside the classical secp256k1 signature.
+
+  This corrects a documented claim that was false. The tx client signed through
+  cosmjs's `SigningStargateClient`, which cannot build such a transaction, so the
+  RDK's transaction path was **classical-only in every language** — including
+  TypeScript, which the README said supported hybrid signing — while mainnet
+  (`qorechain-vladi`) and testnet (`qorechain-diana`, since chain v3.1.98) both
+  require the hybrid signature on native-lane transactions.
+
+  New `RdkTxClientConnectOptions` fields, all optional and additive (the
+  classical path is byte-for-byte unchanged when `pqcKeypair` is absent):
+
+  | Option | Meaning |
+  | --- | --- |
+  | `pqcKeypair` | ML-DSA-87 keypair. Present ⇒ the client signs hybrid. |
+  | `rest` | REST/LCD base URL used by `signBytesVersion: "auto"`. |
+  | `signBytesVersion` | `"auto"` (default), or `"v1"` / `"v2"` to force a form. |
+  | `includePqcPublicKey` | Embed the PQC public key so the chain can register it on first use. |
+
+  `RdkClient.connectTx` defaults `rest` to the resolved network's REST endpoint,
+  so `"auto"` works out of the box; an explicit `rest` or `signBytesVersion` from
+  the caller wins. The signer must be an `OfflineDirectSigner` (SIGN_MODE_DIRECT)
+  — an amino-only signer is rejected with an explicit error. Fees are resolved to
+  an explicit `StdFee`: an `StdFee` passes through, a number is priced as a gas
+  limit, and `"auto"` simulates and applies the 1.4 multiplier; with no gas price
+  and no explicit fee the client throws rather than guess. The tx methods keep
+  returning the same `DeliverTxResponse` shape, so no call site changes.
+
+  Also re-exported from `@qorechain/sdk`: `resolveSignBytesVersion`,
+  `isHybridSignBytesRejection`, and the `SignBytesVersionOption` / `PqcKeypair`
+  types. New: `RdkTxClient.isHybrid`, and an options argument on
+  `RdkTxClient.fromClient` for driving the hybrid path against a custom transport.
+
+  *(TypeScript only. The Python, Go, Rust, and Java clients remain
+  classical-only in this release and are unsuitable for native-lane transactions
+  on mainnet or `qorechain-diana`.)*
+
+### Security
+
+- **Settlement-receipt verification no longer accepts fabricated receipts**
+  (reported through the Break QoreChain bug bounty). `verifySettlementReceipt`
+  could be made to return `valid: true` for a receipt that was entirely made up:
+  - its "binding" check compared `stateRoot` with `batchStateRoot` — two fields
+    of the *same caller-supplied object*, so it proved nothing; and
+  - nothing was checked against the chain, so an attacker could generate their
+    own ML-DSA-87 keypair, invent a state root, sign the canonical anchor
+    message, and produce a receipt that verified.
+
+  A receipt is a **claim, not evidence**. Verification now re-reads the claim
+  from live chain state and reports `valid: true` only when the receipt
+  reproduces what the chain holds: the rollup really belongs to that layer, the
+  chain's batch carries that state root, **an anchor matching the receipt exists
+  on chain**, the creator matches the chain's registered creator, and the
+  Dilithium-5 signature verifies under the key the *chain* holds for them.
+
+### Changed (breaking)
+
+- `verifySettlementReceipt` now takes `client` for a real verification. The
+  result gains `mode: "chain" | "signature-only"`, and `checks` is replaced by
+  `rollupLayerBinding`, `batchStateRoot`, `anchorOnChain`, `creatorAuthority`,
+  and `pqcSignature` (the old `stateRootBinding` and `hasMaterial` are gone).
+- Passing only `creatorPublicKey` is now **`mode: "signature-only"` and never
+  `valid`** — by design. It shows that someone signed those bytes; it cannot
+  show the anchor exists. Code that relied on offline verification returning
+  `valid: true` must pass a `client`.
+- Documentation corrected: receipts are **not** "fully offline verifiable". The
+  guides now state that chain verification is required, and that your trust
+  anchor is the node you query.
+
+Applied in all five language clients.
+
+### Added
+
+- **Real hybrid (post-quantum) transaction signing in the TypeScript tx client.**
+  `RdkTxClient` previously signed classical-only through cosmjs, which cannot
+  build a hybrid transaction at all — so RDK transactions were refused on every
+  network that enforces the post-quantum signature. Pass `pqcKeypair` (and
+  `rest`) on connect and the client now signs hybrid through
+  `@qorechain/sdk`'s hybrid path. `signBytesVersion` defaults to `"auto"` (the
+  REST endpoint from your network preset is supplied for you) and accepts an
+  explicit `"v1"`/`"v2"` override for networks whose upgrade plan name differs
+  from the one `"auto"` looks up. Re-exports `resolveSignBytesVersion` and
+  `isHybridSignBytesRejection`.
+
+### Changed
+
+- **`@qorechain/sdk` bumped to `^0.8.0`** — the release that added the v1/v2
+  hybrid sign-bytes resolver. The previous `^0.7.0` pin could not reach it
+  (a caret on a `0.x` version is locked to that minor).
+- **Scaffolded projects now get the fixed RDK.** Every
+  `create-qorechain-rollup` template pinned `@qorechain/rdk` at `^0.2.0`, and a
+  caret on a `0.x` version is locked to that minor — so a rollup scaffolded
+  today installed **0.2.x**, the release with the broken receipt verifier, no
+  matter how many versions had shipped since. All six templates now pin
+  `^0.5.0`.
+- **Documented what a receipt does *not* prove.** The canonical anchor message
+  covers `layer_id`, `layer_height`, `state_root` and `validator_set_hash` — it
+  does not name the rollup or the batch, because an anchor is a layer-level
+  object. Verification binds `rollupId` and `batchIndex` through chain reads
+  instead, so a receipt cannot assert a state root the chain does not hold for
+  that batch. The residual case is now stated in the guide: where two batches
+  genuinely share a state root on the same layer under the same creator, a
+  genuine anchor signature can be relabelled between them. Closing that requires
+  the anchor message to commit to the rollup and batch, which is a chain-side
+  change.
+- **The CLI no longer ships two stale packages.** `@qorechain/sdk` and
+  `@qorechain/evm` were runtime dependencies of `@qorechain/rdk-cli` but imported
+  nowhere in its source, so every install pulled them and forced a second, older
+  copy of the SDK into the tree. The SDK moved to `devDependencies` at `^0.8.0`
+  (only the test suite uses it), leaving one SDK version resolved.
+- **Corrected a false claim in the README.** It stated that the TypeScript path
+  supported hybrid signing while Python, Go, Rust and Java were classical-only.
+  In fact no language signed hybrid. TypeScript now genuinely does; the other
+  four remain classical-only and are not suitable for native-lane transactions
+  on a network that requires the post-quantum signature.
+
 ## 0.4.4
 
 ### Changed

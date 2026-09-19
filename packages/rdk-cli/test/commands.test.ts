@@ -1,5 +1,20 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { createRdkClient, RdkTxClient, MockTxClient, generateMnemonic, type FetchLike } from "@qorechain/rdk";
+import { generatePqcKeypair, pqcSign } from "@qorechain/sdk";
+import {
+  createRdkClient,
+  RdkTxClient,
+  MockTxClient,
+  anchorSignBytes,
+  bytesToBase64,
+  bytesToHex,
+  generateMnemonic,
+  hexToBytes,
+  type FetchLike,
+  type SettlementReceipt,
+} from "@qorechain/rdk";
 import { CaptureOutput } from "../src/output";
 import { parseCli } from "../src/args";
 import * as cmd from "../src/commands";
@@ -152,5 +167,151 @@ describe("qorollup commands", () => {
     const code = await cmd.cmdFaucet(ctx, parseCli(["faucet", "qor1abc"]));
     expect(code).toBe(0);
     expect(out.text()).toContain("Faucet request accepted");
+  });
+});
+
+describe("qorollup receipt verify (a receipt someone handed you)", () => {
+  const layerId = "layer-rollup-1";
+  const layerHeight = 42;
+  const stateRoot = "98d658fb28540a2eca2a8a5930c309a9c37f89979d48d025a72c36a77a74510d";
+  const vsh = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899";
+  const creator = "qor1creator0000000000000000000000000000000";
+
+  const kp = generatePqcKeypair();
+  const signature = pqcSign(
+    kp.secretKey,
+    anchorSignBytes({ layerId, layerHeight, stateRoot, validatorSetHash: vsh }),
+  );
+  const b64 = (hex: string): string => bytesToBase64(hexToBytes(hex));
+
+  /** A node that holds exactly one rollup, one batch and one anchor. */
+  function chain(): (req: { url: string }) => Reply {
+    return ({ url }) => {
+      if (url.includes("/qorechain/rdk/v1/rollup/")) {
+        return { json: { rollup: { rollup_id: "r", creator, layer_id: layerId, status: "active" } } };
+      }
+      if (url.includes("/qorechain/rdk/v1/batch/")) {
+        return {
+          json: {
+            batch: { rollup_id: "r", batch_index: 0, state_root: b64(stateRoot), status: "finalized" },
+          },
+        };
+      }
+      if (url.includes("/qorechain/multilayer/v1/anchors/")) {
+        return {
+          json: {
+            anchors: [
+              {
+                layer_id: layerId,
+                layer_height: layerHeight,
+                state_root: b64(stateRoot),
+                validator_set_hash: b64(vsh),
+                main_chain_height: 100,
+                anchored_at: 1700000000,
+                pqc_aggregate_signature: bytesToBase64(signature),
+                transaction_count: 7,
+              },
+            ],
+          },
+        };
+      }
+      if (url.includes("/qorechain/pqc/v1/accounts/")) {
+        return {
+          json: {
+            account: {
+              address: creator,
+              public_key: bytesToBase64(kp.publicKey),
+              algorithm_name: "ML-DSA-87",
+            },
+          },
+        };
+      }
+      return { json: {} };
+    };
+  }
+
+  const genuine: SettlementReceipt = {
+    version: 1,
+    rollupId: "r",
+    layerId,
+    batchIndex: 0,
+    creator,
+    algorithm: "ML-DSA-87",
+    stateRoot,
+    layerHeight,
+    validatorSetHash: vsh,
+    mainChainHeight: 100,
+    anchoredAt: 1700000000,
+    pqcSignature: bytesToHex(signature),
+    batchStateRoot: stateRoot,
+  };
+
+  function writeReceipt(value: unknown): string {
+    const file = join(mkdtempSync(join(tmpdir(), "qorollup-receipt-")), "receipt.json");
+    writeFileSync(file, typeof value === "string" ? value : JSON.stringify(value));
+    return file;
+  }
+
+  async function run(fileArg: string | undefined, handler = chain()) {
+    const { ctx, out } = makeCtx(handler);
+    const argv = fileArg === undefined ? ["receipt", "verify"] : ["receipt", "verify", fileArg];
+    const code = await cmd.cmdReceipt(ctx, parseCli(argv));
+    // CaptureOutput keeps error() separate from line(); assertions want both.
+    return { code, text: [...out.lines, ...out.errors].join("\n") };
+  }
+
+  it("verifies a genuine receipt read from a file", async () => {
+    const { code, text } = await run(writeReceipt(genuine));
+    expect(code).toBe(0);
+    expect(text).toContain("Receipt is genuine");
+    // Every check is reported, so a relying party sees what was actually proven.
+    expect(text).toContain("PASS  a matching anchor exists on chain");
+    expect(text).not.toContain("FAIL");
+  });
+
+  it("rejects a receipt an attacker fabricated and signed with their own key (QSR-2026-0055)", async () => {
+    // The attacker invents a state root and signs the canonical anchor message
+    // with a keypair they generated themselves — the original PoC, now arriving
+    // the way a relying party would really receive it: as a file.
+    const evilKp = generatePqcKeypair();
+    const fakeRoot = "dead".repeat(16);
+    const forged: SettlementReceipt = {
+      ...genuine,
+      stateRoot: fakeRoot,
+      batchStateRoot: fakeRoot,
+      pqcSignature: bytesToHex(
+        pqcSign(
+          evilKp.secretKey,
+          anchorSignBytes({ layerId, layerHeight, stateRoot: fakeRoot, validatorSetHash: vsh }),
+        ),
+      ),
+    };
+    const { code, text } = await run(writeReceipt(forged));
+    expect(code).toBe(1);
+    expect(text).toContain("NOT verified");
+    expect(text).toContain("FAIL  chain's batch carries the receipt's state root");
+  });
+
+  it("reports a clear error for a malformed file instead of a verification failure", async () => {
+    const { code, text } = await run(writeReceipt("{ not json"));
+    expect(code).toBe(1);
+    expect(text).toContain("not valid JSON");
+  });
+
+  it("names the fields a truncated receipt is missing", async () => {
+    const { pqcSignature, stateRoot: _root, ...partial } = genuine;
+    void pqcSignature;
+    void _root;
+    const { code, text } = await run(writeReceipt(partial));
+    expect(code).toBe(1);
+    expect(text).toContain("missing required field(s)");
+    expect(text).toContain("stateRoot");
+    expect(text).toContain("pqcSignature");
+  });
+
+  it("prints usage when no file is given", async () => {
+    const { code, text } = await run(undefined);
+    expect(code).toBe(1);
+    expect(text).toContain("qorollup receipt verify <file>");
   });
 });

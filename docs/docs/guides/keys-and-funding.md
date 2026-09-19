@@ -77,24 +77,64 @@ const account = await deriveNativeAccount(process.env.QORE_MNEMONIC!);
 const signer = await directSignerFromPrivateKey(account.privateKey, "qor");
 ```
 
-## Quantum-safe (hybrid) signing
+## Signing on a PQC-required network
 
-QoreChain is a quantum-safe Layer 1, and the RDK re-exports the hybrid
-post-quantum signer from [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk)
-so operator transactions can be signed with post-quantum protection. Because the
-RDK accepts any `OfflineSigner`, you swap it in wherever a standard signer goes —
-no other code changes.
+QoreChain's native lane requires a **hybrid** signature — ML-DSA-87 (Dilithium-5)
+alongside the classical secp256k1 one — on both `qorechain-vladi` (mainnet) and
+`qorechain-diana` (testnet). A plain `OfflineSigner` produces only the classical
+half, so a classical-only transaction is rejected on those networks.
+
+Pass a `pqcKeypair` on connect and the tx client signs hybrid for every
+transaction it sends — nothing else in your code changes, and the tx methods keep
+returning the same response shape:
 
 ```ts
-import { HybridSigner } from "@qorechain/rdk";
+import { createRdkClient, signerFromEnv, generatePqcKeypair } from "@qorechain/rdk";
 
-// Construct a hybrid signer per the @qorechain/sdk docs, then:
-const tx = await rdk.connectTx(hybridSigner, { gasPrice: "0.15uqor" });
+const rdk = createRdkClient({ network: "testnet" });
+const signer = await signerFromEnv();
+if (!signer) throw new Error("set QORE_OPERATOR_PRIVATE_KEY_HEX or QORE_MNEMONIC");
+
+const tx = await rdk.connectTx(signer, {
+  gasPrice: "0.15uqor",
+  pqcKeypair: myPqcKeypair, // switches the client to hybrid signing
+});
+
+await tx.createRollup({ /* … */ });
 ```
 
-The kit also re-exports `PqcSigner`, `generatePqcKeypair`, `pqcSign`, and
-`pqcVerify` for lower-level post-quantum use. The kit exposes exactly the
-primitives the SDK and chain implement — nothing more.
+A few things to know:
+
+- **The signer must be a direct signer.** Hybrid signing uses SIGN_MODE_DIRECT;
+  an amino-only signer cannot carry the signature extension and is rejected with
+  an explicit error. `directSignerFromPrivateKey` and `signerFromEnv` both give
+  you a direct signer.
+- **The PQC key must already be registered on chain** (`MsgRegisterPQCKey`) for
+  your operator account. If it is not, set `includePqcPublicKey: true` so the key
+  travels with the transaction and the chain can register it on first use.
+- **`rest` is filled in for you.** The sign-bytes form is resolved from the
+  network (`signBytesVersion: "auto"`, the default), which needs the REST/LCD
+  endpoint; `rdk.connectTx` passes the network preset's REST endpoint
+  automatically. Using `RdkTxClient.connect` directly, pass `rest` yourself.
+- **Override the form when `"auto"` cannot resolve it.** `"auto"` looks the
+  network's upgrade state up over REST; on a network whose upgrade plan is named
+  differently from what it looks for, force the form with
+  `signBytesVersion: "v1"` or `"v2"` instead. `resolveSignBytesVersion` and
+  `isHybridSignBytesRejection` are re-exported if you want to inspect or handle
+  this yourself.
+- **Fees must be explicit.** The hybrid builder needs a concrete `StdFee`, so
+  either pass `fee` per transaction or set `gasPrice` on connect (a gas limit is
+  priced with it, and `"auto"` simulates first). Without either, the client
+  throws instead of guessing.
+
+> **Only the TypeScript client signs hybrid.** The Python, Go, Rust, and Java
+> clients sign classical-only and are unsuitable for native-lane transactions on
+> mainnet or `qorechain-diana`; use them on permissive networks, or pair them
+> with the [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc) bindings.
+
+The kit also re-exports `HybridSigner`, `PqcSigner`, `generatePqcKeypair`,
+`pqcSign`, and `pqcVerify` for lower-level post-quantum use. The kit exposes
+exactly the primitives the SDK and chain implement — nothing more.
 
 ## Unified keys & Phantom
 

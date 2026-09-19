@@ -6,7 +6,7 @@
 
   <groupId>io.github.qorechain</groupId>
   <artifactId>qorechain-rdk</artifactId>
-  <version>0.4.4</version>
+  <version>0.5.0</version>
   <packaging>jar</packaging>
 
   <name>QoreChain Rollup Development Kit (JVM)</name>

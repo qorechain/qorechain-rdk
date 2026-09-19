@@ -20,7 +20,7 @@ quantum-safe signing, and transport.
 - **Quantum-safe settlement receipts** — `buildSettlementReceipt` /
   `verifySettlementReceipt`: a portable receipt proving a settlement batch was
   anchored to the Main Chain under an ML-DSA-87 (Dilithium-5, FIPS-204)
-  signature, verifiable fully offline.
+  signature, verified against live chain state.
 - **Multi-VM tooling** — `encodeCrossVmCalldata`, `functionSelector`, and the
   `CROSS_VM_PRECOMPILE` address for EVM → CosmWasm cross-VM calls.
 - **Watchtower** — `watchBatches`, an auto-challenger framework for optimistic
@@ -48,6 +48,35 @@ npm install @qorechain/rdk
 - **Submit and query native data-availability blobs**.
 - **Read** rollup and batch status, list rollups, and module parameters over
   REST, gRPC, and the `qor_` JSON-RPC namespace.
+
+## Signing
+
+The tx client signs with any `@cosmjs` `OfflineSigner`. QoreChain's native lane,
+however, requires a **hybrid** signature — ML-DSA-87 (Dilithium-5) alongside the
+classical secp256k1 one — on mainnet (`qorechain-vladi`) and, since chain
+v3.1.98, on testnet (`qorechain-diana`) as well. A classical-only transaction is
+rejected there.
+
+**This package signs hybrid when you pass `pqcKeypair`:**
+
+```ts
+const tx = await rdk.connectTx(signer, {
+  gasPrice: "0.15uqor",
+  pqcKeypair, // ML-DSA-87 keypair → every tx is signed hybrid
+});
+```
+
+The signer must be a direct signer (SIGN_MODE_DIRECT), the PQC key must already
+be registered on chain via `MsgRegisterPQCKey` unless you set
+`includePqcPublicKey: true`, and fees must be explicit — pass `fee`, or a
+`gasPrice` on connect so a gas limit or `"auto"` can be priced. `connectTx` also
+supplies `rest` from the network preset, which the default
+`signBytesVersion: "auto"` needs; force a form with `"v1"` / `"v2"` when a
+network's upgrade plan name differs from what `"auto"` looks up.
+
+> The Python, Go, Rust, and Java RDK clients sign **classical-only** and are
+> unsuitable for native-lane transactions on mainnet or `qorechain-diana`. Only
+> this TypeScript package signs hybrid.
 
 ## Network reference
 

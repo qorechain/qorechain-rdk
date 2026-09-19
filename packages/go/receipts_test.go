@@ -127,16 +127,32 @@ func TestSettlementReceiptRoundTrip(t *testing.T) {
 		t.Errorf("creator got %q want %q", receipt.Creator, creator)
 	}
 
-	// Verify offline with a supplied public key.
-	v := VerifySettlementReceipt(ctx, receipt, pubHex, nil)
-	if !v.Valid || !v.Checks.StateRootBinding || !v.Checks.PqcSignature || !v.Checks.HasMaterial {
-		t.Errorf("offline verify failed: %+v", v)
+	// Verified against live chain state: the only mode that can be valid.
+	v := VerifySettlementReceipt(ctx, receipt, "", client)
+	if !v.Valid {
+		t.Fatalf("chain verify failed: %+v", v)
+	}
+	if v.Mode != ReceiptModeChain {
+		t.Errorf("mode got %q want %q", v.Mode, ReceiptModeChain)
+	}
+	if !v.Checks.RollupLayerBinding || !v.Checks.BatchStateRoot || !v.Checks.AnchorOnChain ||
+		!v.Checks.CreatorAuthority || !v.Checks.PqcSignature {
+		t.Errorf("expected every check to pass, got %+v", v.Checks)
 	}
 
-	// Verify by fetching the creator's PQC key from the chain.
-	v2 := VerifySettlementReceipt(ctx, receipt, "", client)
-	if !v2.Valid {
-		t.Errorf("client-fetched verify failed: %+v", v2)
+	// Signature-only is never valid, even for a genuine receipt.
+	sigOnly := VerifySettlementReceipt(ctx, receipt, pubHex, nil)
+	if !sigOnly.Checks.PqcSignature {
+		t.Error("the signature really is good; expected the signature check to pass")
+	}
+	if sigOnly.Valid {
+		t.Errorf("signature-only must never be valid: %+v", sigOnly)
+	}
+	if sigOnly.Mode != ReceiptModeSignatureOnly {
+		t.Errorf("mode got %q want %q", sigOnly.Mode, ReceiptModeSignatureOnly)
+	}
+	if sigOnly.Reason == "" {
+		t.Error("expected a reason explaining nothing was checked against the chain")
 	}
 }
 
@@ -168,15 +184,19 @@ func TestSettlementReceiptTamperedSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build receipt: %v", err)
 	}
-	v := VerifySettlementReceipt(ctx, receipt, pubHex, nil)
+	v := VerifySettlementReceipt(ctx, receipt, "", client)
 	if v.Valid {
 		t.Error("expected tampered receipt to be invalid")
+	}
+	if v.Mode != ReceiptModeChain {
+		t.Errorf("mode got %q want %q", v.Mode, ReceiptModeChain)
 	}
 	if v.Checks.PqcSignature {
 		t.Error("expected pqcSignature check to fail for tampered signature")
 	}
-	if !v.Checks.StateRootBinding {
-		t.Error("state-root binding should still hold for a tampered signature")
+	// Everything up to the signature is genuinely on chain.
+	if !v.Checks.RollupLayerBinding || !v.Checks.BatchStateRoot || !v.Checks.AnchorOnChain || !v.Checks.CreatorAuthority {
+		t.Errorf("expected the chain checks to hold for a tampered signature, got %+v", v.Checks)
 	}
 }
 
@@ -186,5 +206,90 @@ func TestVerifyReceiptNoKeyNoClient(t *testing.T) {
 	}, "", nil)
 	if v.Valid || v.Reason == "" {
 		t.Errorf("expected invalid with reason, got %+v", v)
+	}
+	if v.Mode != ReceiptModeSignatureOnly {
+		t.Errorf("mode got %q want %q", v.Mode, ReceiptModeSignatureOnly)
+	}
+}
+
+// TestFabricatedReceiptQSR20260055 is the regression test for bug-bounty report
+// QSR-2026-0055: a receipt is a claim, not evidence. An attacker generates their
+// own ML-DSA-87 keypair, invents a state root, sets both state-root fields to it
+// (defeating the old vacuous "binding" check, which compared two fields of the
+// same attacker-supplied object) and signs the canonical anchor message with
+// their own key. Neither signature-only nor chain verification may accept it.
+func TestFabricatedReceiptQSR20260055(t *testing.T) {
+	evilPub, evilSec, err := pqc.MLDSA87.Keygen()
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	fabricatedRoot := strings.Repeat("de", 32)
+	fake := SettlementReceipt{
+		Version:          ReceiptVersion,
+		RollupID:         "victim-rollup",
+		LayerID:          "layer-victim",
+		BatchIndex:       999,
+		Creator:          "qor1attackerownaddressxxxxxxxxxxxxxxxxxxx",
+		Algorithm:        ReceiptAlgorithm,
+		StateRoot:        fabricatedRoot,
+		LayerHeight:      123456,
+		ValidatorSetHash: strings.Repeat("ab", 32),
+		MainChainHeight:  999999,
+		AnchoredAt:       1757000000,
+		// The attacker controls both sides of the old "binding" check.
+		BatchStateRoot: fabricatedRoot,
+	}
+	message := AnchorSignBytes(fake.LayerID, fake.LayerHeight, fake.StateRoot, fake.ValidatorSetHash)
+	sig, err := pqc.MLDSA87.Sign(evilSec, message)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	fake.PqcSignature = hex.EncodeToString(sig)
+
+	ctx := context.Background()
+
+	// Signature-only: the signature is internally consistent, but proves nothing.
+	sigOnly := VerifySettlementReceipt(ctx, fake, hex.EncodeToString(evilPub), nil)
+	if !sigOnly.Checks.PqcSignature {
+		t.Error("the attacker's self-signed signature should verify against their own key")
+	}
+	if sigOnly.Valid {
+		t.Errorf("fabricated receipt accepted in signature-only mode: %+v", sigOnly)
+	}
+	if sigOnly.Mode != ReceiptModeSignatureOnly {
+		t.Errorf("mode got %q want %q", sigOnly.Mode, ReceiptModeSignatureOnly)
+	}
+
+	// Against the chain: the rollup is not bound to the claimed layer, so it
+	// cannot pass however well-formed the receipt is.
+	const (
+		layerID   = "layer-rollup-1"
+		stateRoot = "98d658fb28540a2eca2a8a5930c309a9c37f89979d48d025a72c36a77a74510d"
+		vsh       = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+		creator   = "qor1creator0000000000000000000000000000000"
+	)
+	honestPub, _, err := pqc.MLDSA87.Keygen()
+	if err != nil {
+		t.Fatalf("keygen: %v", err)
+	}
+	srv := receiptTestServer(t, layerID, stateRoot, vsh, creator, hex.EncodeToString(honestPub), []byte{1, 2, 3})
+	defer srv.Close()
+	client := NewRdkClient(RdkClientOptions{Endpoints: &Endpoints{Rest: srv.URL}, HTTP: srv.Client()})
+
+	v := VerifySettlementReceipt(ctx, fake, hex.EncodeToString(evilPub), client)
+	if v.Valid {
+		t.Errorf("fabricated receipt accepted against chain state: %+v", v)
+	}
+	if v.Mode != ReceiptModeChain {
+		t.Errorf("mode got %q want %q", v.Mode, ReceiptModeChain)
+	}
+	if v.Checks.RollupLayerBinding {
+		t.Error("the chain does not bind victim-rollup to layer-victim")
+	}
+	if v.Checks.AnchorOnChain {
+		t.Error("no anchor on chain matches the fabricated receipt")
+	}
+	if v.Reason == "" {
+		t.Error("expected a reason for the rejection")
 	}
 }

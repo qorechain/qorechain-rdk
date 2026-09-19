@@ -46,11 +46,13 @@ matrix between these dimensions before anything is submitted on-chain.
 
 The TypeScript RDK depends on [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk)
 for accounts, transport, and quantum-safe signing. Operator transactions —
-creating a rollup, submitting a batch, managing lifecycle — can be signed with a
-standard secp256k1 signer or with the SDK's hybrid post-quantum signer, since
-the RDK accepts any [`@cosmjs`](https://www.npmjs.com/package/@cosmjs/proto-signing)
-`OfflineSigner`. No marketing claims here — the kit exposes exactly the
-primitives the chain implements.
+creating a rollup, submitting a batch, managing lifecycle — are signed with any
+[`@cosmjs`](https://www.npmjs.com/package/@cosmjs/proto-signing) `OfflineSigner`,
+and with a `pqcKeypair` on connect the TypeScript client signs them **hybrid**
+(ML-DSA-87 + secp256k1), which is what the native lane requires on mainnet and on
+`qorechain-diana`. The Python, Go, Rust, and Java clients sign classical-only. No
+marketing claims here — the kit exposes exactly the primitives the chain
+implements.
 
 ## The RDK family
 
@@ -86,8 +88,7 @@ documentation.
   lifecycles, and economics.
 - [QCAI Rollup Copilot](guides/qcai-copilot.md) — aggregated, plain-language
   advice for a rollup.
-- [Quantum-safe settlement receipts](guides/settlement-receipts.md) — portable,
-  offline-verifiable batch-anchor proofs.
+- [Quantum-safe settlement receipts](guides/settlement-receipts.md) — portable batch-anchor records, verified against chain state.
 - [Multi-VM (cross-VM calls)](guides/multi-vm.md) — EVM → QoreChain Native via the
   cross-VM precompile.
 - [Watchtower](guides/watchtower.md) — auto-challenger framework for optimistic

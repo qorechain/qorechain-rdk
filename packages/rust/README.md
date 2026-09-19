@@ -31,7 +31,27 @@ Surface (mirrors the TypeScript RDK modules):
 > with the [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc)
 > bindings in a custom backend. The TypeScript RDK supports hybrid signing via
 > [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk). Read paths,
-> offline signing, and settlement-receipt verification are unaffected.
+> local transaction signing, and settlement-receipt verification are unaffected.
+
+## What's new in 0.5.0
+
+- **Settlement-receipt verification is against live chain state** (security fix,
+  breaking). A receipt is a **claim, not evidence** — every field in it is
+  supplied by whoever hands it to you. `verify_settlement_receipt` now re-reads
+  the claim from the chain (the rollup's layer, the batch's state root, the
+  anchor itself, and the creator's registered key) and reports `valid: true`
+  only when the receipt reproduces what the chain holds. The result gains
+  `mode: ReceiptVerificationMode` (`"chain"` / `"signature-only"`), and `checks`
+  is replaced by `rollup_layer_binding`, `batch_state_root`, `anchor_on_chain`,
+  `creator_authority` and `pqc_signature` (the old `state_root_binding` and
+  `has_material` are gone).
+- Passing only `creator_public_key_hex`, with no client, is now
+  `mode: "signature-only"` and **never** `valid`: it shows that someone signed
+  those bytes, not that QoreChain anchored the batch. Code that relied on
+  offline verification returning `valid: true` must pass a client.
+- `SettlementReceipt::batch_state_root` is kept, but is **informational only** —
+  verification compares the receipt against the chain's batch, never against the
+  receipt's own copy of it.
 
 ## What's new in 0.4.0
 
@@ -40,9 +60,10 @@ Surface (mirrors the TypeScript RDK modules):
   plain-language suggestions for a rollup (best-effort; unreachable advisory
   services degrade to warnings).
 - **Quantum-safe settlement receipts** — `build_settlement_receipt` /
-  `verify_settlement_receipt`: a portable receipt proving a settlement batch was
+  `verify_settlement_receipt`: a portable receipt that a settlement batch was
   anchored to the Main Chain under an ML-DSA-87 (Dilithium-5, FIPS-204)
-  signature, verifiable fully offline. The ML-DSA-87 verification uses the
+  signature. Verification is against live chain state — see 0.5.0 above; the
+  ML-DSA-87 verification uses the
   [`qorechain-pqc`](https://github.com/qorechain) library.
 
 ## Install

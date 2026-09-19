@@ -34,12 +34,15 @@ is the only kit that can express it — in TypeScript, Python, Go, Rust, and Jav
 
 When your rollup anchors a settlement batch, QoreChain commits its state root to
 the Main Chain under a **post-quantum (ML-DSA-87 / Dilithium-5, FIPS-204)**
-signature. The RDK turns that anchor into a **portable receipt** that anyone can
-verify **fully offline** — no node, no trust in the kit, just math.
+signature. The RDK turns that anchor into a **portable receipt** you can hand to
+an auditor, an exchange, or a counterparty.
 
-The receipt proves two things: the batch's state root is the one that was
-anchored (binding), and the anchor was signed by the layer creator's registered
-post-quantum key (authenticity). The signature covers the canonical message
+A receipt is a **claim, not evidence** — every field in it comes from whoever
+handed it to you. So verification re-reads the claim from the chain: that the
+rollup really belongs to that layer, that the batch really carries that state
+root, that **an anchor matching the receipt actually exists on chain**, and that
+the creator's key is the one the chain has registered. Only then is it valid.
+The signature itself covers the canonical message
 `layer_id || layer_height(8-byte big-endian) || state_root || validator_set_hash`.
 
 ```ts
@@ -65,14 +68,17 @@ console.log(result.checks.pqcSignature);   // Dilithium-5 signature verified
 console.log(result.checks.stateRootBinding); // batch root == anchored root
 ```
 
-**Fully offline** — hand the receipt and the creator's public key to anyone, on
-an air-gapped machine, and they can verify it without touching the network:
+There is also a **signature-only** mode, for when you only want to check the
+post-quantum signature against a key you already hold. It is deliberately never
+`valid` — a signature proves someone signed those bytes, it cannot prove the
+anchor exists:
 
 ```ts
 const result = await verifySettlementReceipt(receipt, {
-  creatorPublicKey: "a1b2…", // the layer creator's ML-DSA-87 key (hex)
+  creatorPublicKey: "a1b2…", // a key you obtained out-of-band
 });
-// result.valid === true, with zero network calls
+// result.mode  === "signature-only"
+// result.valid === false      ← by design: nothing was checked against the chain
 ```
 
 The same receipt verifies **byte-for-byte across all five languages** (the

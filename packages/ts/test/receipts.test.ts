@@ -10,6 +10,7 @@ import {
   bytesToHex,
   bytesToBase64,
   hexToBytes,
+  type SettlementReceipt,
 } from "../src/index";
 import { mockFetch } from "./mock-fetch";
 
@@ -89,27 +90,74 @@ describe("settlement receipts (round-trip, real ML-DSA-87)", () => {
     expect(receipt.creator).toBe(creator);
   });
 
-  it("verifies offline with a supplied public key", async () => {
-    const receipt = await buildSettlementReceipt(client(), "r", 0);
-    const v = await verifySettlementReceipt(receipt, { creatorPublicKey: bytesToHex(kp.publicKey) });
-    expect(v.valid).toBe(true);
-    expect(v.checks.stateRootBinding).toBe(true);
-    expect(v.checks.pqcSignature).toBe(true);
-  });
-
-  it("verifies by fetching the creator's PQC key from the chain", async () => {
+  it("verifies against chain state", async () => {
     const c = client();
     const receipt = await buildSettlementReceipt(c, "r", 0);
     const v = await verifySettlementReceipt(receipt, { client: c });
     expect(v.valid).toBe(true);
+    expect(v.mode).toBe("chain");
+    expect(v.checks.rollupLayerBinding).toBe(true);
+    expect(v.checks.batchStateRoot).toBe(true);
+    expect(v.checks.anchorOnChain).toBe(true);
+    expect(v.checks.creatorAuthority).toBe(true);
+    expect(v.checks.pqcSignature).toBe(true);
   });
 
-  it("rejects a tampered signature", async () => {
+  it("signature-only is never valid, even for a genuine receipt", async () => {
+    const receipt = await buildSettlementReceipt(client(), "r", 0);
+    const v = await verifySettlementReceipt(receipt, { creatorPublicKey: bytesToHex(kp.publicKey) });
+    expect(v.checks.pqcSignature).toBe(true); // the signature really is good
+    expect(v.valid).toBe(false); // but nothing was checked against the chain
+    expect(v.mode).toBe("signature-only");
+  });
+
+  it("refuses to verify with no client at all", async () => {
+    const receipt = await buildSettlementReceipt(client(), "r", 0);
+    const v = await verifySettlementReceipt(receipt);
+    expect(v.valid).toBe(false);
+    expect(v.mode).toBe("signature-only");
+  });
+
+  it("rejects a tampered signature against the chain", async () => {
     const bad = signature.slice();
     bad[10] ^= 0xff;
-    const receipt = await buildSettlementReceipt(client(bad), "r", 0);
-    const v = await verifySettlementReceipt(receipt, { creatorPublicKey: bytesToHex(kp.publicKey) });
+    const c = client(bad);
+    const receipt = await buildSettlementReceipt(c, "r", 0);
+    const v = await verifySettlementReceipt(receipt, { client: c });
     expect(v.valid).toBe(false);
     expect(v.checks.pqcSignature).toBe(false);
+  });
+
+  // QSR-2026-0055 regression: a receipt is a claim, not evidence.
+  it("rejects a fabricated receipt signed by an attacker's own key", async () => {
+    const evil = generatePqcKeypair();
+    const fake: SettlementReceipt = {
+      version: 1,
+      rollupId: "victim-rollup",
+      layerId: "layer-victim",
+      batchIndex: 999,
+      creator: "qor1attackerownaddressxxxxxxxxxxxxxxxxxxx",
+      algorithm: "ML-DSA-87",
+      stateRoot: "de".repeat(32),
+      layerHeight: 123456,
+      validatorSetHash: "ab".repeat(32),
+      mainChainHeight: 999999,
+      anchoredAt: 1757000000,
+      pqcSignature: "",
+      batchStateRoot: "de".repeat(32), // attacker controls both sides of the old "binding"
+    };
+    fake.pqcSignature = bytesToHex(pqcSign(evil.secretKey, anchorSignBytes(fake)));
+
+    // Signature-only: the signature is internally consistent, but proves nothing.
+    const sigOnly = await verifySettlementReceipt(fake, {
+      creatorPublicKey: bytesToHex(evil.publicKey),
+    });
+    expect(sigOnly.checks.pqcSignature).toBe(true);
+    expect(sigOnly.valid).toBe(false);
+
+    // Against the chain: the rollup/layer does not exist, so it cannot pass.
+    const v = await verifySettlementReceipt(fake, { client: client() });
+    expect(v.valid).toBe(false);
+    expect(v.mode).toBe("chain");
   });
 });

@@ -24,6 +24,47 @@ developer-facing front door for launching rollups on the network.
 | `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.4.4) |
 | `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.4.4) |
 
+## What's new in 0.5.0
+
+- **Real hybrid (post-quantum) transaction signing — TypeScript.** Pass
+  `pqcKeypair` to `connectTx` / `RdkTxClient.connect` and every transaction the
+  client sends is signed hybrid (ML-DSA-87 + secp256k1) through
+  `@qorechain/sdk`'s `signAndBroadcastHybrid`, with the PQC half carried as the
+  transaction-body extension the chain requires.
+
+  **This is a correction, not just a feature.** Earlier releases claimed the
+  TypeScript path "supports hybrid signing via `@qorechain/sdk`". It did not: the
+  tx client signed through cosmjs's `SigningStargateClient`, which cannot build
+  the extension, so the RDK's transaction path was **classical-only in every
+  language** — while mainnet (`qorechain-vladi`) and testnet
+  (`qorechain-diana`, since chain v3.1.98) both require the hybrid signature.
+
+  New connect options (all optional and additive — the classical path is
+  unchanged): `pqcKeypair`, `rest`, `signBytesVersion` (`"auto"` by default,
+  `"v1"`/`"v2"` to force a form), and `includePqcPublicKey`. `RdkClient.connectTx`
+  fills `rest` in from the network preset, so `"auto"` works out of the box, with
+  a per-network override available. Also re-exported: `resolveSignBytesVersion`
+  and `isHybridSignBytesRejection`. *(TypeScript.)*
+
+  Python, Go, Rust, and Java remain classical-only in this release.
+
+- **Security — settlement receipts are now verified against the chain.** A flaw
+  reported through the Break QoreChain bug bounty let `verifySettlementReceipt`
+  return `valid: true` for a completely fabricated receipt: its "binding" check
+  compared two fields of the same caller-supplied object, and nothing was
+  checked against the chain, so an attacker could sign an invented state root
+  with their own key and have it verify.
+
+  A receipt is a **claim, not evidence**. Verification now re-reads the claim
+  from live chain state — the rollup's layer, the batch's state root, that **an
+  anchor matching the receipt exists on chain**, and the creator's
+  chain-registered key — and only then reports it valid.
+
+  **Breaking:** pass `client` to verify. The result gains
+  `mode: "chain" | "signature-only"`; supplying only `creatorPublicKey` is now
+  signature-only and **never** `valid`. The "fully offline verifiable" claim was
+  wrong and has been corrected throughout the docs. *(All five languages.)*
+
 ## What's new in 0.4.4
 
 - **Tracks `@qorechain/sdk` `^0.7.0`** — the SDK's "authenticator lanes" release
@@ -65,10 +106,10 @@ developer-facing front door for launching rollups on the network.
 - **Live public endpoints** across docs, templates, and examples
   (`rpc/api/evm/svm[-testnet].qore.host`).
 - **Deterministic PQC** — `@qorechain/sdk` ≥ 0.5.1 and `qorechain-pqc` ≥ 0.1.1
-  (deterministic ML-DSA-87 hybrid signing). Note: mainnet native-lane txs require
-  the hybrid PQC signature — the TypeScript path signs hybrid via
-  `@qorechain/sdk`; the other clients sign classical and should pair with
-  `qorechain-pqc` or target permissive networks.
+  (deterministic ML-DSA-87 hybrid signing). *Correction:* this release also
+  claimed "the TypeScript path signs hybrid via `@qorechain/sdk`". That was not
+  true of the RDK's own transaction client, which signed classical-only in every
+  language until **0.5.0**.
 
 ## What's new in 0.4.0
 
@@ -79,7 +120,7 @@ developer-facing front door for launching rollups on the network.
 - **Quantum-safe settlement receipts** — `buildSettlementReceipt` /
   `verifySettlementReceipt`: a portable receipt proving a settlement batch was
   anchored to the Main Chain under an ML-DSA-87 (Dilithium-5, FIPS-204)
-  signature, verifiable fully offline. CLI: `qorollup receipt`. *(All five
+  signature, verified against live chain state. CLI: `qorollup receipt`. *(All five
   languages; non-TS clients verify via `qorechain-pqc`.)*
 - **Multi-VM tooling** — `encodeCrossVmCalldata` / `functionSelector` and the
   `CROSS_VM_PRECOMPILE` address for EVM → QoreChain Native cross-VM calls, plus a new
@@ -95,14 +136,18 @@ manifests, REST and `qor_` JSON-RPC read clients, preflight/health, accounts, an
 transaction signing + broadcast — and are verified against shared cross-language
 golden vectors. (Live broadcast requires a node endpoint.)
 
-> **Mainnet PQC signing requirement.** QoreChain mainnet requires the hybrid
-> post-quantum signature extension (ML-DSA-87 + secp256k1) on native-lane
-> transactions. The Python, Go, Rust, and Java transaction paths currently sign
-> classical-only (SIGN_MODE_DIRECT), so use them on permissive networks
-> (testnet, local devnets) or pair them with the
-> [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc) bindings; the
-> TypeScript path supports hybrid signing via
-> [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk).
+> **PQC signing requirement.** QoreChain requires the hybrid post-quantum
+> signature extension (ML-DSA-87 + secp256k1) on native-lane transactions — on
+> mainnet (`qorechain-vladi`) and, since v3.1.98, on testnet
+> (`qorechain-diana`) too.
+>
+> **TypeScript signs hybrid when you pass `pqcKeypair`** to `connectTx` /
+> `RdkTxClient.connect` (see
+> [Keys & funding](https://qorechain.github.io/qorechain-rdk/guides/keys-and-funding)).
+> **Python, Go, Rust, and Java remain classical-only** (SIGN_MODE_DIRECT) and are
+> therefore unsuitable for native-lane transactions on mainnet or
+> `qorechain-diana`: use them on permissive networks (local devnets) or pair them
+> with the [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc) bindings.
 
 The TypeScript package is built first and at the highest polish; the other
 language packages mirror the same conceptual surface. The TypeScript RDK depends on

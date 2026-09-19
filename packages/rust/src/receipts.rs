@@ -1,11 +1,16 @@
 //! Quantum-Safe Settlement Receipts.
 //!
-//! A settlement receipt is a portable, self-contained proof that a rollup's
-//! settlement batch was anchored to the QoreChain Main Chain under a
-//! post-quantum (ML-DSA-87 / Dilithium-5) signature. It can be verified fully
-//! offline: reconstruct the canonical anchor message, fetch (or supply) the
-//! layer creator's registered PQC key, and check the Dilithium-5 signature plus
-//! the batch <-> anchor state-root binding.
+//! A settlement receipt is a portable record that a rollup's settlement batch
+//! was anchored to the QoreChain Main Chain under a post-quantum
+//! (ML-DSA-87 / Dilithium-5) signature.
+//!
+//! A receipt is a **claim, not evidence** — every field in it is supplied by
+//! whoever hands it to you. [`verify_settlement_receipt`] therefore re-reads the
+//! claim from live chain state (the rollup's layer, the batch's state root, the
+//! anchor, and the creator's registered key) and only then reports it valid.
+//! Checking the signature alone, against a key you were handed, proves that
+//! someone signed those bytes — not that QoreChain anchored anything. There is
+//! no offline verification of a settlement receipt.
 //!
 //! Canonical anchor message (matches the chain's `anchorSignBytes`):
 //! `layer_id || layer_height(8-byte big-endian) || state_root || validator_set_hash`.
@@ -14,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::facade::RdkClient;
 use crate::client::views::AnchorView;
-use crate::utils::bytes::{decode_wire_bytes, hex_to_bytes};
+use crate::utils::bytes::{bytes_to_hex, decode_wire_bytes, hex_to_bytes};
 
 /// The post-quantum algorithm the anchor signature uses.
 pub const RECEIPT_ALGORITHM: &str = "ML-DSA-87";
@@ -46,7 +51,9 @@ pub enum ReceiptError {
     },
 }
 
-/// A portable, offline-verifiable settlement receipt.
+/// A portable settlement receipt. Verify it with [`verify_settlement_receipt`],
+/// which re-reads every field from live chain state — the receipt on its own is
+/// a claim, not evidence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettlementReceipt {
     /// Receipt schema version.
@@ -73,26 +80,51 @@ pub struct SettlementReceipt {
     pub anchored_at: i64,
     /// The Dilithium-5 anchor signature (hex).
     pub pqc_signature: String,
-    /// The state root read from the settlement batch (hex), for the binding check.
+    /// The state root read from the settlement batch (hex) when the receipt was
+    /// built. **Informational only** — verification compares the receipt against
+    /// the chain's batch, never against this copy of it.
     pub batch_state_root: String,
 }
 
-/// The individual checks of a receipt verification.
+/// How a receipt was checked.
+///
+/// - [`ReceiptVerificationMode::Chain`] — every field was reproduced from live
+///   chain state. Only this mode can yield `valid: true`.
+/// - [`ReceiptVerificationMode::SignatureOnly`] — the ML-DSA-87 signature was
+///   checked against a key the caller supplied. That proves whoever holds that
+///   key signed these bytes; it does **not** prove the anchor exists on
+///   QoreChain. Always `valid: false`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReceiptVerificationMode {
+    /// Verified against live chain state.
+    Chain,
+    /// Only the signature was checked, against a caller-supplied key.
+    SignatureOnly,
+}
+
+/// The individual checks of a receipt verification.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReceiptChecks {
-    /// The batch's state root equals the anchored state root.
-    pub state_root_binding: bool,
+    /// The chain says `rollup_id` belongs to the receipt's `layer_id`.
+    pub rollup_layer_binding: bool,
+    /// The chain's batch carries the receipt's state root.
+    pub batch_state_root: bool,
+    /// An anchor with this state root, height and signature exists on chain.
+    pub anchor_on_chain: bool,
+    /// The signing key was resolved from chain, not taken from the receipt.
+    pub creator_authority: bool,
     /// The Dilithium-5 signature over the canonical message verified.
     pub pqc_signature: bool,
-    /// A non-empty signature and key were present to check.
-    pub has_material: bool,
 }
 
 /// The outcome of verifying a receipt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReceiptVerification {
-    /// Whether the receipt is valid (binding + signature both hold).
+    /// True only when the receipt was reproduced from live chain state.
     pub valid: bool,
+    /// Which check was actually performed.
+    pub mode: ReceiptVerificationMode,
     /// The individual checks.
     pub checks: ReceiptChecks,
     /// A human-readable reason when invalid.
@@ -160,7 +192,7 @@ pub fn build_settlement_receipt(
     let batch_state_root_hex = if batch.state_root.is_empty() {
         String::new()
     } else {
-        crate::utils::bytes::bytes_to_hex(&decode_wire_bytes(&batch.state_root))
+        bytes_to_hex(&decode_wire_bytes(&batch.state_root))
     };
 
     let anchors = client.rest.get_anchors(&rollup.layer_id)?;
@@ -191,102 +223,203 @@ pub fn build_settlement_receipt(
     ))
 }
 
-/// Verify a settlement receipt: the batch <-> anchor state-root binding and the
-/// Dilithium-5 signature over the canonical anchor message. With
-/// `creator_public_key_hex` supplied this is fully offline; otherwise `client`
-/// fetches the creator's registered post-quantum key.
-pub fn verify_settlement_receipt(
-    receipt: &SettlementReceipt,
-    creator_public_key_hex: Option<&str>,
-    client: Option<&RdkClient>,
-) -> ReceiptVerification {
-    let mut checks = ReceiptChecks {
-        state_root_binding: false,
-        pqc_signature: false,
-        has_material: false,
-    };
-
-    checks.state_root_binding =
-        !receipt.state_root.is_empty() && receipt.state_root == receipt.batch_state_root;
-
-    let public_key_hex: String = match creator_public_key_hex {
-        Some(pk) => pk.to_string(),
-        None => match client {
-            None => {
-                return ReceiptVerification {
-                    valid: false,
-                    checks,
-                    reason: Some(
-                        "no creator_public_key_hex supplied and no client to fetch the creator's PQC key"
-                            .to_string(),
-                    ),
-                };
-            }
-            Some(c) => match c.rest.get_pqc_account(&receipt.creator) {
-                Ok(account) => account.public_key,
-                Err(e) => {
-                    return ReceiptVerification {
-                        valid: false,
-                        checks,
-                        reason: Some(format!("failed to fetch creator PQC key: {e}")),
-                    };
-                }
-            },
-        },
-    };
-
-    checks.has_material = !public_key_hex.is_empty() && !receipt.pqc_signature.is_empty();
-    if !checks.has_material {
-        return ReceiptVerification {
-            valid: false,
-            checks,
-            reason: Some("missing public key or anchor signature".to_string()),
-        };
+/// Check the receipt's ML-DSA-87 anchor signature against `public_key_hex`.
+fn signature_over(receipt: &SettlementReceipt, public_key_hex: &str) -> bool {
+    if public_key_hex.is_empty() || receipt.pqc_signature.is_empty() {
+        return false;
     }
-
+    let (Ok(public_key), Ok(signature)) = (
+        hex_to_bytes(public_key_hex),
+        hex_to_bytes(&receipt.pqc_signature),
+    ) else {
+        return false;
+    };
     let message = anchor_sign_bytes(
         &receipt.layer_id,
         receipt.layer_height,
         &receipt.state_root,
         &receipt.validator_set_hash,
     );
+    qorechain_pqc::mldsa::ml_dsa_87::verify(&public_key, &message, &signature)
+}
 
-    let public_key = match hex_to_bytes(&public_key_hex) {
-        Ok(b) => b,
-        Err(e) => {
+/// Verify a settlement receipt against live chain state.
+///
+/// A receipt is a *claim*, not evidence: every field in it is supplied by
+/// whoever hands it to you. Verification therefore re-reads the claim from the
+/// chain — the rollup's layer, the batch's state root, the anchor itself, and
+/// the signing key — and reports `valid: true` only when the receipt reproduces
+/// what the chain actually holds. Pass `client` for this.
+///
+/// Without a `client` you can still check the signature against a
+/// `creator_public_key_hex` you obtained out of band, but that is
+/// [`ReceiptVerificationMode::SignatureOnly`] and never `valid`: a signature
+/// proves someone signed these bytes, not that the anchor exists. When `client`
+/// is supplied, `creator_public_key_hex` is ignored — the key is resolved from
+/// chain.
+pub fn verify_settlement_receipt(
+    receipt: &SettlementReceipt,
+    creator_public_key_hex: Option<&str>,
+    client: Option<&RdkClient>,
+) -> ReceiptVerification {
+    let mut checks = ReceiptChecks::default();
+
+    let Some(client) = client else {
+        let Some(public_key_hex) = creator_public_key_hex else {
             return ReceiptVerification {
                 valid: false,
+                mode: ReceiptVerificationMode::SignatureOnly,
                 checks,
-                reason: Some(format!("signature check failed: {e}")),
+                reason: Some(
+                    "no client supplied — pass a client to verify against chain state; a receipt on its own proves nothing"
+                        .to_string(),
+                ),
             };
+        };
+        checks.pqc_signature = signature_over(receipt, public_key_hex);
+        let reason = if checks.pqc_signature {
+            "signature is valid for the supplied key, but nothing was checked against the chain — pass a client to verify settlement"
+        } else {
+            "signature did not verify against the supplied key"
+        };
+        return ReceiptVerification {
+            valid: false,
+            mode: ReceiptVerificationMode::SignatureOnly,
+            checks,
+            reason: Some(reason.to_string()),
+        };
+    };
+
+    let fail = |checks: ReceiptChecks, reason: String| ReceiptVerification {
+        valid: false,
+        mode: ReceiptVerificationMode::Chain,
+        checks,
+        reason: Some(reason),
+    };
+
+    // 1. The rollup must exist on chain and belong to the layer the receipt names.
+    let rollup = match client.rest.get_rollup(&receipt.rollup_id) {
+        Ok(r) => r,
+        Err(e) => {
+            return fail(
+                checks,
+                format!(
+                    "rollup \"{}\" not found on chain: {e}",
+                    receipt.rollup_id
+                ),
+            );
         }
     };
-    let signature = match hex_to_bytes(&receipt.pqc_signature) {
+    checks.rollup_layer_binding =
+        !rollup.layer_id.is_empty() && rollup.layer_id == receipt.layer_id;
+    if !checks.rollup_layer_binding {
+        let on_chain = if rollup.layer_id.is_empty() {
+            "(none)"
+        } else {
+            rollup.layer_id.as_str()
+        };
+        return fail(
+            checks,
+            format!(
+                "rollup \"{}\" is anchored to layer \"{on_chain}\", not \"{}\"",
+                receipt.rollup_id, receipt.layer_id
+            ),
+        );
+    }
+
+    // 2. The chain's batch must carry the receipt's state root (not the receipt's own copy).
+    let batch = match client.rest.get_batch(&receipt.rollup_id, receipt.batch_index) {
         Ok(b) => b,
         Err(e) => {
-            return ReceiptVerification {
-                valid: false,
+            return fail(
                 checks,
-                reason: Some(format!("signature check failed: {e}")),
-            };
+                format!("batch {} not found on chain: {e}", receipt.batch_index),
+            );
         }
     };
-
-    checks.pqc_signature =
-        qorechain_pqc::mldsa::ml_dsa_87::verify(&public_key, &message, &signature);
-
-    let valid = checks.state_root_binding && checks.pqc_signature;
-    let reason = if valid {
-        None
-    } else if !checks.state_root_binding {
-        Some("batch state root does not match the anchored state root".to_string())
+    let on_chain_root = if batch.state_root.is_empty() {
+        String::new()
     } else {
-        Some("Dilithium-5 anchor signature did not verify".to_string())
+        bytes_to_hex(&decode_wire_bytes(&batch.state_root))
     };
+    checks.batch_state_root = !on_chain_root.is_empty() && on_chain_root == receipt.state_root;
+    if !checks.batch_state_root {
+        return fail(
+            checks,
+            "the chain's batch does not carry the receipt's state root".to_string(),
+        );
+    }
+
+    // 3. An anchor matching this receipt must actually exist on chain.
+    let anchors = match client.rest.get_anchors(&receipt.layer_id) {
+        Ok(a) => a,
+        Err(e) => {
+            return fail(
+                checks,
+                format!(
+                    "could not read anchors for layer \"{}\": {e}",
+                    receipt.layer_id
+                ),
+            );
+        }
+    };
+    checks.anchor_on_chain = anchors.iter().any(|a| {
+        a.state_root == receipt.state_root
+            && a.layer_height == receipt.layer_height
+            && a.validator_set_hash == receipt.validator_set_hash
+            && a.pqc_signature == receipt.pqc_signature
+    });
+    if !checks.anchor_on_chain {
+        return fail(
+            checks,
+            "no anchor on chain matches this receipt — it is fabricated or superseded".to_string(),
+        );
+    }
+
+    // 4. The signing key is resolved from the chain, never taken from the receipt.
+    let public_key_hex = match client.rest.get_pqc_account(&rollup.creator) {
+        Ok(account) => account.public_key,
+        Err(e) => {
+            return fail(
+                checks,
+                format!("could not resolve the creator's post-quantum key: {e}"),
+            );
+        }
+    };
+    if receipt.creator != rollup.creator {
+        return fail(
+            checks,
+            format!(
+                "receipt names creator \"{}\" but the chain says the rollup's creator is \"{}\"",
+                receipt.creator, rollup.creator
+            ),
+        );
+    }
+    checks.creator_authority = !public_key_hex.is_empty();
+    if !checks.creator_authority {
+        return fail(
+            checks,
+            format!(
+                "no post-quantum key is registered for creator {}",
+                rollup.creator
+            ),
+        );
+    }
+
+    // 5. Finally the post-quantum signature over the canonical anchor message.
+    checks.pqc_signature = signature_over(receipt, &public_key_hex);
+    if !checks.pqc_signature {
+        return fail(
+            checks,
+            "Dilithium-5 anchor signature did not verify against the creator's registered key"
+                .to_string(),
+        );
+    }
 
     ReceiptVerification {
-        valid,
+        valid: true,
+        mode: ReceiptVerificationMode::Chain,
         checks,
-        reason,
+        reason: None,
     }
 }

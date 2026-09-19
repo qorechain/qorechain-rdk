@@ -9,7 +9,8 @@ use serde_json::Value;
 use qorechain_rdk::client::http::{HttpError, HttpRequest, HttpResponse, Transport};
 use qorechain_rdk::client::{RdkClient, RdkClientOptions};
 use qorechain_rdk::receipts::{
-    anchor_sign_bytes, build_settlement_receipt, verify_settlement_receipt, SettlementReceipt,
+    anchor_sign_bytes, build_settlement_receipt, verify_settlement_receipt,
+    ReceiptVerificationMode, SettlementReceipt,
 };
 
 fn golden() -> Value {
@@ -90,62 +91,48 @@ fn mldsa87_cross_impl_vector_verifies() {
     ));
 }
 
-/// Build a self-consistent receipt over the golden `anchorSignBytes` message,
-/// signed with a fresh ML-DSA-87 keypair (the cross-impl golden vector is
-/// asserted separately in `mldsa87_cross_impl_vector_verifies`). Returns the
-/// receipt and the matching public key (hex).
-fn receipt_fixture() -> (SettlementReceipt, String) {
-    let g = golden();
-    let asb = &g["anchorSignBytes"];
-
-    let layer_id = asb["layerId"].as_str().unwrap();
-    let layer_height = asb["layerHeight"].as_u64().unwrap();
-    let state_root_hex = asb["stateRoot"].as_str().unwrap();
-    let vsh_hex = asb["validatorSetHash"].as_str().unwrap();
-
-    let (pk, sk) = qorechain_pqc::mldsa::ml_dsa_87::keygen().unwrap();
-    let message = anchor_sign_bytes(layer_id, layer_height, state_root_hex, vsh_hex);
-    let sig = qorechain_pqc::mldsa::ml_dsa_87::sign(&sk, &message).unwrap();
-
-    let receipt = SettlementReceipt {
-        version: 1,
-        rollup_id: "my-rollup".to_string(),
-        layer_id: layer_id.to_string(),
-        batch_index: 0,
-        creator: "qor1creator".to_string(),
-        algorithm: "ML-DSA-87".to_string(),
-        state_root: state_root_hex.to_string(),
-        layer_height,
-        validator_set_hash: vsh_hex.to_string(),
-        main_chain_height: 1000,
-        anchored_at: 1_700_000_000,
-        pqc_signature: hex::encode(&sig),
-        batch_state_root: state_root_hex.to_string(),
-    };
-    (receipt, hex::encode(&pk))
+/// Base64, the encoding the REST surface uses for proto `bytes` fields.
+fn b64(bytes: &[u8]) -> String {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine as _;
+    STANDARD.encode(bytes)
 }
 
-#[test]
-fn build_and_verify_settlement_receipt_round_trip() {
+fn b64_hex(hexstr: &str) -> String {
+    b64(&hex::decode(hexstr).unwrap())
+}
+
+/// A mock chain holding rollup `my-rollup` on the golden layer, its batch 0, the
+/// anchor covering that batch, and the creator's registered ML-DSA-87 key.
+struct ChainFixture {
+    client: RdkClient,
+    public_key: Vec<u8>,
+    signature: Vec<u8>,
+    layer_id: String,
+    state_root_hex: String,
+    vsh_hex: String,
+    layer_height: u64,
+}
+
+const CREATOR: &str = "qor1creator";
+
+/// Stand up the mock chain. When `tamper_signature` is set, the anchor the chain
+/// publishes carries a corrupted signature, so the receipt built from it cannot
+/// verify against the creator's registered key.
+fn chain_fixture(tamper_signature: bool) -> ChainFixture {
     let g = golden();
     let asb = &g["anchorSignBytes"];
-    let layer_id = asb["layerId"].as_str().unwrap();
-    let state_root_hex = asb["stateRoot"].as_str().unwrap();
-    let vsh_hex = asb["validatorSetHash"].as_str().unwrap();
+    let layer_id = asb["layerId"].as_str().unwrap().to_string();
     let layer_height = asb["layerHeight"].as_u64().unwrap();
+    let state_root_hex = asb["stateRoot"].as_str().unwrap().to_string();
+    let vsh_hex = asb["validatorSetHash"].as_str().unwrap().to_string();
 
-    // Sign the canonical anchor bytes with a fresh ML-DSA-87 key.
     let (pk, sk) = qorechain_pqc::mldsa::ml_dsa_87::keygen().unwrap();
-    let message = anchor_sign_bytes(layer_id, layer_height, state_root_hex, vsh_hex);
-    let sig = qorechain_pqc::mldsa::ml_dsa_87::sign(&sk, &message).unwrap();
-    let creator = "qor1creator";
-
-    // The anchor REST surface encodes proto `bytes` as base64.
-    let b64 = |hexstr: &str| {
-        use base64::engine::general_purpose::STANDARD;
-        use base64::Engine as _;
-        STANDARD.encode(hex::decode(hexstr).unwrap())
-    };
+    let message = anchor_sign_bytes(&layer_id, layer_height, &state_root_hex, &vsh_hex);
+    let mut sig = qorechain_pqc::mldsa::ml_dsa_87::sign(&sk, &message).unwrap();
+    if tamper_signature {
+        sig[10] ^= 0xff;
+    }
 
     let routes = vec![
         (
@@ -153,7 +140,7 @@ fn build_and_verify_settlement_receipt_round_trip() {
             serde_json::json!({
                 "rollup": {
                     "rollup_id": "my-rollup",
-                    "creator": creator,
+                    "creator": CREATOR,
                     "layer_id": layer_id,
                     "status": "active"
                 }
@@ -162,7 +149,7 @@ fn build_and_verify_settlement_receipt_round_trip() {
         (
             "/qorechain/rdk/v1/batch/",
             serde_json::json!({
-                "batch": { "batch_index": 0, "state_root": b64(state_root_hex) }
+                "batch": { "batch_index": 0, "state_root": b64_hex(&state_root_hex) }
             }),
         ),
         (
@@ -172,11 +159,11 @@ fn build_and_verify_settlement_receipt_round_trip() {
                     {
                         "layer_id": layer_id,
                         "layer_height": layer_height,
-                        "state_root": b64(state_root_hex),
-                        "validator_set_hash": b64(vsh_hex),
+                        "state_root": b64_hex(&state_root_hex),
+                        "validator_set_hash": b64_hex(&vsh_hex),
                         "main_chain_height": 1000,
                         "anchored_at": 1_700_000_000,
-                        "pqc_aggregate_signature": b64(&hex::encode(&sig)),
+                        "pqc_aggregate_signature": b64(&sig),
                         "transaction_count": 3
                     }
                 ]
@@ -186,8 +173,8 @@ fn build_and_verify_settlement_receipt_round_trip() {
             "/qorechain/pqc/v1/accounts/",
             serde_json::json!({
                 "account": {
-                    "address": creator,
-                    "public_key": b64(&hex::encode(&pk)),
+                    "address": CREATOR,
+                    "public_key": b64(&pk),
                     "algorithm_id": 3,
                     "algorithm_name": "ML-DSA-87"
                 }
@@ -195,30 +182,43 @@ fn build_and_verify_settlement_receipt_round_trip() {
         ),
     ];
 
-    let transport = RoutingTransport::new(routes);
-    let client = RdkClient::new(RdkClientOptions {
-        transport: Some(transport),
-        ..Default::default()
-    });
+    ChainFixture {
+        client: RdkClient::new(RdkClientOptions {
+            transport: Some(RoutingTransport::new(routes)),
+            ..Default::default()
+        }),
+        public_key: pk,
+        signature: sig,
+        layer_id,
+        state_root_hex,
+        vsh_hex,
+        layer_height,
+    }
+}
 
-    let receipt = build_settlement_receipt(&client, "my-rollup", 0).expect("receipt builds");
-    assert_eq!(receipt.layer_id, layer_id);
-    assert_eq!(receipt.state_root, state_root_hex);
-    assert_eq!(receipt.batch_state_root, state_root_hex);
-    assert_eq!(receipt.validator_set_hash, vsh_hex);
-    assert_eq!(receipt.creator, creator);
-    assert_eq!(receipt.pqc_signature, hex::encode(&sig));
+#[test]
+fn build_and_verify_settlement_receipt_round_trip() {
+    let f = chain_fixture(false);
 
-    // Verify with the key fetched via the client.
-    let v = verify_settlement_receipt(&receipt, None, Some(&client));
+    let receipt = build_settlement_receipt(&f.client, "my-rollup", 0).expect("receipt builds");
+    assert_eq!(receipt.layer_id, f.layer_id);
+    assert_eq!(receipt.state_root, f.state_root_hex);
+    assert_eq!(receipt.batch_state_root, f.state_root_hex);
+    assert_eq!(receipt.validator_set_hash, f.vsh_hex);
+    assert_eq!(receipt.layer_height, f.layer_height);
+    assert_eq!(receipt.creator, CREATOR);
+    assert_eq!(receipt.pqc_signature, hex::encode(&f.signature));
+
+    // Only a verification against live chain state can be valid.
+    let v = verify_settlement_receipt(&receipt, None, Some(&f.client));
     assert!(v.valid, "receipt should verify: {:?}", v.reason);
-    assert!(v.checks.state_root_binding);
+    assert_eq!(v.mode, ReceiptVerificationMode::Chain);
+    assert!(v.checks.rollup_layer_binding);
+    assert!(v.checks.batch_state_root);
+    assert!(v.checks.anchor_on_chain);
+    assert!(v.checks.creator_authority);
     assert!(v.checks.pqc_signature);
-    assert!(v.checks.has_material);
-
-    // Verify offline with the supplied public key.
-    let v2 = verify_settlement_receipt(&receipt, Some(&hex::encode(&pk)), None);
-    assert!(v2.valid);
+    assert!(v.reason.is_none());
 
     // JSON round-trip of the receipt.
     let json = serde_json::to_string(&receipt).unwrap();
@@ -227,25 +227,103 @@ fn build_and_verify_settlement_receipt_round_trip() {
 }
 
 #[test]
+fn signature_only_is_never_valid_even_for_a_genuine_receipt() {
+    let f = chain_fixture(false);
+    let receipt = build_settlement_receipt(&f.client, "my-rollup", 0).expect("receipt builds");
+
+    let v = verify_settlement_receipt(&receipt, Some(&hex::encode(&f.public_key)), None);
+    // The signature really is good...
+    assert!(v.checks.pqc_signature);
+    // ...but nothing was checked against the chain.
+    assert!(!v.valid);
+    assert_eq!(v.mode, ReceiptVerificationMode::SignatureOnly);
+    assert!(v.reason.unwrap().contains("chain"));
+}
+
+#[test]
+fn verify_refuses_without_a_client() {
+    let f = chain_fixture(false);
+    let receipt = build_settlement_receipt(&f.client, "my-rollup", 0).expect("receipt builds");
+
+    let v = verify_settlement_receipt(&receipt, None, None);
+    assert!(!v.valid);
+    assert_eq!(v.mode, ReceiptVerificationMode::SignatureOnly);
+    assert!(!v.checks.pqc_signature);
+    assert!(v.reason.unwrap().contains("client"));
+}
+
+#[test]
 fn verify_settlement_receipt_detects_tamper() {
-    let (mut receipt, pk_hex) = receipt_fixture();
+    // The chain publishes an anchor whose signature has been corrupted.
+    let f = chain_fixture(true);
+    let receipt = build_settlement_receipt(&f.client, "my-rollup", 0).expect("receipt builds");
 
-    // Sanity: the untampered receipt verifies offline.
-    let ok = verify_settlement_receipt(&receipt, Some(&pk_hex), None);
-    assert!(ok.valid);
+    let v = verify_settlement_receipt(&receipt, None, Some(&f.client));
+    assert!(!v.valid);
+    assert_eq!(v.mode, ReceiptVerificationMode::Chain);
+    // Everything up to the signature reproduces from chain state.
+    assert!(v.checks.rollup_layer_binding);
+    assert!(v.checks.batch_state_root);
+    assert!(v.checks.anchor_on_chain);
+    assert!(v.checks.creator_authority);
+    assert!(!v.checks.pqc_signature);
 
-    // Tamper the batch state root -> binding fails.
-    let mut tampered = receipt.clone();
-    tampered.batch_state_root = "00".repeat(32);
-    let bad = verify_settlement_receipt(&tampered, Some(&pk_hex), None);
-    assert!(!bad.valid);
-    assert!(!bad.checks.state_root_binding);
+    // A receipt whose signature was swapped out no longer matches any anchor.
+    let mut swapped = receipt.clone();
+    swapped.pqc_signature = "00".repeat(receipt.pqc_signature.len() / 2);
+    let v2 = verify_settlement_receipt(&swapped, None, Some(&f.client));
+    assert!(!v2.valid);
+    assert!(!v2.checks.anchor_on_chain);
+}
 
-    // Tamper the signature -> signature check fails.
-    receipt.pqc_signature = "00".repeat(receipt.pqc_signature.len() / 2);
-    let bad_sig = verify_settlement_receipt(&receipt, Some(&pk_hex), None);
-    assert!(!bad_sig.valid);
-    assert!(!bad_sig.checks.pqc_signature);
+/// QSR-2026-0055 regression: a receipt is a claim, not evidence. An attacker
+/// generates their own ML-DSA-87 keypair, invents a state root, makes both
+/// state-root fields agree (defeating the old vacuous "binding" check) and signs
+/// the canonical anchor bytes. It must never verify.
+#[test]
+fn rejects_fabricated_receipt_qsr_2026_0055() {
+    let (evil_pk, evil_sk) = qorechain_pqc::mldsa::ml_dsa_87::keygen().unwrap();
+
+    let layer_id = "layer-victim";
+    let layer_height = 123_456u64;
+    let state_root = "de".repeat(32);
+    let vsh = "ab".repeat(32);
+
+    let mut fake = SettlementReceipt {
+        version: 1,
+        rollup_id: "victim-rollup".to_string(),
+        layer_id: layer_id.to_string(),
+        batch_index: 999,
+        creator: "qor1attackerownaddress".to_string(),
+        algorithm: "ML-DSA-87".to_string(),
+        state_root: state_root.clone(),
+        layer_height,
+        validator_set_hash: vsh.clone(),
+        main_chain_height: 999_999,
+        anchored_at: 1_757_000_000,
+        pqc_signature: String::new(),
+        // The attacker controls both sides of the old "binding" check.
+        batch_state_root: state_root.clone(),
+    };
+    let message = anchor_sign_bytes(layer_id, layer_height, &state_root, &vsh);
+    fake.pqc_signature =
+        hex::encode(qorechain_pqc::mldsa::ml_dsa_87::sign(&evil_sk, &message).unwrap());
+    assert_eq!(fake.state_root, fake.batch_state_root);
+
+    // Signature-only: internally consistent, and still worthless as proof.
+    let sig_only = verify_settlement_receipt(&fake, Some(&hex::encode(&evil_pk)), None);
+    assert!(sig_only.checks.pqc_signature);
+    assert!(!sig_only.valid, "a self-signed receipt must never be valid");
+    assert_eq!(sig_only.mode, ReceiptVerificationMode::SignatureOnly);
+
+    // Against the chain: no such rollup/layer exists, so it cannot pass.
+    let f = chain_fixture(false);
+    let v = verify_settlement_receipt(&fake, Some(&hex::encode(&evil_pk)), Some(&f.client));
+    assert!(!v.valid);
+    assert_eq!(v.mode, ReceiptVerificationMode::Chain);
+    assert!(!v.checks.rollup_layer_binding);
+    assert!(!v.checks.anchor_on_chain);
+    assert!(!v.checks.pqc_signature);
 }
 
 #[test]
@@ -254,12 +332,6 @@ fn build_receipt_errors_when_no_anchor_covers_batch() {
     let asb = &g["anchorSignBytes"];
     let layer_id = asb["layerId"].as_str().unwrap();
     let state_root_hex = asb["stateRoot"].as_str().unwrap();
-
-    let b64 = |hexstr: &str| {
-        use base64::engine::general_purpose::STANDARD;
-        use base64::Engine as _;
-        STANDARD.encode(hex::decode(hexstr).unwrap())
-    };
 
     // The single anchor commits a *different* state root than the batch.
     let other_root = "11".repeat(32);
@@ -272,20 +344,20 @@ fn build_receipt_errors_when_no_anchor_covers_batch() {
         ),
         (
             "/qorechain/rdk/v1/batch/",
-            serde_json::json!({ "batch": { "batch_index": 0, "state_root": b64(state_root_hex) } }),
+            serde_json::json!({ "batch": { "batch_index": 0, "state_root": b64_hex(state_root_hex) } }),
         ),
         (
             "/qorechain/multilayer/v1/anchors/",
             serde_json::json!({
                 "anchors": [
-                    { "layer_id": layer_id, "layer_height": 7, "state_root": b64(&other_root) }
+                    { "layer_id": layer_id, "layer_height": 7, "state_root": b64_hex(&other_root) }
                 ]
             }),
         ),
         (
             "/qorechain/multilayer/v1/anchor/",
             serde_json::json!({
-                "anchor": { "layer_id": layer_id, "layer_height": 7, "state_root": b64(&other_root) }
+                "anchor": { "layer_id": layer_id, "layer_height": 7, "state_root": b64_hex(&other_root) }
             }),
         ),
     ];

@@ -182,10 +182,10 @@ This is the `getRollupAdvice` library call. See the
 
 ### `receipt`
 
-Build a quantum-safe settlement receipt for a batch — a portable, offline-
-verifiable proof that the batch was anchored to the Main Chain under an
-ML-DSA-87 (Dilithium-5) signature. Optionally verify it inline or write it to a
-file.
+Build a quantum-safe settlement receipt for a batch — a portable record that the
+batch was anchored to the Main Chain under an ML-DSA-87 (Dilithium-5) signature.
+Optionally verify it inline or write it to a file. `--verify` checks the receipt
+against live chain state (a receipt on its own is a claim, not evidence).
 
 ```bash
 qorollup receipt my-roll 7            # build and print the receipt
@@ -198,8 +198,53 @@ qorollup receipt my-roll 7 --out receipt.json
 | `--verify` | Verify the receipt after building it. |
 | `--out <file>` | Write the receipt JSON to a file (otherwise printed). |
 
-This wraps `buildSettlementReceipt` (and `verifySettlementReceipt` with
-`--verify`). See [Quantum-safe settlement receipts](../guides/settlement-receipts.md).
+Note what `--verify` does and does not do: it verifies the receipt **this
+command just built from chain**. It is a self-check on your own output, not a way
+to check a receipt you were given.
+
+### `receipt verify`
+
+Verify a receipt **somebody handed you** against live chain state — the
+relying-party path. Use this when an operator, counterparty, or exchange gives
+you a receipt file and you have to decide whether to believe it. It never
+rebuilds the receipt, so what gets checked is exactly what was presented to you.
+
+```bash
+qorollup receipt verify receipt.json        # verify a receipt you received
+cat receipt.json | qorollup receipt verify - # ... or from stdin
+qorollup receipt verify receipt.json --json  # machine-readable result
+```
+
+Each check is reported individually, so a failure tells you *which* claim did not
+hold:
+
+```text
+Receipt claims — my-roll batch #7
+  layer:        layer-main @ height 8891
+  state root:   98d658fb…
+  creator:      qor1…
+  checked on:   mainnet
+
+  PASS  rollup belongs to the receipt's layer
+  PASS  chain's batch carries the receipt's state root
+  PASS  a matching anchor exists on chain
+  PASS  creator matches the chain and has a registered key
+  PASS  quantum-safe anchor signature verifies
+
+✓ Receipt is genuine — every field was reproduced from live chain state on
+  mainnet. Your trust anchor is the node you queried.
+```
+
+The exit code is `0` only when the receipt is genuine, so this is safe to use in
+a script or a CI gate. A malformed or truncated file is reported as such (naming
+the missing fields) rather than as a verification failure, so you can tell "this
+file is broken" from "this receipt is a lie".
+
+Point `--network` (or `--rest`) at a node **you** trust: verification is only as
+good as the endpoint you query.
+
+These wrap `buildSettlementReceipt` and `verifySettlementReceipt`. See
+[Quantum-safe settlement receipts](../guides/settlement-receipts.md).
 
 ### `watchtower`
 

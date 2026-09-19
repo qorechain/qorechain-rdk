@@ -33,7 +33,8 @@ Surface (mirrors the TypeScript RDK modules):
 > with the [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc)
 > bindings in a custom backend. The TypeScript RDK supports hybrid signing via
 > [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk). Read paths,
-> offline signing, and settlement-receipt verification are unaffected.
+> local transaction signing, and settlement-receipt verification (which reads
+> live chain state) are unaffected.
 
 ## What's new in 0.4.0
 
@@ -42,9 +43,15 @@ Surface (mirrors the TypeScript RDK modules):
   plain-language suggestions for a rollup (best-effort; unreachable advisory
   services degrade to warnings).
 - **Quantum-safe settlement receipts** — `build_settlement_receipt` /
-  `verify_settlement_receipt`: a portable receipt proving a settlement batch was
+  `verify_settlement_receipt`: a portable record that a settlement batch was
   anchored to the Main Chain under an ML-DSA-87 (Dilithium-5, FIPS-204)
-  signature, verifiable fully offline. The ML-DSA-87 verification uses the
+  signature. A receipt is a **claim, not evidence** — every field in it comes
+  from whoever handed it to you — so `verify_settlement_receipt` requires a
+  `client` and re-reads the rollup's layer, the batch's state root, the anchor
+  and the creator's registered key from **live chain state**; only then does it
+  return `valid=True` with `mode="chain"`. There is no offline verification:
+  without a client you get `mode="signature-only"`, which proves someone signed
+  those bytes and is never `valid`. The ML-DSA-87 verification uses the
   [`qorechain-pqc`](https://github.com/qorechain) library.
 
 ```sh

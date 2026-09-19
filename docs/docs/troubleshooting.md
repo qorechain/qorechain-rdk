@@ -84,9 +84,11 @@ const signer = await DirectSecp256k1Wallet.fromKey(
 );
 ```
 
-Then connect with `await rdk.connectTx(signer)`. For hybrid post-quantum
-signing, use the signer from [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk).
-See [Keys & funding](guides/keys-and-funding.md).
+Then connect with `await rdk.connectTx(signer)`. On a network that requires the
+post-quantum signature (mainnet `qorechain-vladi` and testnet `qorechain-diana`),
+also pass a `pqcKeypair` so the client signs hybrid:
+`await rdk.connectTx(signer, { gasPrice: "0.15uqor", pqcKeypair })`. See
+[Keys & funding](guides/keys-and-funding.md).
 
 ## "Balance too low" / "Balance covers stake + fees" fails in `doctor`
 

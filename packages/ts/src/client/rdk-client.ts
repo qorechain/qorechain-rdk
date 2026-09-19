@@ -49,9 +49,18 @@ export class RdkClient {
     return suggestProfile(useCase, this.qor, opts);
   }
 
-  /** Connect a signing tx client at the consensus RPC endpoint. */
+  /**
+   * Connect a signing tx client at the consensus RPC endpoint.
+   *
+   * `rest` defaults to this network's REST endpoint, so hybrid (post-quantum)
+   * signing with the default `signBytesVersion: "auto"` works out of the box;
+   * an explicit `rest` or `signBytesVersion` from the caller always wins.
+   */
   connectTx(signer: OfflineSigner, opts?: RdkTxClientConnectOptions): Promise<RdkTxClient> {
-    return RdkTxClient.connect(this.network.endpoints.rpc, signer, opts);
+    return RdkTxClient.connect(this.network.endpoints.rpc, signer, {
+      ...opts,
+      rest: opts?.rest ?? this.network.endpoints.rest,
+    });
   }
 }
 

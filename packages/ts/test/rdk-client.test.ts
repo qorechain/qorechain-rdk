@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { createRdkClient } from "../src/index";
+import { describe, it, expect, vi } from "vitest";
+import { createRdkClient, RdkTxClient } from "../src/index";
 import { mockFetch } from "./mock-fetch";
 
 describe("RdkClient", () => {
@@ -31,5 +31,24 @@ describe("RdkClient", () => {
 
   it("selects mainnet when requested", () => {
     expect(createRdkClient({ network: "mainnet" }).network.chainId).toBe("qorechain-vladi");
+  });
+
+  it("threads the network's REST endpoint into connectTx so hybrid \"auto\" works", async () => {
+    const connect = vi
+      .spyOn(RdkTxClient, "connect")
+      .mockResolvedValue({} as unknown as RdkTxClient);
+    try {
+      const client = createRdkClient({ endpoints: { rest: "https://rest.example" } });
+      const signer = {} as never;
+
+      await client.connectTx(signer);
+      expect(connect.mock.calls[0][2]?.rest).toBe("https://rest.example");
+
+      // An explicit rest from the caller wins.
+      await client.connectTx(signer, { rest: "https://override.example" });
+      expect(connect.mock.calls[1][2]?.rest).toBe("https://override.example");
+    } finally {
+      connect.mockRestore();
+    }
   });
 });

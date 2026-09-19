@@ -47,7 +47,8 @@ pub use client::{AnchorView, PqcAccountView, RdkClient, RdkClientOptions};
 pub use copilot::{get_rollup_advice, CopilotSuggestion, RollupAdvice, SuggestionLevel};
 pub use receipts::{
     anchor_sign_bytes, build_settlement_receipt, verify_settlement_receipt, ReceiptChecks,
-    ReceiptError, ReceiptVerification, SettlementReceipt, RECEIPT_ALGORITHM, RECEIPT_VERSION,
+    ReceiptError, ReceiptVerification, ReceiptVerificationMode, SettlementReceipt,
+    RECEIPT_ALGORITHM, RECEIPT_VERSION,
 };
 pub use config::{
     is_vm_type, vm_type_label, vm_type_wire_value, BatchStatus, DaBackend, GasModel, Profile,

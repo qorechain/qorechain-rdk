@@ -17,6 +17,7 @@ import {
   generatePqcKeypair,
   pqcSign,
   pqcVerify,
+  type PqcKeypair,
 } from "@qorechain/sdk";
 import { ACCOUNT_PREFIX } from "../constants";
 import { hexToBytes } from "../utils/bytes";
@@ -32,6 +33,7 @@ export {
   generatePqcKeypair,
   pqcSign,
   pqcVerify,
+  type PqcKeypair,
 };
 
 /**

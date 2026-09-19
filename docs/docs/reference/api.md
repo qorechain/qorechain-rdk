@@ -31,7 +31,9 @@ produce it.
   - `rest` — REST read client (`getRollup`, `getBlob`, batches, …).
   - `params()` — read the live `rdk` module parameters.
   - `suggestProfile(useCase, opts?)` — QCAI-assisted profile suggestion.
-  - `connectTx(signer, opts?)` — connect a signing `RdkTxClient`.
+  - `connectTx(signer, opts?)` — connect a signing `RdkTxClient`. `opts.rest`
+    defaults to the network preset's REST endpoint (used by hybrid
+    `signBytesVersion: "auto"`).
 
 ### Configuration
 
@@ -49,7 +51,12 @@ produce it.
 
 - **`RdkTxClient`** — signing client: `createRollup`, `submitBatch`,
   `challengeBatch`, `resolveChallenge`, `pauseRollup`, `resumeRollup`,
-  `stopRollup`, `executeWithdrawal`.
+  `stopRollup`, `executeWithdrawal`. Connect options: `gasPrice`, plus the hybrid
+  (post-quantum) set — `pqcKeypair` (present ⇒ sign hybrid), `rest`,
+  `signBytesVersion` (`"auto" | "v1" | "v2"`), `includePqcPublicKey`. `isHybrid`
+  reports which path is in use.
+- **`resolveSignBytesVersion`** / **`isHybridSignBytesRejection`** — re-exported
+  from `@qorechain/sdk` for inspecting or handling the hybrid sign-bytes form.
 - **Message builders** — `createRollupMsg`, `submitBatchMsg`, and the rest of
   the `rdk` message set.
 - **`RDK_TYPES`** / **`createRdkRegistry`** — the rdk type registry.
