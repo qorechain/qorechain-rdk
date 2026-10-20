@@ -33,6 +33,13 @@ public final class Validate {
 
         if (config.rollupId == null || config.rollupId.trim().isEmpty()) {
             errors.add("rollupId must be a non-empty string");
+        } else {
+            // The chain enforces this at creation from v3.2.2; checking here means a refused
+            // id costs nothing instead of a creation fee.
+            String idError = io.github.qorechain.rdk.rules.Rules.rollupIdError(config.rollupId);
+            if (idError != null) {
+                errors.add("rollupId \"" + config.rollupId + "\" " + idError);
+            }
         }
 
         if (config.settlement == null) {

@@ -10,7 +10,8 @@ import { suggestProfile, type ProfileSuggestion } from "../profiles/suggest";
 import { RdkTxClient, type RdkTxClientConnectOptions } from "../tx/client";
 import { QorClient } from "./jsonrpc";
 import { RestClient } from "./rest";
-import type { FetchLike } from "./http";
+import { defaultFetch, type FetchLike } from "./http";
+import type { ChainTip } from "../lifecycle/state-machine";
 import type { ParamsView } from "./views";
 import type { ProfileName } from "../config/enums";
 
@@ -31,12 +32,37 @@ export class RdkClient {
   /** `qor_` JSON-RPC client. */
   readonly qor: QorClient;
 
+  private readonly fetchImpl: FetchLike;
+
   constructor(options: CreateRdkClientOptions = {}) {
     const net = getNetwork(options.network ?? "testnet");
     net.endpoints = { ...net.endpoints, ...options.endpoints };
     this.network = net;
+    this.fetchImpl = options.fetch ?? defaultFetch;
     this.rest = new RestClient(net.endpoints.rest, { fetch: options.fetch });
     this.qor = new QorClient(net.endpoints.evmRpc, { fetch: options.fetch });
+  }
+
+  /**
+   * The chain tip — latest block height and its block time — read from the
+   * consensus RPC's `/status`. A challenge window is judged against this, not
+   * against the local clock: on the block-count path the chain counts heights,
+   * and on the time-based path it compares block time, which can lag wall time.
+   */
+  async getChainTip(): Promise<ChainTip> {
+    const url = `${this.network.endpoints.rpc.replace(/\/+$/, "")}/status`;
+    const res = await this.fetchImpl(url);
+    if (!res.ok) throw new Error(`could not read the chain tip from ${url} (HTTP ${res.status})`);
+    const body = (await res.json()) as {
+      result?: { sync_info?: { latest_block_height?: string; latest_block_time?: string } };
+    };
+    const info = body.result?.sync_info;
+    const height = Number(info?.latest_block_height ?? NaN);
+    const timeMs = Date.parse(info?.latest_block_time ?? "");
+    if (!Number.isFinite(height) || !Number.isFinite(timeMs)) {
+      throw new Error(`the node at ${url} did not report a latest block height and time`);
+    }
+    return { height, timeSecs: Math.floor(timeMs / 1000) };
   }
 
   /** Read the live `rdk` module parameters from the chain. */

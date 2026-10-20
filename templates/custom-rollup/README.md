@@ -77,6 +77,21 @@ switch to `based`/`sovereign`, drop the proof in `src/submit-batch.ts`, and for
 
 ## Quantum-safe signing
 
-`src/signer.ts` uses a standard secp256k1 signer. For hybrid post-quantum signing,
-swap in [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk)'s signer —
-the RDK accepts any `@cosmjs` `OfflineSigner`.
+Both QoreChain networks require a **hybrid** signature on native-lane
+transactions — an ML-DSA-87 (Dilithium-5) signature alongside the classical
+secp256k1 one — and refuse a classical-only transaction. Every script here
+connects through `connectOperator()` in `src/signer.ts`, which signs hybrid.
+
+You do not configure the post-quantum key directly in most cases:
+
+- **With `QORE_MNEMONIC`**, the RDK derives the key for you. A mnemonic can
+  yield two post-quantum keys (canonical and legacy), and a wallet may have
+  registered either; the RDK reads which one your account holds on chain and
+  uses that. An account with no key yet registers the canonical one on its first
+  transaction.
+- **With `QORE_OPERATOR_PRIVATE_KEY_HEX`**, there is no mnemonic to derive
+  from, so also set `QORE_PQC_SEED_HEX` to your 32-byte ML-DSA-87 seed.
+
+Either way the key is checked against the chain before anything is signed: if
+your account holds a different post-quantum key, the script stops with a clear
+error instead of paying for a transaction that would be refused.

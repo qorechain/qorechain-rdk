@@ -89,19 +89,48 @@ transaction it sends — nothing else in your code changes, and the tx methods k
 returning the same response shape:
 
 ```ts
-import { createRdkClient, signerFromEnv, generatePqcKeypair } from "@qorechain/rdk";
+import { createRdkClient, signerFromEnv, pqcKeypairFromEnv } from "@qorechain/rdk";
 
 const rdk = createRdkClient({ network: "testnet" });
 const signer = await signerFromEnv();
 if (!signer) throw new Error("set QORE_OPERATOR_PRIVATE_KEY_HEX or QORE_MNEMONIC");
+const [{ address }] = await signer.getAccounts();
+
+// Finds the post-quantum key your account actually has on chain (see below).
+const pqc = await pqcKeypairFromEnv(rdk, address);
+if (!pqc) throw new Error("set QORE_MNEMONIC, or QORE_PQC_SEED_HEX with a raw key");
 
 const tx = await rdk.connectTx(signer, {
   gasPrice: "0.15uqor",
-  pqcKeypair: myPqcKeypair, // switches the client to hybrid signing
+  pqcKeypair: pqc.keypair,                    // switches the client to hybrid signing
+  includePqcPublicKey: pqc.includePqcPublicKey, // registers it on first use, if needed
 });
 
 await tx.createRollup({ /* … */ });
 ```
+
+### Which post-quantum key?
+
+A mnemonic can yield **two** ML-DSA-87 keys, and a wallet may have registered
+either: the **canonical** one, bound to your account address (what unified
+accounts and QoreX use), or the **legacy** one from the older chain-bridge
+scheme. Signing with the wrong one is not a soft failure — the signature would
+not match the registered key and every transaction would be refused.
+
+So `resolvePqcKeypair(client, address, mnemonic)` (and `pqcKeypairFromEnv`,
+which calls it) derives **both** and asks the chain which one your account
+holds:
+
+| On chain | Result |
+| --- | --- |
+| the canonical key | canonical, `registered: true` |
+| the legacy key | legacy, `registered: true` |
+| no key yet | canonical, `includePqcPublicKey: true` — the first transaction registers it |
+| some other key | throws: it was registered from another secret, and guessing would only cost a refused transaction |
+
+If you sign with `QORE_OPERATOR_PRIVATE_KEY_HEX`, there is no mnemonic to
+derive from: set `QORE_PQC_SEED_HEX` to your 32-byte ML-DSA-87 seed. It is
+checked against the chain the same way.
 
 A few things to know:
 
@@ -116,12 +145,13 @@ A few things to know:
   network (`signBytesVersion: "auto"`, the default), which needs the REST/LCD
   endpoint; `rdk.connectTx` passes the network preset's REST endpoint
   automatically. Using `RdkTxClient.connect` directly, pass `rest` yourself.
-- **Override the form when `"auto"` cannot resolve it.** `"auto"` looks the
-  network's upgrade state up over REST; on a network whose upgrade plan is named
-  differently from what it looks for, force the form with
-  `signBytesVersion: "v1"` or `"v2"` instead. `resolveSignBytesVersion` and
-  `isHybridSignBytesRejection` are re-exported if you want to inspect or handle
-  this yourself.
+- **`"auto"` resolves the sign-bytes form for you.** It reads the network's
+  upgrade state over REST and recognises both plan names the v2 hybrid
+  sign-bytes have shipped under (mainnet took v2 in v3.2.0, the testnet in
+  v3.1.98). Force a form with `signBytesVersion: "v1"` or `"v2"` only for a
+  custom network you know better than the resolver does.
+  `resolveSignBytesVersion` and `isHybridSignBytesRejection` are re-exported if
+  you want to inspect or handle this yourself.
 - **Fees must be explicit.** The hybrid builder needs a concrete `StdFee`, so
   either pass `fee` per transaction or set `gasPrice` on connect (a gas limit is
   priced with it, and `"auto"` simulates first). Without either, the client

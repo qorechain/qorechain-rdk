@@ -101,7 +101,7 @@ def test_rest_balance_and_latest_batch():
     transport = MockTransport(
         {
             ("GET", "/by_denom"): {"balance": {"denom": "uqor", "amount": "12345"}},
-            ("GET", "/batches/r1?latest=true"): {"batch": {"rollup_id": "r1", "batch_index": 5, "submitted_at": 100}},
+            ("GET", "/latest_batch/r1"): {"batch": {"rollup_id": "r1", "batch_index": 5, "submitted_at": 100}},
         }
     )
     rest = RestClient("http://localhost:1317", transport=transport)
@@ -195,7 +195,7 @@ def test_rest_pqc_account():
     pk_hex = "deadbeef" * 4
     transport = MockTransport(
         {
-            ("GET", "/qorechain/pqc/v1/accounts/qor1abc"): {
+            ("GET", "/qorechain/pqc/v1/account/qor1abc"): {
                 "account": {
                     "address": "qor1abc",
                     "public_key": base64.b64encode(bytes.fromhex(pk_hex)).decode(),

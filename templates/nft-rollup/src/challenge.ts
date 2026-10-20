@@ -1,6 +1,6 @@
 import "dotenv/config";
-import { getClient, GAS_PRICE, ROLLUP_ID } from "./client.js";
-import { getSigner } from "./signer.js";
+import { getClient, ROLLUP_ID } from "./client.js";
+import { connectOperator } from "./signer.js";
 
 /**
  * Optimistic challenge flow.
@@ -17,8 +17,8 @@ import { getSigner } from "./signer.js";
  */
 async function main(): Promise<void> {
   const client = getClient();
-  const signer = await getSigner();
-  const tx = await client.connectTx(signer, { gasPrice: GAS_PRICE });
+  // Signs hybrid: both networks refuse a classical-only native-lane transaction.
+  const tx = await connectOperator(client);
 
   // PLACEHOLDER fraud proof. In a real challenge this is the encoded proof that
   // the disputed batch's state transition is invalid; the exact encoding is

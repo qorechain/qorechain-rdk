@@ -7,7 +7,7 @@ describe("preset profiles", () => {
   });
 
   it("defi resolves to zk-snark / dedicated / native / eip1559 / evm", () => {
-    const cfg = presets.defi({ rollupId: "d" }).get();
+    const cfg = presets.defi({ rollupId: "roll-d" }).get();
     expect(cfg).toMatchObject({
       profile: "defi",
       settlement: "zk",
@@ -23,7 +23,7 @@ describe("preset profiles", () => {
 
   it("each preset's defaults are internally valid", () => {
     for (const name of PROFILE_NAMES) {
-      const cfg = presets[name]({ rollupId: "x" }).get();
+      const cfg = presets[name]({ rollupId: "roll-x" }).get();
       const res = validateRollupConfig(cfg);
       expect(res.valid, `${name}: ${res.errors.join("; ")}`).toBe(true);
     }
@@ -39,7 +39,7 @@ describe("preset profiles", () => {
   });
 
   it("applies overrides while forcing the profile name", () => {
-    const cfg = presets.custom({ rollupId: "c", blockTimeMs: 250, vmType: "svm" }).get();
+    const cfg = presets.custom({ rollupId: "roll-c", blockTimeMs: 250, vmType: "svm" }).get();
     expect(cfg.profile).toBe("custom");
     expect(cfg.blockTimeMs).toBe(250);
     expect(cfg.vmType).toBe("svm");

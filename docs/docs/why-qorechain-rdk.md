@@ -24,7 +24,7 @@ is the only kit that can express it — in TypeScript, Python, Go, Rust, and Jav
 | --- | --- | --- |
 | **Quantum-safe settlement receipts** | 🟢 Unique (first-mover) | Needs a post-quantum L1 — impossible on a non-PQC base layer |
 | **QCAI Rollup Copilot** | 🟢 Unique through the chain | Wraps QoreChain-only on-chain AI/RL endpoints |
-| **Multi-VM cross-VM calls** | 🟡 Distinctive | QoreChain runs EVM + QoreChain Native + SVM under one chain |
+| **Multi-VM cross-VM calls** | 🟡 Distinctive | QoreChain runs EVM + QoreChain Native + SVM under one chain (bridge not yet active on the public networks) |
 
 ---
 
@@ -37,13 +37,19 @@ the Main Chain under a **post-quantum (ML-DSA-87 / Dilithium-5, FIPS-204)**
 signature. The RDK turns that anchor into a **portable receipt** you can hand to
 an auditor, an exchange, or a counterparty.
 
+From chain v3.2.2 the anchored message is bound to **one network** and to **one
+batch**: it carries the chain id and length-prefixed fields, and for a rollup
+batch its height *is* the batch index. So a signature from one network cannot be
+replayed on another, and one batch's anchor cannot be passed off as another's.
+The RDK signs this for you when your operator submits a batch (see
+[Settlement receipts](guides/settlement-receipts.md)).
+
 A receipt is a **claim, not evidence** — every field in it comes from whoever
 handed it to you. So verification re-reads the claim from the chain: that the
 rollup really belongs to that layer, that the batch really carries that state
-root, that **an anchor matching the receipt actually exists on chain**, and that
-the creator's key is the one the chain has registered. Only then is it valid.
-The signature itself covers the canonical message
-`layer_id || layer_height(8-byte big-endian) || state_root || validator_set_hash`.
+root, that **an anchor matching the receipt actually exists on chain**, that the
+receipt names the network you are asking, and that the creator's key is the one
+the chain has registered. Only then is it valid.
 
 ```ts
 import {
@@ -52,20 +58,18 @@ import {
   verifySettlementReceipt,
 } from "@qorechain/rdk";
 
-const rdk = createRdkClient({
-  network: "mainnet",
-  endpoints: { rest: "https://api.qore.host" }, // QoreChain mainnet REST
-});
+const rdk = createRdkClient({ network: "mainnet" }); // public mainnet endpoints
 
 // Build a portable receipt for batch #42 of "my-rollup".
 const receipt = await buildSettlementReceipt(rdk, "my-rollup", 42);
-// → { algorithm: "ML-DSA-87", stateRoot, layerHeight, pqcSignature, creator, ... }
+// → { version: 2, chainId: "qorechain-vladi", stateRoot, pqcSignature, creator, ... }
 
-// Verify it — fetches the creator's PQC key from the chain.
+// Verify it against the chain.
 const result = await verifySettlementReceipt(receipt, { client: rdk });
-console.log(result.valid);                 // true
-console.log(result.checks.pqcSignature);   // Dilithium-5 signature verified
-console.log(result.checks.stateRootBinding); // batch root == anchored root
+console.log(result.valid);                  // true only if the chain reproduces it
+console.log(result.checks.anchorOnChain);   // a matching anchor exists on chain
+console.log(result.checks.chainBinding);    // the receipt is for this network
+console.log(result.signBytesVersion);       // "v2" for anchors from v3.2.2 on
 ```
 
 There is also a **signature-only** mode, for when you only want to check the
@@ -134,13 +138,25 @@ See [QCAI Copilot](guides/qcai-copilot.md).
 > 🟡 **Distinctive.** QoreChain runs EVM, QoreChain Native, and SVM under one chain, with
 > a precompile that bridges EVM → QoreChain Native.
 
+> **Status: not yet active on mainnet or testnet.** The precompile is built into the
+> validators' binary but runs only once governance lists its address in the EVM parameter
+> `active_static_precompiles` (empty on both networks today), and from chain v3.2.3 it
+> reaches only targets governance has allowlisted. Activation is planned for an upcoming
+> release. The tooling below is ready for it and tells you whether it is switched on.
+
 Your EVM (Solidity) rollup contract can call an existing **QoreChain Native (Wasm)** contract
-through a fixed precompile at `0x…0901`. The RDK builds the calldata for you, so
-you can reuse a QoreChain Native oracle, token, or registry from Solidity without
-re-implementing it.
+through a fixed precompile at `0x…0901`. The RDK builds the calldata — byte-for-byte what the
+chain's decoder reads — and checks whether the precompile is live first:
 
 ```ts
-import { encodeCrossVmCalldata, CROSS_VM_PRECOMPILE } from "@qorechain/rdk";
+import {
+  encodeCrossVmCalldata,
+  isCrossVmPrecompileActive,
+  CROSS_VM_PRECOMPILE,
+} from "@qorechain/rdk";
+
+const status = await isCrossVmPrecompileActive("https://api.qore.host");
+if (!status.active) throw new Error(status.reason);
 
 const calldata = encodeCrossVmCalldata({
   contract: "qor1examplecontract…",       // target QoreChain Native (Wasm) contract
@@ -148,21 +164,26 @@ const calldata = encodeCrossVmCalldata({
 });
 
 // Send an EVM transaction:  to = CROSS_VM_PRECOMPILE,  data = calldata
-console.log(CROSS_VM_PRECOMPILE); // 0x0000000000000000000000000000000000000901
 ```
 
-Or directly from Solidity on your rollup:
+Or directly from Solidity on your rollup. Note the chain's signature takes a leading
+`targetVM` (`1` for QoreChain Native):
 
 ```solidity
 address constant CROSS_VM_PRECOMPILE = 0x0000000000000000000000000000000000000901;
+uint8 constant TARGET_NATIVE = 1;
 
 function callNative(string calldata contractAddr, bytes calldata msg_)
     external returns (bytes memory)
 {
-    bytes memory data =
-        abi.encodeWithSignature("executeCrossVMCall(string,bytes)", contractAddr, msg_);
+    bytes memory data = abi.encodeWithSignature(
+        "executeCrossVMCall(uint8,string,bytes)", TARGET_NATIVE, contractAddr, msg_
+    );
     (bool ok, bytes memory ret) = CROSS_VM_PRECOMPILE.call(data);
     require(ok, "cross-VM call failed");
+    // An inactive precompile is an address with no code: the call "succeeds" with
+    // empty data. Have your target return a non-empty acknowledgement and require it.
+    require(ret.length > 0, "cross-VM precompile inactive, or no acknowledgement");
     return ret;
 }
 ```

@@ -8,7 +8,7 @@ import {
 } from "../src/index";
 
 function base(): RollupConfig {
-  return presets.custom({ rollupId: "r1" }).get();
+  return presets.custom({ rollupId: "roll-r1" }).get();
 }
 
 describe("validateRollupConfig", () => {

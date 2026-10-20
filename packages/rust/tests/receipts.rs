@@ -9,7 +9,8 @@ use serde_json::Value;
 use qorechain_rdk::client::http::{HttpError, HttpRequest, HttpResponse, Transport};
 use qorechain_rdk::client::{RdkClient, RdkClientOptions};
 use qorechain_rdk::receipts::{
-    anchor_sign_bytes, build_settlement_receipt, verify_settlement_receipt,
+    anchor_sign_bytes, anchor_sign_bytes_v1, anchor_sign_bytes_v2, anchor_sign_bytes_version_for,
+    build_settlement_receipt, verify_settlement_receipt, AnchorSignBytesVersion,
     ReceiptVerificationMode, SettlementReceipt,
 };
 
@@ -170,7 +171,7 @@ fn chain_fixture(tamper_signature: bool) -> ChainFixture {
             }),
         ),
         (
-            "/qorechain/pqc/v1/accounts/",
+            "/qorechain/pqc/v1/account/",
             serde_json::json!({
                 "account": {
                     "address": CREATOR,
@@ -304,6 +305,11 @@ fn rejects_fabricated_receipt_qsr_2026_0055() {
         pqc_signature: String::new(),
         // The attacker controls both sides of the old "binding" check.
         batch_state_root: state_root.clone(),
+        // A forger picks whatever shape suits them; a legacy v1-shaped receipt
+        // with no chain id must be refused just the same.
+        chain_id: None,
+        transaction_count: 0,
+        compressed_state_proof: String::new(),
     };
     let message = anchor_sign_bytes(layer_id, layer_height, &state_root, &vsh);
     fake.pqc_signature =
@@ -418,12 +424,90 @@ fn rollup_advice_aggregates_and_degrades() {
     // Only the investigation that mentions the rollup is kept.
     assert_eq!(advice.fraud_investigations.len(), 1);
 
-    let msgs: Vec<&str> = advice.suggestions.iter().map(|s| s.message.as_str()).collect();
+    let msgs: Vec<&str> = advice
+        .suggestions
+        .iter()
+        .map(|s| s.message.as_str())
+        .collect();
     assert!(msgs.iter().any(|m| m.contains("status is \"paused\"")));
     assert!(msgs.iter().any(|m| m.contains("fraud investigation")));
     assert!(msgs.iter().any(|m| m.contains("congestion")));
 
     // The RL agent surface was unreachable -> recorded as a warning, not fatal.
     assert!(advice.rl_agent_status.is_none());
-    assert!(advice.warnings.iter().any(|w| w.starts_with("rl-agent-status")));
+    assert!(advice
+        .warnings
+        .iter()
+        .any(|w| w.starts_with("rl-agent-status")));
+}
+
+/// The v2 builder matches bytes produced by calling the chain's own
+/// `x/multilayer/types.AnchorSignBytesV2`, not a reimplementation of it.
+#[test]
+fn anchor_sign_bytes_v2_matches_chain_generated_vector() {
+    let g = golden();
+    let v = &g["anchorSignBytes"]["v2"];
+    let bytes = anchor_sign_bytes_v2(
+        v["chainId"].as_str().unwrap(),
+        v["layerId"].as_str().unwrap(),
+        v["layerHeight"].as_u64().unwrap(),
+        v["stateRoot"].as_str().unwrap(),
+        v["validatorSetHash"].as_str().unwrap(),
+        v["transactionCount"].as_u64().unwrap(),
+        v["compressedStateProof"].as_str().unwrap(),
+    );
+    assert_eq!(hex::encode(bytes), v["expectedHex"].as_str().unwrap());
+}
+
+/// Anchors written before the switch stay verifiable.
+#[test]
+fn anchor_sign_bytes_v1_still_matches() {
+    let g = golden();
+    let a = &g["anchorSignBytes"];
+    let bytes = anchor_sign_bytes_v1(
+        a["layerId"].as_str().unwrap(),
+        a["layerHeight"].as_u64().unwrap(),
+        a["stateRoot"].as_str().unwrap(),
+        a["validatorSetHash"].as_str().unwrap(),
+    );
+    assert_eq!(hex::encode(bytes), a["expectedHexV1"].as_str().unwrap());
+}
+
+/// The weakness v2 closes: v1 has no chain id, so the same anchor signs
+/// identically on every network.
+#[test]
+fn anchor_sign_bytes_v2_binds_the_chain_id() {
+    let g = golden();
+    let a = &g["anchorSignBytes"];
+    let (l, h, r, v) = (
+        a["layerId"].as_str().unwrap(),
+        a["layerHeight"].as_u64().unwrap(),
+        a["stateRoot"].as_str().unwrap(),
+        a["validatorSetHash"].as_str().unwrap(),
+    );
+    assert_ne!(
+        anchor_sign_bytes_v2("qorechain-diana", l, h, r, v, 7, ""),
+        anchor_sign_bytes_v2("qorechain-vladi", l, h, r, v, 7, "")
+    );
+}
+
+#[test]
+fn sign_bytes_version_is_selected_by_height() {
+    assert_eq!(
+        anchor_sign_bytes_version_for(6_905_033, 6_905_034),
+        AnchorSignBytesVersion::V1
+    );
+    assert_eq!(
+        anchor_sign_bytes_version_for(6_905_034, 6_905_034),
+        AnchorSignBytesVersion::V2
+    );
+    assert_eq!(
+        anchor_sign_bytes_version_for(9_000_000, 6_905_034),
+        AnchorSignBytesVersion::V2
+    );
+    // A fresh chain enables the feature at genesis.
+    assert_eq!(
+        anchor_sign_bytes_version_for(1, 0),
+        AnchorSignBytesVersion::V2
+    );
 }

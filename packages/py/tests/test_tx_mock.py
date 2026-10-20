@@ -55,7 +55,7 @@ def test_mock_simulate_returns_fixed_gas():
     msg = create_rollup_msg(
         CreateRollupInput(
             creator="qor1creator",
-            rollup_id="r",
+            rollup_id="roll-r",
             profile="defi",
             vm_type="evm",
             stake_amount=1,
@@ -70,6 +70,6 @@ def test_mock_custom_tx_hash():
     mock = MockTxClient(address="qor1abc", tx_hash="CUSTOM")
     tx = RdkTxClient.from_backend(mock)
     result = tx.create_rollup(
-        rollup_id="r", profile="defi", vm_type="evm", stake_amount=1
+        rollup_id="roll-r", profile="defi", vm_type="evm", stake_amount=1
     )
     assert result.tx_hash == "CUSTOM"

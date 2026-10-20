@@ -10,7 +10,7 @@ import {
 
 describe("rollup manifest", () => {
   it("round-trips config through a manifest", () => {
-    const config = presets.defi({ rollupId: "d", stakeAmountUqor: "10000000000" }).build();
+    const config = presets.defi({ rollupId: "roll-d", stakeAmountUqor: "10000000000" }).build();
     const manifest = toManifest(config, {
       network: "testnet",
       chainId: "qorechain-diana",
@@ -23,7 +23,7 @@ describe("rollup manifest", () => {
     const json = stringifyManifest(manifest);
     const parsed = parseManifest(json);
     const builder = fromManifest(parsed);
-    expect(builder.get().rollupId).toBe("d");
+    expect(builder.get().rollupId).toBe("roll-d");
     expect(builder.get().settlement).toBe("zk");
     expect(parsed.addresses?.creator).toBe("qor1creator");
   });

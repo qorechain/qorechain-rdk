@@ -19,6 +19,8 @@ pub struct RdkClientOptions {
     pub rest_url: Option<String>,
     /// `qor_` JSON-RPC endpoint override.
     pub evm_rpc_url: Option<String>,
+    /// Consensus RPC endpoint override (used for the chain tip).
+    pub rpc_url: Option<String>,
     /// Custom transport (for testing or non-standard environments).
     pub transport: Option<SharedTransport>,
 }
@@ -49,6 +51,7 @@ pub struct RdkClient {
     pub rest: RestClient,
     /// `qor_` JSON-RPC client.
     pub qor: QorClient,
+    transport: SharedTransport,
 }
 
 impl RdkClient {
@@ -57,19 +60,74 @@ impl RdkClient {
         let mut net = get_network(options.network.unwrap_or_default());
         let endpoints = Endpoints {
             rest: options.rest_url.unwrap_or(net.endpoints.rest),
-            rpc: net.endpoints.rpc,
+            rpc: options.rpc_url.unwrap_or(net.endpoints.rpc),
             grpc: net.endpoints.grpc,
             evm_rpc: options.evm_rpc_url.unwrap_or(net.endpoints.evm_rpc),
         };
         net.endpoints = endpoints;
         let transport = options.transport.unwrap_or_else(default_transport);
         let rest = RestClient::with_transport(net.endpoints.rest.clone(), transport.clone());
-        let qor = QorClient::with_transport(net.endpoints.evm_rpc.clone(), transport);
+        let qor = QorClient::with_transport(net.endpoints.evm_rpc.clone(), transport.clone());
         RdkClient {
             network: net,
             rest,
             qor,
+            transport,
         }
+    }
+
+    /// The chain tip — latest height and its block time — from the consensus
+    /// RPC's `/status`. A challenge window is judged against this, not the local
+    /// clock: the block-count path counts heights, and the time-based path
+    /// compares block time, which can lag wall time.
+    pub fn get_chain_tip(
+        &self,
+    ) -> Result<crate::challenge_window::ChainTip, super::rest::RestError> {
+        use super::http::{HttpRequest, Method};
+        let url = format!(
+            "{}/status",
+            self.network.endpoints.rpc.trim_end_matches('/')
+        );
+        let res = self
+            .transport
+            .send(HttpRequest {
+                method: Method::Get,
+                url: url.clone(),
+                headers: Default::default(),
+                body: None,
+            })
+            .map_err(super::rest::RestError::Transport)?;
+        if !res.ok() {
+            return Err(super::rest::RestError::Transport(super::http::HttpError(
+                format!(
+                    "could not read the chain tip from {url} (HTTP {})",
+                    res.status
+                ),
+            )));
+        }
+        let body: serde_json::Value = serde_json::from_str(&res.body).map_err(|e| {
+            super::rest::RestError::Transport(super::http::HttpError(format!(
+                "could not decode {url}: {e}"
+            )))
+        })?;
+        let info = &body["result"]["sync_info"];
+        let height = info["latest_block_height"]
+            .as_str()
+            .and_then(|s| s.parse::<i64>().ok())
+            .ok_or_else(|| {
+                super::rest::RestError::Transport(super::http::HttpError(format!(
+                    "the node at {url} did not report a latest block height"
+                )))
+            })?;
+        let time_secs = info["latest_block_time"]
+            .as_str()
+            .and_then(crate::challenge_window::rfc3339_utc_to_unix)
+            .ok_or_else(|| {
+                super::rest::RestError::Transport(super::http::HttpError(format!(
+                    "the node at {url} did not report a latest block time"
+                )))
+            })?;
+        Ok(crate::challenge_window::ChainTip { height, time_secs })
     }
 
     /// Build a client with default testnet settings.

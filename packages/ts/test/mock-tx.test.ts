@@ -6,7 +6,7 @@ describe("MockTxClient + simulate", () => {
     const mock = new MockTxClient();
     const tx = RdkTxClient.fromClient(mock, "qor1me");
     const res = await tx.createRollup({
-      rollupId: "d",
+      rollupId: "roll-d",
       profile: "defi",
       vmType: "evm",
       stakeAmount: "10000000000",
@@ -21,7 +21,7 @@ describe("MockTxClient + simulate", () => {
     const mock = new MockTxClient({ gasEstimate: 99_000 });
     const tx = RdkTxClient.fromClient(mock, "qor1me");
     const gas = await tx.simulate([
-      { typeUrl: "/qorechain.rdk.v1.MsgPauseRollup", value: { creator: "qor1me", rollupId: "d", reason: "" } },
+      { typeUrl: "/qorechain.rdk.v1.MsgPauseRollup", value: { creator: "qor1me", rollupId: "roll-d", reason: "" } },
     ]);
     expect(gas).toBe(99_000);
   });
@@ -29,10 +29,10 @@ describe("MockTxClient + simulate", () => {
   it("runs the full lifecycle offline via the mock", async () => {
     const mock = new MockTxClient();
     const tx = RdkTxClient.fromClient(mock, "qor1me");
-    await tx.createRollup({ rollupId: "d", profile: "gaming", vmType: "custom", stakeAmount: "1" });
-    await tx.pauseRollup({ rollupId: "d", reason: "maintenance", currentStatus: "active" });
-    await tx.resumeRollup({ rollupId: "d", currentStatus: "paused" });
-    await tx.stopRollup({ rollupId: "d", currentStatus: "active" });
+    await tx.createRollup({ rollupId: "roll-d", profile: "gaming", vmType: "custom", stakeAmount: "1" });
+    await tx.pauseRollup({ rollupId: "roll-d", reason: "maintenance", currentStatus: "active" });
+    await tx.resumeRollup({ rollupId: "roll-d", currentStatus: "paused" });
+    await tx.stopRollup({ rollupId: "roll-d", currentStatus: "active" });
     expect(mock.calls.map((c) => c.messages[0].typeUrl)).toEqual([
       "/qorechain.rdk.v1.MsgCreateRollup",
       "/qorechain.rdk.v1.MsgPauseRollup",

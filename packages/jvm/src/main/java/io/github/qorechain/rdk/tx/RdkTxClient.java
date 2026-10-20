@@ -70,6 +70,8 @@ public final class RdkTxClient {
      * requires a non-null REST client.
      */
     public Map<String, Object> broadcast(List<Msg> messages, TxParams p) {
+        // Catch what the chain would refuse only after the fee is paid.
+        io.github.qorechain.rdk.rules.Rules.preflight(messages);
         if (backend != null) {
             return backend.signAndBroadcast(account.address, messages, p);
         }

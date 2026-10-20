@@ -12,14 +12,40 @@ oracle, token, or registry from EVM code.
 
 - Execution VM: **EVM** (Solidity).
 - Cross-VM bridge: the **EVM→QoreChain Native** precompile at
-  `0x0000000000000000000000000000000000000901`.
-- `src/crossvm-call.ts` encodes the precompile calldata with the RDK's
-  `encodeCrossVmCalldata` helper; `contracts/CrossVmCaller.sol` shows the
-  equivalent on-chain Solidity call. (EVM↔QoreChain Native only — SVM is separate.)
-- Confirm the precompile's exact ABI signature against your node before relying
-  on the derived 4-byte selector.
+  `0x0000000000000000000000000000000000000901`, called as
+  `executeCrossVMCall(uint8 targetVM, string targetContract, bytes payload)`
+  with `targetVM = 1` for QoreChain Native.
+- `src/crossvm-call.ts` checks whether the precompile is live, then encodes the
+  calldata with the RDK's `encodeCrossVmCalldata`; `contracts/CrossVmCaller.sol`
+  is the equivalent on-chain call. (EVM↔QoreChain Native only — SVM is separate.)
 
-Run the cross-VM encoder:
+> **Status: the precompile is not active on mainnet or testnet today.** It is
+> compiled into the validators' build but runs only once governance lists its
+> address in the EVM parameter `active_static_precompiles` — empty on both
+> networks — and, from chain v3.2.3, reaches only targets governance has
+> allowlisted in the cross-VM parameter `bridge_allowed_targets`. Activation is
+> planned for an upcoming release. Check the live state any time:
+>
+> ```ts
+> import { isCrossVmPrecompileActive } from "@qorechain/rdk";
+> const status = await isCrossVmPrecompileActive("https://api.qore.host");
+> ```
+
+**Why the check matters.** While the precompile is inactive, its address has no
+code, and a call to it *succeeds* with empty return data — so a `success` check
+alone reports a cross-VM call that never happened. The precompile also returns
+the target's **raw** reply, so an empty reply can be genuine too, and a
+precompile has no bytecode whether active or not. The dependable in-contract
+guard is therefore a target that always returns a non-empty acknowledgement:
+`CrossVmCaller.sol` requires one, which turns an inactive precompile into a
+revert instead of a silent no-op.
+
+**EVM authorisation windows (chain v3.2.3).** If your EVM transactions run
+under a scoped authorisation window, `native_only: true` refuses any calldata —
+a cross-VM call included — and a non-empty `allowed_targets` must list the
+precompile's address.
+
+Run the cross-VM check and encoder:
 
 ```sh
 npm run crossvm-call
@@ -95,6 +121,21 @@ switch to `based`/`sovereign`, drop the proof in `src/submit-batch.ts`, and for
 
 ## Quantum-safe signing
 
-`src/signer.ts` uses a standard secp256k1 signer. For hybrid post-quantum signing,
-swap in [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk)'s signer —
-the RDK accepts any `@cosmjs` `OfflineSigner`.
+Both QoreChain networks require a **hybrid** signature on native-lane
+transactions — an ML-DSA-87 (Dilithium-5) signature alongside the classical
+secp256k1 one — and refuse a classical-only transaction. Every script here
+connects through `connectOperator()` in `src/signer.ts`, which signs hybrid.
+
+You do not configure the post-quantum key directly in most cases:
+
+- **With `QORE_MNEMONIC`**, the RDK derives the key for you. A mnemonic can
+  yield two post-quantum keys (canonical and legacy), and a wallet may have
+  registered either; the RDK reads which one your account holds on chain and
+  uses that. An account with no key yet registers the canonical one on its first
+  transaction.
+- **With `QORE_OPERATOR_PRIVATE_KEY_HEX`**, there is no mnemonic to derive
+  from, so also set `QORE_PQC_SEED_HEX` to your 32-byte ML-DSA-87 seed.
+
+Either way the key is checked against the chain before anything is signed: if
+your account holds a different post-quantum key, the script stops with a clear
+error instead of paying for a transaction that would be refused.

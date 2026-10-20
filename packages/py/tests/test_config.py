@@ -63,14 +63,14 @@ def test_valid_preset_passes_validation():
 
 
 def test_incompatible_proof_pair_fails():
-    builder = presets.defi("r").set(proof_system=ProofSystem.FRAUD)
+    builder = presets.defi("roll-r").set(proof_system=ProofSystem.FRAUD)
     result = builder.validation_result()
     assert not result.valid
     assert any("not compatible" in e for e in result.errors)
 
 
 def test_based_settlement_requires_based_sequencer():
-    builder = presets.gaming("r").set(sequencer=SequencerMode.DEDICATED)
+    builder = presets.gaming("roll-r").set(sequencer=SequencerMode.DEDICATED)
     result = builder.validation_result()
     assert not result.valid
     assert any("based" in e and "sequencer" in e for e in result.errors)
@@ -84,14 +84,14 @@ def test_empty_rollup_id_fails():
 
 
 def test_field_sanity_block_time():
-    builder = presets.defi("r").set(block_time_ms=0)
+    builder = presets.defi("roll-r").set(block_time_ms=0)
     result = builder.validation_result()
     assert not result.valid
     assert any("block_time_ms" in e for e in result.errors)
 
 
 def test_celestia_warning_not_fatal():
-    config = presets.nft("r").build()  # nft uses celestia
+    config = presets.nft("roll-r").build()  # nft uses celestia
     result = validate_rollup_config(config)
     assert result.valid
     assert any("Celestia" in w for w in result.warnings)
@@ -99,11 +99,11 @@ def test_celestia_warning_not_fatal():
 
 def test_builder_validate_raises():
     with pytest.raises(RollupConfigError):
-        presets.defi("r").set(proof_system=ProofSystem.FRAUD).validate()
+        presets.defi("roll-r").set(proof_system=ProofSystem.FRAUD).validate()
 
 
 def test_builder_set_merges_sequencer_params():
-    builder = presets.defi("r").set(sequencer_params={"sequencer_address": "qor1seq"})
+    builder = presets.defi("roll-r").set(sequencer_params={"sequencer_address": "qor1seq"})
     builder.set(sequencer_params={"inclusion_delay": 3})
     config = builder.get()
     assert config.sequencer_params.sequencer_address == "qor1seq"
@@ -111,11 +111,11 @@ def test_builder_set_merges_sequencer_params():
 
 
 def test_to_create_msg_requires_stake():
-    builder = presets.defi("r")
+    builder = presets.defi("roll-r")
     with pytest.raises(RollupConfigError):
         builder.to_create_msg("qor1creator")
     msg = builder.to_create_msg("qor1creator", stake_amount="10000000000")
     assert msg.creator == "qor1creator"
-    assert msg.rollup_id == "r"
+    assert msg.rollup_id == "roll-r"
     assert msg.profile == ProfileName.DEFI
     assert msg.stake_amount == "10000000000"

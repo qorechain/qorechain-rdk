@@ -45,13 +45,24 @@ Four features. The **QCAI Rollup Copilot** (`getRollupAdvice`) aggregates a live
 fee estimate, network recommendations, fraud investigations, RL-agent status,
 and plain-language suggestions for a rollup. **Quantum-safe settlement receipts**
 (`buildSettlementReceipt` / `verifySettlementReceipt`) are portable records that a batch was anchored under an ML-DSA-87
-(Dilithium-5) signature. **Multi-VM tooling** (`encodeCrossVmCalldata` and the
-`CROSS_VM_PRECOMPILE` address) drives EVM → QoreChain Native cross-VM calls, with a new
-`multivm-rollup` template. The **Watchtower** (`watchBatches`) is an
+(Dilithium-5) signature. **Multi-VM tooling** (`encodeCrossVmCalldata`, `isCrossVmPrecompileActive`
+and the `CROSS_VM_PRECOMPILE` address) drives EVM → QoreChain Native cross-VM
+calls, with a `multivm-rollup` template — the precompile itself is not yet
+active on mainnet or testnet, so check it before relying on it. The **Watchtower** (`watchBatches`) is an
 auto-challenger framework for optimistic rollups. The Copilot and receipts ship
 in all five languages; the multi-VM tooling and Watchtower are TypeScript. See
 the [Copilot](guides/qcai-copilot.md), [receipts](guides/settlement-receipts.md),
 [multi-VM](guides/multi-vm.md), and [Watchtower](guides/watchtower.md) guides.
+
+### What can I name my rollup?
+
+From chain v3.2.2 a new rollup id must match `^[a-z0-9][a-z0-9._-]{2,63}$`:
+3 to 64 characters of lowercase letters, digits, `.`, `_` and `-`, starting
+with a letter or digit. The chain checks this only at creation, after the fee is
+paid, so the RDK checks it first — in `validateRollupConfig`, in `createRollup`,
+and in `qorollup create` — and refuses an id the chain would refuse. Use
+`isValidRollupId` / `rollupIdError` to check one yourself. Rollups created
+before v3.2.2 keep their ids.
 
 ### How do I choose a settlement paradigm?
 

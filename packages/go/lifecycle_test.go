@@ -67,11 +67,11 @@ func TestTxClientLifecycleGuards(t *testing.T) {
 	}
 
 	// Signer fields are filled from the client address.
-	cr := c.CreateRollup(CreateRollupInput{RollupID: "r1", Profile: "defi", VmType: "evm", StakeAmount: 1})
+	cr := c.CreateRollup(CreateRollupInput{RollupID: "roll-r1", Profile: "defi", VmType: "evm", StakeAmount: 1})
 	if cr.Creator != "qor1creator" {
 		t.Errorf("create rollup creator not set: %+v", cr)
 	}
-	sb := c.SubmitBatch(SubmitBatchInput{RollupID: "r1", BatchIndex: 1})
+	sb := c.SubmitBatch(SubmitBatchInput{RollupID: "roll-r1", BatchIndex: 1})
 	if sb.Sequencer != "qor1creator" {
 		t.Errorf("submit batch sequencer not set: %+v", sb)
 	}

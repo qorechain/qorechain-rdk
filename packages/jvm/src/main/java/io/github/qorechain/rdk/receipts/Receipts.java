@@ -1,6 +1,7 @@
 package io.github.qorechain.rdk.receipts;
 
 import io.github.qorechain.rdk.client.RdkClient;
+import io.github.qorechain.rdk.config.Networks.NetworkConfig;
 import io.github.qorechain.rdk.client.RestClient;
 import io.github.qorechain.rdk.client.Views.AnchorView;
 import io.github.qorechain.rdk.client.Views.BatchView;
@@ -37,7 +38,26 @@ public final class Receipts {
     public static final String PQC_LEVEL = "ml-dsa-87";
 
     /** Current receipt schema version. */
-    public static final int RECEIPT_VERSION = 1;
+    /**
+     * Current receipt schema version. v2 adds {@code chainId}: the v2 anchor message binds the
+     * signature to one network, and a receipt shown to a third party should say which network it
+     * is for. Version-1 receipts still verify.
+     */
+    public static final int RECEIPT_VERSION = 2;
+
+    /** Domain tag of the v2 anchor sign bytes (chain v3.2.2 and above). */
+    public static final String ANCHOR_SIGN_DOMAIN_V2 = "qorechain-multilayer-anchor-v2";
+
+    /** Which canonical anchor message a signature covers. */
+    public enum AnchorSignBytesVersion {
+        V1,
+        V2;
+
+        @Override
+        public String toString() {
+            return name().toLowerCase();
+        }
+    }
 
     /** A portable settlement receipt. Verify it with {@link #verifySettlementReceipt}. */
     public static final class SettlementReceipt {
@@ -62,6 +82,16 @@ public final class Receipts {
          * against this copy of it.
          */
         public String batchStateRoot = "";
+        /**
+         * The chain the receipt was built on (e.g. {@code qorechain-vladi}). Bound into the v2
+         * anchor signature and cross-checked against the node being queried. {@code null} on
+         * version-1 receipts.
+         */
+        public String chainId;
+        /** The anchor's transaction count, covered by the v2 signature (the chain's copy is used). */
+        public long transactionCount;
+        /** The anchor's compressed state proof (hex), covered by v2. Empty for a settlement batch. */
+        public String compressedStateProof = "";
     }
 
     /**
@@ -108,6 +138,11 @@ public final class Receipts {
         public boolean creatorAuthority;
         /** The Dilithium-5 signature over the canonical message verified. */
         public boolean pqcSignature;
+        /**
+         * The receipt names the chain that was actually queried. A version-1 receipt carries no
+         * chain id and passes on the strength of the anchor having been found on this chain.
+         */
+        public boolean chainBinding;
     }
 
     /** The outcome of verifying a receipt. */
@@ -117,6 +152,8 @@ public final class Receipts {
         /** Which check was actually performed. */
         public ReceiptVerificationMode mode = ReceiptVerificationMode.SIGNATURE_ONLY;
         public final ReceiptChecks checks = new ReceiptChecks();
+        /** Which anchor message the signature was checked against ({@code v2} from the switch). */
+        public AnchorSignBytesVersion signBytesVersion;
         public String reason;
     }
 
@@ -131,22 +168,89 @@ public final class Receipts {
     }
 
     /**
-     * Reconstruct the canonical message the chain signs for a state anchor:
-     * {@code layer_id || layer_height(8B BE) || state_root || validator_set_hash}. Inputs are taken
-     * in hex ({@code stateRootHex}, {@code vshHex}) and a numeric height.
+     * The <b>pre-v3.2.2</b> canonical anchor message: {@code layer_id || layer_height(8B BE) ||
+     * state_root || validator_set_hash}.
+     *
+     * <p>Kept because anchors written before the chain's {@code rdk-integrity} switch are signed
+     * this way and stay valid forever. Do not use it for new work: it has no length prefixes, so
+     * field boundaries are ambiguous, and no chain id, so a signature is valid on <b>every</b>
+     * chain. Both are why v2 exists.
      */
+    public static byte[] anchorSignBytesV1(
+            String layerId, long layerHeight, String stateRootHex, String vshHex) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.writeBytes(layerId.getBytes(StandardCharsets.UTF_8));
+        out.writeBytes(u64be(layerHeight));
+        out.writeBytes(Bytes.hexToBytes(stateRootHex));
+        out.writeBytes(Bytes.hexToBytes(vshHex));
+        return out.toByteArray();
+    }
+
+    /** The v1 message, kept for backwards compatibility; prefer the explicit V1/V2 builders. */
     public static byte[] anchorSignBytes(
             String layerId, long layerHeight, String stateRootHex, String vshHex) {
-        byte[] id = layerId.getBytes(StandardCharsets.UTF_8);
-        byte[] height = u64be(layerHeight);
-        byte[] stateRoot = Bytes.hexToBytes(stateRootHex);
-        byte[] vsh = Bytes.hexToBytes(vshHex);
+        return anchorSignBytesV1(layerId, layerHeight, stateRootHex, vshHex);
+    }
+
+    private static void lengthPrefixed(ByteArrayOutputStream out, byte[] b) {
+        out.writeBytes(u64be(b.length));
+        out.writeBytes(b);
+    }
+
+    /**
+     * The <b>v3.2.2 and later</b> canonical anchor message. Every variable-length field carries
+     * an 8-byte big-endian length, the chain id binds the signature to one network, and the
+     * transaction count and compressed state proof are covered too, because the chain computes its
+     * anchor fraud check from them:
+     *
+     * <pre>
+     * "qorechain-multilayer-anchor-v2"
+     *  | BE64 len(chain_id)               chain_id
+     *  | BE64 len(layer_id)               layer_id
+     *  | BE64                             layer_height
+     *  | BE64 len(state_root)             state_root
+     *  | BE64 len(validator_set_hash)     validator_set_hash
+     *  | BE64                             transaction_count
+     *  | BE64 len(compressed_state_proof) compressed_state_proof
+     * </pre>
+     *
+     * For a settlement batch the chain maps these as: {@code layer_id} is the rollup's layer id,
+     * {@code layer_height} the <b>batch index</b>, {@code state_root} the batch state root,
+     * {@code transaction_count} the batch's transaction count, and the proof empty.
+     */
+    public static byte[] anchorSignBytesV2(
+            String chainId,
+            String layerId,
+            long layerHeight,
+            String stateRootHex,
+            String vshHex,
+            long transactionCount,
+            String compressedStateProofHex) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        out.writeBytes(id);
-        out.writeBytes(height);
-        out.writeBytes(stateRoot);
-        out.writeBytes(vsh);
+        out.writeBytes(ANCHOR_SIGN_DOMAIN_V2.getBytes(StandardCharsets.UTF_8));
+        lengthPrefixed(out, chainId.getBytes(StandardCharsets.UTF_8));
+        lengthPrefixed(out, layerId.getBytes(StandardCharsets.UTF_8));
+        out.writeBytes(u64be(layerHeight));
+        lengthPrefixed(out, Bytes.hexToBytes(stateRootHex));
+        lengthPrefixed(out, Bytes.hexToBytes(vshHex));
+        out.writeBytes(u64be(transactionCount));
+        lengthPrefixed(
+                out,
+                Bytes.hexToBytes(compressedStateProofHex == null ? "" : compressedStateProofHex));
         return out.toByteArray();
+    }
+
+    /**
+     * Which anchor message a given anchor was signed over: the form in force at the Main Chain
+     * height it was recorded at. Deciding by height rather than trying both forms matters — a v1
+     * signature covers no chain id, so it is valid on every chain; accepting v1 where v2 is in
+     * force would re-admit exactly the weakness v2 was introduced to close.
+     */
+    public static AnchorSignBytesVersion anchorSignBytesVersionFor(
+            long anchorMainChainHeight, long v2Height) {
+        return anchorMainChainHeight >= v2Height
+                ? AnchorSignBytesVersion.V2
+                : AnchorSignBytesVersion.V1;
     }
 
     private static SettlementReceipt receiptFromParts(
@@ -155,7 +259,8 @@ public final class Receipts {
             int batchIndex,
             String creator,
             AnchorView anchor,
-            String batchStateRootHex) {
+            String batchStateRootHex,
+            String chainId) {
         SettlementReceipt r = new SettlementReceipt();
         r.version = RECEIPT_VERSION;
         r.rollupId = rollupId;
@@ -170,6 +275,9 @@ public final class Receipts {
         r.anchoredAt = anchor.anchoredAt;
         r.pqcSignature = anchor.pqcSignature;
         r.batchStateRoot = batchStateRootHex;
+        r.chainId = chainId;
+        r.transactionCount = anchor.transactionCount;
+        r.compressedStateProof = anchor.compressedStateProof;
         return r;
     }
 
@@ -181,7 +289,10 @@ public final class Receipts {
      */
     public static SettlementReceipt buildSettlementReceipt(
             RdkClient client, String rollupId, int batchIndex) {
-        return buildSettlementReceipt(client.rest, rollupId, batchIndex);
+        SettlementReceipt r = buildSettlementReceipt(client.rest, rollupId, batchIndex);
+        r.chainId = client.network.chainId;
+        r.version = RECEIPT_VERSION;
+        return r;
     }
 
     /** {@link #buildSettlementReceipt(RdkClient, String, int)} against a bare {@link RestClient}. */
@@ -220,8 +331,19 @@ public final class Receipts {
                             + anchor.layerHeight
                             + "); the batch may not be anchored to the Main Chain");
         }
-        return receiptFromParts(
-                rollupId, rollup.layerId, batchIndex, rollup.creator, anchor, batchStateRootHex);
+        // A bare RestClient does not know its chain, so the receipt is version-1
+        // shaped (no chain id); the RdkClient overload fills it in.
+        SettlementReceipt r =
+                receiptFromParts(
+                        rollupId,
+                        rollup.layerId,
+                        batchIndex,
+                        rollup.creator,
+                        anchor,
+                        batchStateRootHex,
+                        null);
+        r.version = 1;
+        return r;
     }
 
     /** Options for {@link #verifySettlementReceipt(SettlementReceipt, VerifyReceiptOptions)}. */
@@ -241,9 +363,24 @@ public final class Receipts {
          */
         public String creatorPublicKeyHex;
 
+        /**
+         * The network being verified against: its chain id (bound into the v2 anchor message and
+         * cross-checked against the receipt) and its v2 switch height. Set by {@link
+         * #client(RdkClient)}; <b>required</b> with a bare {@link RestClient}, which does not know
+         * its own chain.
+         */
+        public NetworkConfig network;
+
         /** Verify against live chain state through {@code client}'s REST reads. */
         public VerifyReceiptOptions client(RdkClient client) {
             this.rest = client == null ? null : client.rest;
+            this.network = client == null ? null : client.network;
+            return this;
+        }
+
+        /** The network a bare {@link RestClient} reads from. */
+        public VerifyReceiptOptions network(NetworkConfig network) {
+            this.network = network;
             return this;
         }
 
@@ -260,29 +397,58 @@ public final class Receipts {
         }
     }
 
-    /** Check the anchor signature over the receipt's canonical message with an explicit key. */
-    private static boolean signatureOver(SettlementReceipt receipt, String publicKeyHex) {
+    /**
+     * Verify an anchor's post-quantum signature. Every signed field is taken from the chain's
+     * anchor, never from the receipt — the receipt only says which anchor to look for. {@code
+     * chainId} likewise comes from the network being queried.
+     */
+    private static boolean signatureOver(
+            AnchorView anchor, String publicKeyHex, String chainId, AnchorSignBytesVersion version) {
         if (publicKeyHex == null
                 || publicKeyHex.isEmpty()
-                || receipt.pqcSignature == null
-                || receipt.pqcSignature.isEmpty()) {
+                || anchor.pqcSignature == null
+                || anchor.pqcSignature.isEmpty()) {
             return false;
         }
         try {
             byte[] message =
-                    anchorSignBytes(
-                            receipt.layerId,
-                            receipt.layerHeight,
-                            receipt.stateRoot,
-                            receipt.validatorSetHash);
+                    version == AnchorSignBytesVersion.V2
+                            ? anchorSignBytesV2(
+                                    chainId,
+                                    anchor.layerId,
+                                    anchor.layerHeight,
+                                    anchor.stateRoot,
+                                    anchor.validatorSetHash,
+                                    anchor.transactionCount,
+                                    anchor.compressedStateProof)
+                            : anchorSignBytesV1(
+                                    anchor.layerId,
+                                    anchor.layerHeight,
+                                    anchor.stateRoot,
+                                    anchor.validatorSetHash);
             return Pqc.mldsaVerify(
                     PQC_LEVEL,
                     Bytes.hexToBytes(publicKeyHex),
                     message,
-                    Bytes.hexToBytes(receipt.pqcSignature));
+                    Bytes.hexToBytes(anchor.pqcSignature));
         } catch (RuntimeException err) {
             return false;
         }
+    }
+
+    /** The receipt's own copies of the signed fields, for signature-only mode. */
+    private static AnchorView receiptAsAnchor(SettlementReceipt r) {
+        AnchorView a = new AnchorView();
+        a.layerId = r.layerId;
+        a.layerHeight = r.layerHeight;
+        a.stateRoot = r.stateRoot;
+        a.validatorSetHash = r.validatorSetHash;
+        a.mainChainHeight = r.mainChainHeight;
+        a.anchoredAt = r.anchoredAt;
+        a.pqcSignature = r.pqcSignature;
+        a.transactionCount = (int) r.transactionCount;
+        a.compressedStateProof = r.compressedStateProof == null ? "" : r.compressedStateProof;
+        return a;
     }
 
     private static ReceiptVerification fail(ReceiptVerification v, String reason) {
@@ -316,7 +482,19 @@ public final class Receipts {
                         "no client supplied — pass a client to verify against chain state; a"
                                 + " receipt on its own proves nothing");
             }
-            v.checks.pqcSignature = signatureOver(receipt, opts.creatorPublicKeyHex);
+            // Without a client there is no chain to read, so the receipt's own copies are all
+            // there is — which is why this mode is never valid. Both forms are tried because
+            // nothing here reveals the anchor's height.
+            AnchorView own = receiptAsAnchor(receipt);
+            if (receipt.chainId != null
+                    && signatureOver(
+                            own, opts.creatorPublicKeyHex, receipt.chainId, AnchorSignBytesVersion.V2)) {
+                v.checks.pqcSignature = true;
+                v.signBytesVersion = AnchorSignBytesVersion.V2;
+            } else if (signatureOver(own, opts.creatorPublicKeyHex, "", AnchorSignBytesVersion.V1)) {
+                v.checks.pqcSignature = true;
+                v.signBytesVersion = AnchorSignBytesVersion.V1;
+            }
             return fail(
                     v,
                     v.checks.pqcSignature
@@ -327,6 +505,14 @@ public final class Receipts {
 
         RestClient rest = opts.rest;
         v.mode = ReceiptVerificationMode.CHAIN;
+        if (opts.network == null || opts.network.chainId == null || opts.network.chainId.isEmpty()) {
+            // Refuse rather than guess: the chain id is bound into the v2 anchor message and is
+            // what stops a receipt from one network passing on another.
+            return fail(
+                    v,
+                    "the network is unknown — verify through an RdkClient, or pass"
+                            + " VerifyReceiptOptions.network(...) with a bare RestClient");
+        }
 
         // 1. The rollup must exist on chain and belong to the layer the receipt names.
         RollupView rollup;
@@ -373,6 +559,8 @@ public final class Receipts {
         }
 
         // 3. An anchor matching this receipt must actually exist on chain.
+        // The matched anchor is kept: it, not the receipt, is what step 6 verifies.
+        AnchorView matched = null;
         try {
             List<AnchorView> anchors = rest.getAnchors(receipt.layerId);
             for (AnchorView a : anchors) {
@@ -381,6 +569,7 @@ public final class Receipts {
                         && eq(a.validatorSetHash, receipt.validatorSetHash)
                         && eq(a.pqcSignature, receipt.pqcSignature)) {
                     v.checks.anchorOnChain = true;
+                    matched = a;
                     break;
                 }
             }
@@ -418,13 +607,36 @@ public final class Receipts {
             return fail(v, "no post-quantum key is registered for creator " + rollup.creator);
         }
 
-        // 5. Finally the post-quantum signature over the canonical anchor message.
-        v.checks.pqcSignature = signatureOver(receipt, publicKeyHex);
+        // 5. The receipt must name the chain we actually queried. A version-1 receipt carries no
+        // chain id; it still verifies, because step 3 already required the anchor to exist on this
+        // chain, but the binding is the chain read rather than the receipt's own word.
+        String chainId = opts.network.chainId;
+        if (receipt.chainId != null && !receipt.chainId.equals(chainId)) {
+            return fail(
+                    v,
+                    "receipt is for chain \""
+                            + receipt.chainId
+                            + "\" but this client is connected to \""
+                            + chainId
+                            + "\" — verify it against a node for its own network");
+        }
+        v.checks.chainBinding = true;
+
+        // 6. Finally the post-quantum signature, over the form the chain had in force at the
+        // height this anchor was recorded at.
+        AnchorSignBytesVersion version =
+                anchorSignBytesVersionFor(matched.mainChainHeight, opts.network.anchorSignV2Height);
+        v.signBytesVersion = version;
+        v.checks.pqcSignature = signatureOver(matched, publicKeyHex, chainId, version);
         if (!v.checks.pqcSignature) {
             return fail(
                     v,
                     "Dilithium-5 anchor signature did not verify against the creator's registered"
-                            + " key");
+                            + " key (checked as "
+                            + version
+                            + ", for an anchor at height "
+                            + matched.mainChainHeight
+                            + ")");
         }
         v.valid = true;
         v.reason = null;
@@ -441,10 +653,14 @@ public final class Receipts {
         return verifySettlementReceipt(receipt, new VerifyReceiptOptions().client(client));
     }
 
-    /** Verify {@code receipt} against live chain state read through a bare {@link RestClient}. */
+    /**
+     * Verify {@code receipt} against live chain state read through a bare {@link RestClient} for
+     * {@code network}. The network is required: a RestClient does not know its own chain.
+     */
     public static ReceiptVerification verifySettlementReceipt(
-            SettlementReceipt receipt, RestClient rest) {
-        return verifySettlementReceipt(receipt, new VerifyReceiptOptions().rest(rest));
+            SettlementReceipt receipt, RestClient rest, NetworkConfig network) {
+        return verifySettlementReceipt(
+                receipt, new VerifyReceiptOptions().rest(rest).network(network));
     }
 
     /**

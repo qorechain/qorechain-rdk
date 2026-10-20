@@ -79,15 +79,23 @@ describe("qorollup commands", () => {
 
   it("create --dry-run validates + costs without broadcasting", async () => {
     const { ctx, out, mock } = makeCtx(() => ({ json: PARAMS }));
-    const code = await cmd.cmdCreate(ctx, parseCli(["create", "--rollup-id", "d", "--profile", "defi", "--dry-run"]));
+    const code = await cmd.cmdCreate(ctx, parseCli(["create", "--rollup-id", "roll-d", "--profile", "defi", "--dry-run"]));
     expect(code).toBe(0);
     expect(out.text()).toContain("Dry run OK");
     expect(mock.calls).toHaveLength(0);
   });
 
+  it("create refuses an id the chain would refuse, before spending anything", async () => {
+    const { ctx, out, mock } = makeCtx(() => ({ json: PARAMS }));
+    const code = await cmd.cmdCreate(ctx, parseCli(["create", "--rollup-id", "My/Rollup", "--profile", "defi"]));
+    expect(code).toBe(1);
+    expect([...out.lines, ...out.errors].join("\n")).toMatch(/My\/Rollup/);
+    expect(mock.calls).toHaveLength(0);
+  });
+
   it("create broadcasts via the signing client", async () => {
     const { ctx, out, mock } = makeCtx(() => ({ json: PARAMS }));
-    const code = await cmd.cmdCreate(ctx, parseCli(["create", "--rollup-id", "d", "--profile", "defi"]));
+    const code = await cmd.cmdCreate(ctx, parseCli(["create", "--rollup-id", "roll-d", "--profile", "defi"]));
     expect(code).toBe(0);
     expect(out.text()).toContain("Created");
     expect(mock.calls[0].messages[0].typeUrl).toBe("/qorechain.rdk.v1.MsgCreateRollup");
@@ -215,7 +223,7 @@ describe("qorollup receipt verify (a receipt someone handed you)", () => {
           },
         };
       }
-      if (url.includes("/qorechain/pqc/v1/accounts/")) {
+      if (url.includes("/qorechain/pqc/v1/account/")) {
         return {
           json: {
             account: {

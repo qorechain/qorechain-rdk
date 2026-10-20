@@ -55,6 +55,21 @@ _NETWORK_ENDPOINTS: dict[str, Endpoints] = {
 }
 
 
+ANCHOR_SIGN_V2_HEIGHTS = {
+    # `rdk-integrity` applied on qorechain-diana at this height (2026-10-02).
+    "testnet": 6_905_034,
+    # `rdk-integrity` applied on qorechain-vladi at this height (2026-10-16).
+    "mainnet": 3_556_788,
+}
+"""The height at which each network switched to the v2 anchor message.
+
+In practice every anchor the ``rdk`` module ever wrote is v2: before the
+feature the chain's anchor attempt failed for RDK batches, so no RDK batch was
+anchored under v1. v1 survives only for standalone ``x/multilayer`` anchors
+recorded before these heights.
+"""
+
+
 @dataclass
 class NetworkConfig:
     """A resolved network: its chain id and endpoints."""
@@ -62,6 +77,12 @@ class NetworkConfig:
     name: str
     chain_id: str
     endpoints: Endpoints
+    #: The Main Chain height at which this network switched the canonical
+    #: anchor message from v1 to v2 (the chain's ``rdk-integrity`` feature,
+    #: shipped in v3.2.2). An anchor recorded at or above this height is signed
+    #: over the v2 message; below it, v1. A fresh chain enables the feature at
+    #: genesis, so ``0`` is right for a local or custom network.
+    anchor_sign_v2_height: int = 0
 
     def copy(self) -> "NetworkConfig":
         return replace(self, endpoints=self.endpoints.copy())
@@ -73,6 +94,7 @@ def _build_networks() -> dict[str, NetworkConfig]:
             name=name,
             chain_id=CHAIN_IDS[name],
             endpoints=_NETWORK_ENDPOINTS.get(name, LOCALHOST_ENDPOINTS).copy(),
+            anchor_sign_v2_height=ANCHOR_SIGN_V2_HEIGHTS.get(name, 0),
         )
         for name in NETWORK_NAMES
     }

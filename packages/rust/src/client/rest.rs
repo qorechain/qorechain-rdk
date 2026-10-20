@@ -145,23 +145,83 @@ impl RestClient {
         Ok(map_batch_view(Self::obj_or(&body, &["batch"])))
     }
 
-    /// All settlement batches for a rollup.
-    pub fn list_batches(&self, rollup_id: &str) -> Result<Vec<BatchView>, RestError> {
-        let body = self.get(&format!(
-            "/qorechain/rdk/v1/batches/{}",
-            urlencode(rollup_id)
-        ))?;
-        Ok(body
+    /// One page of a rollup's batches, in index order, from `start_index`. The
+    /// chain returns at most `limit` (0 means 50, capped at 100) and a next
+    /// index that is 0 when there is no further page.
+    pub fn list_batches_page(
+        &self,
+        rollup_id: &str,
+        start_index: u64,
+        limit: u32,
+    ) -> Result<(Vec<BatchView>, u64), RestError> {
+        let mut path = format!("/qorechain/rdk/v1/batches/{}", urlencode(rollup_id));
+        let mut q = Vec::new();
+        if start_index > 0 {
+            q.push(format!("start_index={start_index}"));
+        }
+        if limit > 0 {
+            q.push(format!("limit={limit}"));
+        }
+        if !q.is_empty() {
+            path.push('?');
+            path.push_str(&q.join("&"));
+        }
+        let body = self.get(&path)?;
+        let batches = body
             .get("batches")
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().map(map_batch_view).collect())
-            .unwrap_or_default())
+            .unwrap_or_default();
+        let next = body
+            .get("next_index")
+            .or_else(|| body.get("nextIndex"))
+            .and_then(|v| {
+                v.as_u64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
+            .unwrap_or(0);
+        Ok((batches, next))
     }
 
-    /// The latest settlement batch for a rollup.
+    /// All settlement batches for a rollup, following every page.
+    ///
+    /// The chain's `Batches` query is paged (50 per page by default). Releases
+    /// before 0.6.0 read only the first page, so nothing past batch #49 was ever
+    /// returned.
+    pub fn list_batches(&self, rollup_id: &str) -> Result<Vec<BatchView>, RestError> {
+        self.list_batches_from(rollup_id, 0)
+    }
+
+    /// Every batch from `start_index` onwards, following pages.
+    pub fn list_batches_from(
+        &self,
+        rollup_id: &str,
+        start_index: u64,
+    ) -> Result<Vec<BatchView>, RestError> {
+        let mut out = Vec::new();
+        let mut start = start_index;
+        for _ in 0..100_000 {
+            // bounded against a misbehaving node
+            let (page, next) = self.list_batches_page(rollup_id, start, 100)?;
+            let empty = page.is_empty();
+            out.extend(page);
+            if next == 0 || empty {
+                break;
+            }
+            start = next;
+        }
+        Ok(out)
+    }
+
+    /// The latest settlement batch for a rollup (the chain's `LatestBatch`).
+    ///
+    /// Releases before 0.6.0 requested `/batches/{id}?latest=true`, which is not
+    /// a chain route: the node returned the first page of the list, which was
+    /// then read as one empty batch — so health reported "no batches yet" for
+    /// every rollup.
     pub fn get_latest_batch(&self, rollup_id: &str) -> Result<BatchView, RestError> {
         let body = self.get(&format!(
-            "/qorechain/rdk/v1/batches/{}?latest=true",
+            "/qorechain/rdk/v1/latest_batch/{}",
             urlencode(rollup_id)
         ))?;
         Ok(map_batch_view(Self::obj_or(&body, &["batch"])))
@@ -208,10 +268,7 @@ impl RestClient {
     /// An account's post-quantum key record (the `x/pqc` account query). The
     /// `public_key` is the registered ML-DSA-87 (Dilithium-5) verification key.
     pub fn get_pqc_account(&self, address: &str) -> Result<PqcAccountView, RestError> {
-        let body = self.get(&format!(
-            "/qorechain/pqc/v1/accounts/{}",
-            urlencode(address)
-        ))?;
+        let body = self.get(&format!("/qorechain/pqc/v1/account/{}", urlencode(address)))?;
         Ok(map_pqc_account_view(Self::obj_or(&body, &["account"])))
     }
 

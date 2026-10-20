@@ -38,7 +38,7 @@ describe("QoreChain Native vm-type alias", () => {
   it("emits cosmwasm on the wire when the config says native", () => {
     const msg = createRollupMsg({
       creator: "qor1creator",
-      rollupId: "r",
+      rollupId: "roll-r",
       profile: "nft",
       vmType: "native",
       stakeAmount: "1",
@@ -47,7 +47,7 @@ describe("QoreChain Native vm-type alias", () => {
   });
 
   it("validates native and the nft preset (now native)", () => {
-    const cfg = presets.nft({ rollupId: "r" }).build();
+    const cfg = presets.nft({ rollupId: "roll-r" }).build();
     expect(cfg.vmType).toBe("native");
     expect(validateRollupConfig(cfg).valid).toBe(true);
   });

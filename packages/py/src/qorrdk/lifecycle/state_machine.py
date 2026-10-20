@@ -8,7 +8,8 @@ challenge is dismissed) on the optimistic path.
 
 from __future__ import annotations
 
-from typing import Literal
+from dataclasses import dataclass
+from typing import Literal, Optional
 
 from ..enums import BatchStatus, RollupStatus
 
@@ -69,6 +70,9 @@ def is_challenge_window_closed(
 
 
 __all__ = [
+    "ChainTip",
+    "ChallengeWindowStatus",
+    "batch_challenge_window",
     "RollupAction",
     "ROLLUP_ACTION_FROM",
     "can_perform_rollup_action",
@@ -78,3 +82,76 @@ __all__ = [
     "challenge_window_deadline",
     "is_challenge_window_closed",
 ]
+
+
+@dataclass
+class ChainTip:
+    """The chain tip a challenge window is judged against."""
+
+    height: int
+    #: Block time of the tip, Unix seconds.
+    time_secs: int
+
+
+@dataclass
+class ChallengeWindowStatus:
+    """A batch's challenge window, computed with the chain's own rules.
+
+    The chain chooses the rule **per batch**. A batch submitted under the
+    time-based window (chain v3.2.4, ``rdk-challenge-window-time``) records its
+    submission block time, and its window closes once block time reaches
+    ``submitted_time + window_secs`` (``mode == "time"``). Every earlier batch
+    keeps the original rule, ``window_secs // 6`` blocks counted from the
+    submission **height** (``mode == "blocks"``) -- which assumed 6-second
+    blocks, so a 7-day window closes after about 3.75 days on mainnet and 28
+    hours on the testnet.
+
+    On the block-count path the chain refuses a challenge once
+    ``height - submitted_at > window_blocks`` but finalizes once it is ``>=``,
+    so for exactly one block a batch is both finalizable and still
+    challengeable; ``open`` and ``finalizable`` report the two separately.
+    """
+
+    mode: str
+    open: bool
+    finalizable: bool
+    deadline_secs: Optional[int] = None
+    seconds_remaining: Optional[int] = None
+    window_blocks: Optional[int] = None
+    deadline_height: Optional[int] = None
+    blocks_remaining: Optional[int] = None
+
+
+def batch_challenge_window(
+    submitted_at: int, submitted_time: int, window_secs: int, tip: ChainTip
+) -> ChallengeWindowStatus:
+    """Compute a batch's challenge window exactly as the chain does.
+
+    ``submitted_at`` is the submission **height**; ``submitted_time`` is the
+    submission block time, or ``0`` for a batch under the block-count rule.
+    ``window_secs`` is the **rollup's own** window -- the global
+    ``default_challenge_window`` param is only a fallback.
+    """
+    if submitted_time > 0:
+        elapsed = tip.time_secs - submitted_time
+        # The chain treats a negative elapsed (tip before submission) as not elapsed.
+        elapsed_fully = elapsed >= 0 and elapsed >= window_secs
+        deadline = submitted_time + window_secs
+        return ChallengeWindowStatus(
+            mode="time",
+            open=not elapsed_fully,
+            finalizable=elapsed_fully,
+            deadline_secs=deadline,
+            seconds_remaining=deadline - tip.time_secs,
+        )
+    window_blocks = window_secs // 6
+    since = tip.height - submitted_at
+    deadline_height = submitted_at + window_blocks
+    return ChallengeWindowStatus(
+        mode="blocks",
+        open=since <= window_blocks,
+        finalizable=since >= window_blocks,
+        window_blocks=window_blocks,
+        deadline_height=deadline_height,
+        blocks_remaining=deadline_height - tip.height,
+    )

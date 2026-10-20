@@ -42,7 +42,7 @@ func TestCheckPreflightAllGreen(t *testing.T) {
 	// Balance covers stake (1e10) + buffer (1e6).
 	client := preflightServer(t, `{"balance":{"denom":"uqor","amount":"20000000000"}}`, true)
 
-	cfg, err := PresetDefi().SetRollupID("r1").SetStakeAmountUqor("10000000000").Build()
+	cfg, err := PresetDefi().SetRollupID("roll-r1").SetStakeAmountUqor("10000000000").Build()
 	if err != nil {
 		t.Fatal(err)
 	}

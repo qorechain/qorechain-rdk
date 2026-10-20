@@ -75,16 +75,63 @@ export class RestClient {
     return mapBatchView(asRecord(body.batch ?? body));
   }
 
-  /** All settlement batches for a rollup. */
-  async listBatches(rollupId: string): Promise<BatchView[]> {
-    const body = await this.get(`/qorechain/rdk/v1/batches/${encodeURIComponent(rollupId)}`);
-    return asArray(body.batches).map(mapBatchView);
+  /**
+   * One page of a rollup's settlement batches, in index order, starting at
+   * `startIndex`. The chain returns at most `limit` (default 50, capped at
+   * 100) and a `nextIndex` that is `0` when there is no further page.
+   */
+  async listBatchesPage(
+    rollupId: string,
+    opts: { startIndex?: number | bigint; limit?: number } = {},
+  ): Promise<{ batches: BatchView[]; nextIndex: number }> {
+    const q = new URLSearchParams();
+    if (opts.startIndex !== undefined) q.set("start_index", String(opts.startIndex));
+    if (opts.limit !== undefined) q.set("limit", String(opts.limit));
+    const qs = q.toString();
+    const body = await this.get(
+      `/qorechain/rdk/v1/batches/${encodeURIComponent(rollupId)}${qs ? `?${qs}` : ""}`,
+    );
+    return {
+      batches: asArray(body.batches).map(mapBatchView),
+      nextIndex: Number(body.next_index ?? body.nextIndex ?? 0),
+    };
   }
 
-  /** The latest settlement batch for a rollup. */
+  /**
+   * All settlement batches for a rollup, following every page.
+   *
+   * The chain's `Batches` query is paged (50 per page by default). Releases
+   * before 0.6.0 read only the first page, so a watcher of a rollup past batch
+   * #49 never saw a newer batch. Pass `startIndex` to read only from a given
+   * batch onwards, which is what a poller should do.
+   */
+  async listBatches(rollupId: string, opts: { startIndex?: number | bigint } = {}): Promise<BatchView[]> {
+    const out: BatchView[] = [];
+    let start: number | bigint | undefined = opts.startIndex;
+    // Bounded: a page never comes back empty with a non-zero next index on a
+    // well-behaved node, but a misbehaving one must not spin us forever.
+    for (let pages = 0; pages < 100_000; pages++) {
+      const page = await this.listBatchesPage(rollupId, { startIndex: start, limit: 100 });
+      out.push(...page.batches);
+      if (page.nextIndex === 0 || page.batches.length === 0) break;
+      start = page.nextIndex;
+    }
+    return out;
+  }
+
+  /**
+   * The latest settlement batch for a rollup (the chain's `LatestBatch`
+   * query).
+   *
+   * Releases before 0.6.0 requested `/batches/{id}?latest=true`, which is not
+   * a chain route: the node ignored the parameter and returned the first page
+   * of the list, which was then read as a single empty batch. Anything built on
+   * it — notably the health monitor — reported "no batches yet" for every
+   * rollup.
+   */
   async getLatestBatch(rollupId: string): Promise<BatchView> {
     const body = await this.get(
-      `/qorechain/rdk/v1/batches/${encodeURIComponent(rollupId)}?latest=true`,
+      `/qorechain/rdk/v1/latest_batch/${encodeURIComponent(rollupId)}`,
     );
     return mapBatchView(asRecord(body.batch ?? body));
   }
@@ -124,7 +171,7 @@ export class RestClient {
    */
   async getPqcAccount(address: string): Promise<PqcAccountView> {
     const body = await this.get(
-      `/qorechain/pqc/v1/accounts/${encodeURIComponent(address)}`,
+      `/qorechain/pqc/v1/account/${encodeURIComponent(address)}`,
     );
     return mapPqcAccountView(asRecord(body.account ?? body));
   }

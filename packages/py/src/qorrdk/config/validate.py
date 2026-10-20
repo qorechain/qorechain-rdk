@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from ..rules import rollup_id_error
 from ..enums import (
     DA_BACKENDS,
     GAS_MODELS,
@@ -69,6 +70,12 @@ def validate_rollup_config(config: RollupConfig) -> ValidationResult:
 
     if not config.rollup_id or config.rollup_id.strip() == "":
         errors.append("rollup_id must be a non-empty string")
+    else:
+        # The chain enforces this at creation from v3.2.2; checking here means a
+        # refused id costs nothing instead of a creation fee.
+        id_error = rollup_id_error(config.rollup_id)
+        if id_error:
+            errors.append(f'rollup_id "{config.rollup_id}" {id_error}')
 
     if settlement not in SETTLEMENT_PARADIGMS:
         errors.append(

@@ -5,9 +5,10 @@ existing read surface.
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from typing import Optional
+
+from ..lifecycle.state_machine import ChainTip, ChallengeWindowStatus, batch_challenge_window
 
 
 @dataclass
@@ -19,16 +20,35 @@ class RollupHealth:
     notes: list[str] = field(default_factory=list)
     latest_batch_index: Optional[int] = None
     latest_batch_status: Optional[str] = None
+    #: Height the latest batch was submitted at.
+    latest_batch_height: Optional[int] = None
+    #: Blocks since the latest batch was submitted.
+    batch_age_blocks: Optional[int] = None
+    #: Seconds since submission -- only when the node records the submission
+    #: time (chain v3.2.4+); a height alone cannot be turned into a time.
     batch_age_secs: Optional[int] = None
+    #: The latest pending batch's window, by the chain's own rules.
+    challenge_window: Optional[ChallengeWindowStatus] = None
+    #: Time mode only: when the window closes (Unix seconds).
     challenge_deadline_secs: Optional[int] = None
+    #: Time mode only: seconds until it closes (negative once past).
     seconds_until_challenge_deadline: Optional[int] = None
 
 
 def get_rollup_health(
-    client, rollup_id: str, now_secs: Optional[int] = None
+    client,
+    rollup_id: str,
+    now_secs: Optional[int] = None,
+    tip: Optional[ChainTip] = None,
+    challenge_window_secs: Optional[int] = None,
 ) -> RollupHealth:
-    """Assemble a :class:`RollupHealth` snapshot for a rollup."""
-    now_secs = int(time.time()) if now_secs is None else now_secs
+    """Assemble a :class:`RollupHealth` snapshot for a rollup.
+
+    ``tip`` defaults to the node's ``/status``; ``now_secs`` from earlier
+    releases is still honoured as the tip time but cannot supply a height.
+    ``challenge_window_secs`` defaults to the rollup's own window as the node
+    reports it (chain v3.2.4+), then to the global param.
+    """
     notes: list[str] = []
 
     rollup = client.rest.get_rollup(rollup_id)
@@ -57,17 +77,43 @@ def get_rollup_health(
     health.has_batches = True
     health.latest_batch_index = latest.batch_index
     health.latest_batch_status = latest.status
-    health.batch_age_secs = now_secs - latest.submitted_at
+    health.latest_batch_height = latest.submitted_at
 
     if latest.status == "rejected":
         healthy = False
         notes.append("latest batch was rejected")
 
+    if tip is None:
+        try:
+            tip = client.get_chain_tip()
+        except Exception as err:  # noqa: BLE001
+            notes.append(f"could not read the chain tip: {err}")
+    if tip is not None and now_secs is not None:
+        tip = ChainTip(height=tip.height, time_secs=now_secs)
+    if tip is not None:
+        health.batch_age_blocks = tip.height - latest.submitted_at
+        if latest.submitted_time > 0:
+            health.batch_age_secs = tip.time_secs - latest.submitted_time
+
     if latest.status in ("submitted", "challenged"):
-        params = client.params()
-        deadline = latest.submitted_at + params.default_challenge_window
-        health.challenge_deadline_secs = deadline
-        health.seconds_until_challenge_deadline = deadline - now_secs
+        window_secs = challenge_window_secs
+        if window_secs is None:
+            window_secs = rollup.challenge_window_sec
+        if window_secs is None:
+            window_secs = client.params().default_challenge_window
+        if tip is not None:
+            window = batch_challenge_window(
+                latest.submitted_at, latest.submitted_time, window_secs, tip
+            )
+            health.challenge_window = window
+            if window.mode == "time":
+                health.challenge_deadline_secs = window.deadline_secs
+                health.seconds_until_challenge_deadline = window.seconds_remaining
+        if rollup.challenge_window_sec is None and challenge_window_secs is None:
+            notes.append(
+                "this node does not report the rollup's own challenge window; using the "
+                "global default, which is wrong for a rollup that set its own"
+            )
         if latest.status == "challenged":
             notes.append("latest batch is under challenge")
 

@@ -25,7 +25,7 @@ describe("RdkTxClient", () => {
   it("creates a rollup with the client address as creator and defaults fee to auto", async () => {
     const { client, calls } = fakeClient();
     const rdk = RdkTxClient.fromClient(client, "qor1me");
-    await rdk.createRollup({ rollupId: "r", profile: "defi", vmType: "evm", stakeAmount: "100" });
+    await rdk.createRollup({ rollupId: "roll-r", profile: "defi", vmType: "evm", stakeAmount: "100" });
 
     expect(calls).toHaveLength(1);
     expect(calls[0].signerAddress).toBe("qor1me");
@@ -39,7 +39,7 @@ describe("RdkTxClient", () => {
     const { client, calls } = fakeClient();
     const rdk = RdkTxClient.fromClient(client, "qor1seq");
     await rdk.submitBatch({
-      rollupId: "r",
+      rollupId: "roll-r",
       batchIndex: 0,
       stateRoot: "0xaa",
       txCount: 1,
@@ -53,14 +53,14 @@ describe("RdkTxClient", () => {
   it("guards an invalid lifecycle transition before broadcasting", async () => {
     const { client, calls } = fakeClient();
     const rdk = RdkTxClient.fromClient(client, "qor1me");
-    await expect(rdk.resumeRollup({ rollupId: "r", currentStatus: "active" })).rejects.toThrow();
+    await expect(rdk.resumeRollup({ rollupId: "roll-r", currentStatus: "active" })).rejects.toThrow();
     expect(calls).toHaveLength(0);
   });
 
   it("allows a valid guarded transition", async () => {
     const { client, calls } = fakeClient();
     const rdk = RdkTxClient.fromClient(client, "qor1me");
-    await rdk.pauseRollup({ rollupId: "r", reason: "maintenance", currentStatus: "active" });
+    await rdk.pauseRollup({ rollupId: "roll-r", reason: "maintenance", currentStatus: "active" });
     expect(calls).toHaveLength(1);
     expect(calls[0].messages[0].typeUrl).toBe("/qorechain.rdk.v1.MsgPauseRollup");
   });

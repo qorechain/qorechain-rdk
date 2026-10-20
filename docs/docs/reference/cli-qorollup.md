@@ -90,6 +90,11 @@ the compatibility matrix, reads live module parameters, prints the stake and the
 amount burned on creation, asks for confirmation, then broadcasts
 `MsgCreateRollup`. The signer's address is the creator.
 
+The rollup id is checked against the chain's id grammar first
+(`^[a-z0-9][a-z0-9._-]{2,63}$`, enforced from chain v3.2.2). The chain only
+checks it at creation, after the fee is paid, so an id it would refuse stops
+here with nothing spent.
+
 ```bash
 qorollup create --rollup-id my-roll --profile defi
 qorollup create --rollup-id my-roll --profile defi --stake-uqor 12000000000
@@ -117,12 +122,23 @@ See [Local & dry-run testing](../guides/local-and-dry-run.md).
 
 Show a rollup's status, profile, settlement mode, DA backend, VM, and a
 consolidated health read (latest batch, its age, and — for optimistic batches —
-the challenge-window countdown).
+the challenge window, measured the way the chain measures it).
 
 ```bash
 qorollup status my-roll
 qorollup status my-roll --json
 ```
+
+For a batch submitted before chain v3.2.4 the window is a block count, and
+`status` says so:
+
+```
+latest batch #7 (submitted), age 120 blocks
+challenge window closes in 100680 blocks (after height 4006807)
+```
+
+From v3.2.4 it is measured in seconds of block time from the recorded
+submission time, and printed as seconds with the closing time.
 
 This combines `rest.getRollup` and `getRollupHealth`. See
 [Monitoring](../guides/monitoring.md).

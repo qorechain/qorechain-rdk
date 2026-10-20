@@ -10,7 +10,7 @@ from typing import Optional
 
 from ..config.networks import NetworkConfig, get_network
 from ..enums import ProfileName
-from .http import Transport
+from .http import Transport, default_transport
 from .jsonrpc import QorClient
 from .rest import RestClient
 from .views import ParamsView
@@ -42,6 +42,35 @@ class RdkClient:
     def params(self) -> ParamsView:
         """Read the live ``rdk`` module parameters from the chain."""
         return self.rest.get_params()
+
+    def get_chain_tip(self) -> "ChainTip":
+        """The chain tip -- latest height and its block time -- from the
+        consensus RPC's ``/status``.
+
+        A challenge window is judged against this, not the local clock: the
+        block-count path counts heights, and the time-based path compares block
+        time, which can lag wall time.
+        """
+        from datetime import datetime
+
+        from ..lifecycle.state_machine import ChainTip
+
+        url = self.network.endpoints.rpc.rstrip("/") + "/status"
+        transport = self._transport or default_transport()
+        res = transport("GET", url)
+        if not res.ok:
+            raise RuntimeError(f"could not read the chain tip from {url} (HTTP {res.status})")
+        info = ((res.json() or {}).get("result") or {}).get("sync_info") or {}
+        height, when = info.get("latest_block_height"), info.get("latest_block_time")
+        if height is None or not when:
+            raise RuntimeError(f"the node at {url} did not report a latest block height and time")
+        # RFC 3339 with nanoseconds and a trailing Z; trim to what fromisoformat takes.
+        stamp = when.rstrip("Z")
+        if "." in stamp:
+            head, frac = stamp.split(".", 1)
+            stamp = f"{head}.{frac[:6]}"
+        dt = datetime.fromisoformat(stamp + "+00:00")
+        return ChainTip(height=int(height), time_secs=int(dt.timestamp()))
 
     def suggest_profile(
         self, use_case: str, fallback: ProfileName = ProfileName.DEFI

@@ -26,6 +26,7 @@
 
 pub mod accounts;
 pub mod bridge;
+pub mod challenge_window;
 pub mod client;
 pub mod config;
 pub mod constants;
@@ -39,27 +40,28 @@ pub mod monitor;
 pub mod preflight;
 pub mod presets;
 pub mod receipts;
+pub mod rules;
 pub mod tx;
 pub mod utils;
 
 pub use accounts::{signer_from_env, NativeAccount, Signer};
 pub use client::{AnchorView, PqcAccountView, RdkClient, RdkClientOptions};
-pub use copilot::{get_rollup_advice, CopilotSuggestion, RollupAdvice, SuggestionLevel};
-pub use receipts::{
-    anchor_sign_bytes, build_settlement_receipt, verify_settlement_receipt, ReceiptChecks,
-    ReceiptError, ReceiptVerification, ReceiptVerificationMode, SettlementReceipt,
-    RECEIPT_ALGORITHM, RECEIPT_VERSION,
-};
 pub use config::{
     is_vm_type, vm_type_label, vm_type_wire_value, BatchStatus, DaBackend, GasModel, Profile,
     ProofSystem, RollupConfig, RollupConfigBuilder, RollupConfigError, RollupStatus, Sequencer,
     SequencerParams, Settlement, ValidationResult, VmType,
 };
 pub use constants::*;
+pub use copilot::{get_rollup_advice, CopilotSuggestion, RollupAdvice, SuggestionLevel};
 pub use da::{
     assert_da_backend_available, build_da_blob, is_da_backend_available, DaBlob, DaError,
     DA_CELESTIA_UNAVAILABLE_MESSAGE,
 };
 pub use monitor::{events_from_tx_hash, watch_rollup, Watcher};
 pub use presets::{preset, preset_defaults};
+pub use receipts::{
+    anchor_sign_bytes, build_settlement_receipt, verify_settlement_receipt, ReceiptChecks,
+    ReceiptError, ReceiptVerification, ReceiptVerificationMode, SettlementReceipt,
+    RECEIPT_ALGORITHM, RECEIPT_VERSION,
+};
 pub use tx::{MockTxClient, RdkTxClient, TxOptions};

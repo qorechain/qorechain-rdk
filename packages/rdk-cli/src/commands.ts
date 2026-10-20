@@ -36,6 +36,7 @@ import {
   type ProfileName,
   type RawEvent,
   type ReceiptVerification,
+  type ChallengeWindowStatus,
   type SettlementReceipt,
 } from "@qorechain/rdk";
 import { flagBool, flagStr, type ParsedCli } from "./args";
@@ -135,6 +136,14 @@ export async function cmdCreate(ctx: CliContext, parsed: ParsedCli): Promise<num
   return res.code === 0 ? 0 : 1;
 }
 
+/** Describe a challenge window the way the chain measures it. */
+function describeWindow(w: ChallengeWindowStatus): string {
+  if (!w.open) return "challenge window closed";
+  return w.mode === "time"
+    ? `challenge window closes in ${w.secondsRemaining}s (at ${new Date((w.deadlineSecs ?? 0) * 1000).toISOString()})`
+    : `challenge window closes in ${w.blocksRemaining} blocks (after height ${w.deadlineHeight})`;
+}
+
 function rollupIdArg(parsed: ParsedCli): string | undefined {
   return flagStr(parsed.flags, "rollup-id") ?? parsed.positionals[0];
 }
@@ -158,9 +167,16 @@ export async function cmdStatus(ctx: CliContext, parsed: ParsedCli): Promise<num
   ctx.out.line(`  DA:         ${rollup.daBackend}`);
   ctx.out.line(`  VM:         ${vmTypeLabel(rollup.vmType)}`);
   if (health.hasBatches) {
-    ctx.out.line(`  latest batch #${health.latestBatchIndex} (${health.latestBatchStatus}), age ${health.batchAgeSecs}s`);
-    if (health.secondsUntilChallengeDeadline !== undefined) {
-      ctx.out.line(`  challenge window closes in ${health.secondsUntilChallengeDeadline}s`);
+    const age =
+      health.batchAgeSecs !== undefined
+        ? `${health.batchAgeSecs}s`
+        : health.batchAgeBlocks !== undefined
+          ? `${health.batchAgeBlocks} blocks`
+          : "unknown";
+    ctx.out.line(`  latest batch #${health.latestBatchIndex} (${health.latestBatchStatus}), age ${age}`);
+    const w = health.challengeWindow;
+    if (w) {
+      ctx.out.line(`  ${describeWindow(w)}`);
     }
   } else {
     ctx.out.line("  no settlement batches yet");
@@ -572,7 +588,7 @@ export async function cmdWatchtower(ctx: CliContext, parsed: ParsedCli): Promise
         ctx.out.line(`new batch #${b.batchIndex} (${b.status}) state ${b.stateRoot.slice(0, 16)}…`),
       onDeadline: (info) =>
         ctx.out.warn(
-          `batch #${info.batch.batchIndex} challenge window closes in ${info.secondsRemaining}s`,
+          `batch #${info.batch.batchIndex} ${info.window ? describeWindow(info.window) : "challenge window closing"}`,
         ),
       onError: (e) => ctx.out.warn(e instanceof Error ? e.message : String(e)),
     });

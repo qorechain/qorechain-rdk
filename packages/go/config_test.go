@@ -49,7 +49,7 @@ func TestValidateRollupConfig_Valid(t *testing.T) {
 
 func TestValidateRollupConfig_MatrixError(t *testing.T) {
 	cfg := RollupConfig{
-		RollupID: "r", Profile: ProfileCustom,
+		RollupID: "roll-r", Profile: ProfileCustom,
 		Settlement: SettlementZK, Sequencer: SequencerDedicated,
 		DA: DANative, ProofSystem: ProofFraud, GasModel: GasStandard,
 		VmType: VmEVM, BlockTimeMs: 1000, MaxTxPerBlock: 1000,
@@ -71,7 +71,7 @@ func TestValidateRollupConfig_MatrixError(t *testing.T) {
 
 func TestValidateRollupConfig_BasedSequencerRequired(t *testing.T) {
 	cfg := RollupConfig{
-		RollupID: "r", Profile: ProfileEnterprise,
+		RollupID: "roll-r", Profile: ProfileEnterprise,
 		Settlement: SettlementBased, Sequencer: SequencerDedicated,
 		DA: DANative, ProofSystem: ProofNone, GasModel: GasFlat,
 		VmType: VmEVM, BlockTimeMs: 1000, MaxTxPerBlock: 1000,
@@ -118,17 +118,17 @@ func TestValidateRollupConfig_FieldSanity(t *testing.T) {
 }
 
 func TestBuilderToCreateMsg(t *testing.T) {
-	b := PresetDefi().SetRollupID("r1").SetStakeAmountUqor("10000000000")
+	b := PresetDefi().SetRollupID("roll-r1").SetStakeAmountUqor("10000000000")
 	msg, err := b.ToCreateMsg("qor1creator", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msg.Creator != "qor1creator" || msg.RollupID != "r1" || msg.Profile != ProfileDefi ||
+	if msg.Creator != "qor1creator" || msg.RollupID != "roll-r1" || msg.Profile != ProfileDefi ||
 		msg.VmType != VmEVM || msg.StakeAmount != "10000000000" {
 		t.Errorf("unexpected create msg: %+v", msg)
 	}
 
-	if _, err := PresetDefi().SetRollupID("r1").ToCreateMsg("qor1c", ""); err == nil {
+	if _, err := PresetDefi().SetRollupID("roll-r1").ToCreateMsg("qor1c", ""); err == nil {
 		t.Error("expected error when no stake amount supplied")
 	}
 }

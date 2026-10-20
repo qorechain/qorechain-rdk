@@ -162,7 +162,7 @@ def test_preflight_all_ok():
     client = _FakeClient(_FakeRest(balance="20000000000"), _PARAMS)
     result = check_preflight(
         client,
-        config=presets.defi("r").build(),
+        config=presets.defi("roll-r").build(),
         signer_address="qor1abc",
         expected_network="testnet",
     )
@@ -180,14 +180,49 @@ def test_preflight_insufficient_balance_fails():
 
 
 def test_health_active_with_batch():
+    # submitted_at is a BLOCK HEIGHT. This test used to read it as a Unix
+    # timestamp (age 500 s, deadline 1000 + 604800) -- encoding the bug.
+    from qorrdk.lifecycle.state_machine import ChainTip
+
     latest = {"rollup_id": "r1", "batch_index": 2, "status": "submitted", "submitted_at": 1000}
     client = _FakeClient(_FakeRest(rollup_status="active", latest=latest), _PARAMS)
-    health = get_rollup_health(client, "r1", now_secs=1500)
+    health = get_rollup_health(client, "r1", tip=ChainTip(height=1500, time_secs=9_999_999))
     assert health.status == "active"
     assert health.has_batches
     assert health.latest_batch_index == 2
-    assert health.batch_age_secs == 500
-    assert health.challenge_deadline_secs == 1000 + 604800
+    assert health.batch_age_blocks == 500
+    assert health.batch_age_secs is None  # no submission time recorded
+    w = health.challenge_window
+    assert w.mode == "blocks"
+    assert w.window_blocks == 604800 // 6
+    assert w.deadline_height == 1000 + 100800
+    assert w.blocks_remaining == 1000 + 100800 - 1500
+    assert w.open and not w.finalizable
+
+
+def test_health_time_window_when_submission_time_recorded():
+    from qorrdk.lifecycle.state_machine import ChainTip
+
+    latest = {
+        "rollup_id": "r1", "batch_index": 3, "status": "submitted",
+        "submitted_at": 2000, "submitted_time": 1_700_000_000,
+    }
+    client = _FakeClient(_FakeRest(rollup_status="active", latest=latest), _PARAMS)
+    health = get_rollup_health(client, "r1", tip=ChainTip(height=2100, time_secs=1_700_000_100))
+    assert health.batch_age_secs == 100
+    assert health.challenge_window.mode == "time"
+    assert health.challenge_deadline_secs == 1_700_000_000 + 604800
+    assert health.seconds_until_challenge_deadline == 604800 - 100
+
+
+def test_batch_challenge_window_matches_the_chain_boundaries():
+    """At exactly window_blocks a batch is finalizable AND still challengeable."""
+    from qorrdk.lifecycle.state_machine import ChainTip, batch_challenge_window
+
+    w = batch_challenge_window(1000, 0, 600, ChainTip(height=1100, time_secs=0))  # 100 blocks
+    assert w.finalizable and w.open
+    w = batch_challenge_window(1000, 0, 600, ChainTip(height=1101, time_secs=0))
+    assert w.finalizable and not w.open
 
 
 def test_health_no_batches():

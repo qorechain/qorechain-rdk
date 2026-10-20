@@ -34,6 +34,10 @@ pub fn validate_rollup_config(config: &RollupConfig) -> ValidationResult {
 
     if config.rollup_id.trim().is_empty() {
         errors.push("rollupId must be a non-empty string".to_string());
+    } else if let Some(e) = crate::rules::rollup_id_error(&config.rollup_id) {
+        // The chain enforces this at creation from v3.2.2; checking here means a
+        // refused id costs nothing instead of a creation fee.
+        errors.push(format!("rollupId \"{}\" {e}", config.rollup_id));
     }
 
     // The strongly typed enums guarantee valid value sets; this mirrors the

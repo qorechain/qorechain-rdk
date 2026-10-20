@@ -157,6 +157,10 @@ func ValidateRollupConfig(config RollupConfig) ValidationResult {
 
 	if strings.TrimSpace(config.RollupID) == "" {
 		errs = append(errs, "rollupId must be a non-empty string")
+	} else if e := RollupIDError(config.RollupID); e != "" {
+		// The chain enforces this at creation from v3.2.2; checking here means a
+		// refused id costs nothing instead of a creation fee.
+		errs = append(errs, fmt.Sprintf("rollupId %q %s", config.RollupID, e))
 	}
 
 	if !contains(SettlementParadigms, config.Settlement) {

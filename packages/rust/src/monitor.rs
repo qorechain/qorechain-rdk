@@ -104,22 +104,25 @@ impl Drop for Watcher {
 /// continues). Returns a [`Watcher`] handle; call [`Watcher::stop`] (or drop it)
 /// to end the loop.
 ///
-/// The clock is supplied by `now_secs` (called once per tick) so callers can
-/// inject a deterministic time source in tests. The work runs on a background
-/// thread, so `client`, the callbacks, and `now_secs` must be `Send + 'static`.
+/// `tip` is called once per tick to supply the chain tip the challenge window
+/// is judged against; return `None` to read it from the node's `/status`, or a
+/// fixed tip for a deterministic test. (Before 0.6.0 this was a wall-clock
+/// `now_secs`; the window is judged against the chain, not the local clock.)
+/// The work runs on a background thread, so `client`, the callbacks, and `tip`
+/// must be `Send + 'static`.
 pub fn watch_rollup<U, E, N>(
     client: RdkClient,
     rollup_id: impl Into<String>,
     interval: Duration,
     mut on_update: U,
     mut on_error: E,
-    now_secs: N,
+    tip: N,
 ) -> Watcher
 where
     RdkClient: Send,
     U: FnMut(RollupHealth) + Send + 'static,
     E: FnMut(RestError) + Send + 'static,
-    N: Fn() -> i64 + Send + 'static,
+    N: Fn() -> Option<crate::challenge_window::ChainTip> + Send + 'static,
 {
     let rollup_id = rollup_id.into();
     let stopped = Arc::new(AtomicBool::new(false));
@@ -127,7 +130,11 @@ where
 
     let handle = thread::spawn(move || {
         while !stopped_worker.load(Ordering::SeqCst) {
-            match get_rollup_health(&client, &rollup_id, now_secs()) {
+            let options = crate::health::HealthOptions {
+                tip: tip(),
+                ..Default::default()
+            };
+            match get_rollup_health(&client, &rollup_id, options) {
                 Ok(health) => {
                     if stopped_worker.load(Ordering::SeqCst) {
                         break;

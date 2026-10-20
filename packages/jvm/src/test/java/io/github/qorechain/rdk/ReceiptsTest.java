@@ -84,7 +84,7 @@ class ReceiptsTest {
                                 + sigHex
                                 + "\",\"transaction_count\":5}]}");
             }
-            if (req.url.contains("/qorechain/pqc/v1/accounts/")) {
+            if (req.url.contains("/qorechain/pqc/v1/account/")) {
                 return new Transport.Response(
                         200,
                         "{\"account\":{\"address\":\""
@@ -113,7 +113,9 @@ class ReceiptsTest {
 
         RdkClient c = client(pubHex, sigHex);
         SettlementReceipt receipt = Receipts.buildSettlementReceipt(c, "r1", 7);
-        assertEquals(1, receipt.version);
+        // Built through an RdkClient, the receipt records its chain (schema v2).
+        assertEquals(2, receipt.version);
+        assertEquals("qorechain-diana", receipt.chainId);
         assertEquals("r1", receipt.rollupId);
         assertEquals("layer-r1", receipt.layerId);
         assertEquals("ML-DSA-87", receipt.algorithm);
@@ -130,6 +132,7 @@ class ReceiptsTest {
         assertTrue(v.checks.anchorOnChain);
         assertTrue(v.checks.creatorAuthority);
         assertTrue(v.checks.pqcSignature);
+        assertTrue(v.checks.chainBinding);
     }
 
     @Test
@@ -255,3 +258,4 @@ class ReceiptsTest {
         assertNotNull(onChain.reason);
     }
 }
+

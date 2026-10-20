@@ -13,7 +13,7 @@ account derivation) works fully offline.
 
 from __future__ import annotations
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 # Constants.
 from .constants import (  # noqa: E402
@@ -220,6 +220,10 @@ from .receipts import (  # noqa: E402
     ReceiptVerificationMode,
     SettlementReceipt,
     anchor_sign_bytes,
+    anchor_sign_bytes_v1,
+    anchor_sign_bytes_v2,
+    anchor_sign_bytes_version_for,
+    ANCHOR_SIGN_DOMAIN_V2,
     build_settlement_receipt,
     verify_settlement_receipt,
 )
@@ -242,7 +246,28 @@ from .faucet import FaucetResult, request_faucet  # noqa: E402
 # Live monitoring.
 from .monitor import Watcher, events_from_tx_hash, watch_rollup  # noqa: E402
 
+from .rules import (
+    ID_MAX_LENGTH,
+    ID_MIN_LENGTH,
+    MAX_WITHDRAWAL_PROOF_DEPTH,
+    ROLLUP_ESCROW_DENOM,
+    is_valid_rollup_id,
+    rollup_id_error,
+    withdrawal_errors,
+)
+from .lifecycle.state_machine import ChainTip, ChallengeWindowStatus, batch_challenge_window
+
 __all__ = [
+    "ID_MAX_LENGTH",
+    "ID_MIN_LENGTH",
+    "MAX_WITHDRAWAL_PROOF_DEPTH",
+    "ROLLUP_ESCROW_DENOM",
+    "is_valid_rollup_id",
+    "rollup_id_error",
+    "withdrawal_errors",
+    "ChainTip",
+    "ChallengeWindowStatus",
+    "batch_challenge_window",
     "__version__",
     # constants
     "DISPLAY_DENOM",
@@ -412,6 +437,10 @@ __all__ = [
     "ReceiptVerification",
     "ReceiptVerificationMode",
     "anchor_sign_bytes",
+    "anchor_sign_bytes_v1",
+    "anchor_sign_bytes_v2",
+    "anchor_sign_bytes_version_for",
+    "ANCHOR_SIGN_DOMAIN_V2",
     "build_settlement_receipt",
     "verify_settlement_receipt",
     # copilot

@@ -71,8 +71,9 @@ be registered on chain via `MsgRegisterPQCKey` unless you set
 `includePqcPublicKey: true`, and fees must be explicit — pass `fee`, or a
 `gasPrice` on connect so a gas limit or `"auto"` can be priced. `connectTx` also
 supplies `rest` from the network preset, which the default
-`signBytesVersion: "auto"` needs; force a form with `"v1"` / `"v2"` when a
-network's upgrade plan name differs from what `"auto"` looks up.
+`signBytesVersion: "auto"` needs. `"auto"` recognises both plan names the v2
+sign-bytes shipped under, so `"v1"` / `"v2"` are needed only for a custom
+network.
 
 > The Python, Go, Rust, and Java RDK clients sign **classical-only** and are
 > unsuitable for native-lane transactions on mainnet or `qorechain-diana`. Only

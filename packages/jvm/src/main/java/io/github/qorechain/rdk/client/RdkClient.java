@@ -15,6 +15,7 @@ public final class RdkClient {
     public final NetworkConfig network;
     public final RestClient rest;
     public final QorClient qor;
+    private final Transport transport;
 
     /** Options for constructing an {@link RdkClient}. */
     public static final class Options {
@@ -44,8 +45,41 @@ public final class RdkClient {
             }
         }
         this.network = net;
-        this.rest = new RestClient(net.endpoints.rest, o.transport);
-        this.qor = new QorClient(net.endpoints.evmRpc, o.transport);
+        this.transport = o.transport == null ? new HttpTransport() : o.transport;
+        this.rest = new RestClient(net.endpoints.rest, this.transport);
+        this.qor = new QorClient(net.endpoints.evmRpc, this.transport);
+    }
+
+    /**
+     * The chain tip — latest height and its block time — from the consensus RPC's {@code
+     * /status}. A challenge window is judged against this, not the local clock: the block-count
+     * path counts heights, and the time-based path compares block time, which can lag wall time.
+     */
+    @SuppressWarnings("unchecked")
+    public ChallengeWindow.ChainTip getChainTip() {
+        String url = network.endpoints.rpc.replaceAll("/+$", "") + "/status";
+        Transport.Response res =
+                transport.exchange(new Transport.Request("GET", url, java.util.Map.of(), null));
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+            throw new IllegalStateException(
+                    "could not read the chain tip from " + url + " (HTTP " + res.statusCode + ")");
+        }
+        java.util.Map<String, Object> body = Json.parseObject(res.body);
+        Object result = body.get("result");
+        Object info = result instanceof java.util.Map ? ((java.util.Map<String, Object>) result).get("sync_info") : null;
+        if (!(info instanceof java.util.Map)) {
+            throw new IllegalStateException("the node at " + url + " did not report its sync info");
+        }
+        java.util.Map<String, Object> sync = (java.util.Map<String, Object>) info;
+        Object h = sync.get("latest_block_height");
+        Object t = sync.get("latest_block_time");
+        if (h == null || t == null) {
+            throw new IllegalStateException(
+                    "the node at " + url + " did not report a latest block height and time");
+        }
+        long height = Long.parseLong(String.valueOf(h));
+        long timeSecs = java.time.Instant.parse(String.valueOf(t)).getEpochSecond();
+        return new ChallengeWindow.ChainTip(height, timeSecs);
     }
 
     private static boolean notEmpty(String s) {

@@ -14,9 +14,15 @@ type Endpoints struct {
 
 // NetworkConfig is a resolved network: its chain id and endpoints.
 type NetworkConfig struct {
-	Name      string    `json:"name"`
-	ChainID   string    `json:"chainId"`
-	Endpoints Endpoints `json:"endpoints"`
+	Name    string `json:"name"`
+	ChainID string `json:"chainId"`
+	// AnchorSignV2Height is the Main Chain height at which this network
+	// switched the canonical anchor message from v1 to v2 (the chain's
+	// rdk-integrity feature, shipped in v3.2.2). An anchor recorded at or above
+	// this height is signed over the v2 message; below it, v1. A fresh chain
+	// enables the feature at genesis, so 0 is right for a local network.
+	AnchorSignV2Height uint64    `json:"anchorSignV2Height"`
+	Endpoints          Endpoints `json:"endpoints"`
 }
 
 // LocalhostEndpoints are the defaults for running against a local node.
@@ -49,8 +55,10 @@ var testnetEndpoints = Endpoints{
 // with LocalhostEndpoints to reach a local node, or with your own
 // infrastructure.
 var Networks = map[string]NetworkConfig{
-	"testnet": {Name: "testnet", ChainID: TestnetChainID, Endpoints: testnetEndpoints},
-	"mainnet": {Name: "mainnet", ChainID: MainnetChainID, Endpoints: mainnetEndpoints},
+	// rdk-integrity applied on qorechain-diana at height 6905034 (2026-10-02)
+	// and on qorechain-vladi at height 3556788 (2026-10-16).
+	"testnet": {Name: "testnet", ChainID: TestnetChainID, Endpoints: testnetEndpoints, AnchorSignV2Height: 6_905_034},
+	"mainnet": {Name: "mainnet", ChainID: MainnetChainID, Endpoints: mainnetEndpoints, AnchorSignV2Height: 3_556_788},
 }
 
 // GetNetwork looks up a network preset by name. An empty name defaults to

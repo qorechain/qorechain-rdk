@@ -47,15 +47,17 @@ func TestWatchRollup(t *testing.T) {
 		switch r.URL.Path {
 		case "/qorechain/rdk/v1/rollup/r1":
 			_, _ = w.Write([]byte(`{"rollup":{"rollup_id":"r1","status":"active"}}`))
-		case "/qorechain/rdk/v1/batches/r1":
+		case "/qorechain/rdk/v1/latest_batch/r1":
 			_, _ = w.Write([]byte(`{"batch":{"batch_index":0,"status":"finalized","submitted_at":1000}}`))
+		case "/status":
+			_, _ = w.Write([]byte(`{"result":{"sync_info":{"latest_block_height":"1200","latest_block_time":"2023-11-14T22:13:20Z"}}}`))
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer srv.Close()
 
-	client := NewRdkClient(RdkClientOptions{Endpoints: &Endpoints{Rest: srv.URL}, HTTP: srv.Client()})
+	client := NewRdkClient(RdkClientOptions{Endpoints: &Endpoints{Rest: srv.URL, RPC: srv.URL}, HTTP: srv.Client()})
 
 	var mu sync.Mutex
 	updates := []RollupHealth{}

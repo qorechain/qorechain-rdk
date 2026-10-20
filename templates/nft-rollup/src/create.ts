@@ -1,8 +1,8 @@
 import "dotenv/config";
 import { estimateCreationCost, uqorToQor } from "@qorechain/rdk";
 import { buildConfig } from "../rollup.config.js";
-import { getClient, GAS_PRICE, ROLLUP_ID } from "./client.js";
-import { getSigner } from "./signer.js";
+import { getClient, ROLLUP_ID } from "./client.js";
+import { connectOperator } from "./signer.js";
 
 async function main(): Promise<void> {
   // Validate the configuration against the compatibility matrix before anything.
@@ -23,8 +23,8 @@ async function main(): Promise<void> {
     `Stake: ${uqorToQor(cost.stakeUqor)} QOR — burned on creation: ${uqorToQor(cost.burnUqor)} QOR`,
   );
 
-  const signer = await getSigner();
-  const tx = await client.connectTx(signer, { gasPrice: GAS_PRICE });
+  // Signs hybrid: both networks refuse a classical-only native-lane transaction.
+  const tx = await connectOperator(client);
   const msg = config.toCreateMsg(tx.address, { stakeAmount: params.minStakeForRollup });
 
   const res = await tx.createRollup({

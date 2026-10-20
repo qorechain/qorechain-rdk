@@ -92,7 +92,7 @@ def _receipt_routes(golden, tamper_signature: bool = False):
             }
         },
         ("GET", f"/qorechain/multilayer/v1/anchors/{layer_id}"): {"anchors": [anchor]},
-        ("GET", f"/qorechain/pqc/v1/accounts/{creator}"): {
+        ("GET", f"/qorechain/pqc/v1/account/{creator}"): {
             "account": {
                 "address": creator,
                 "public_key": bytes_to_base64(pk),
@@ -125,7 +125,8 @@ def test_receipt_round_trip(golden):
     client, _ = _client(golden)
 
     receipt = build_settlement_receipt(client, "r1", 0)
-    assert receipt.version == 1
+    assert receipt.version == 2
+    assert receipt.chain_id == "qorechain-diana"
     assert receipt.algorithm == "ML-DSA-87"
     assert receipt.rollup_id == "r1"
     assert receipt.state_root == receipt.batch_state_root
@@ -238,3 +239,66 @@ def test_qsr_2026_0055_fabricated_receipt_is_rejected(golden):
     assert result.valid is False
     assert result.mode == "chain"
     assert result.checks.rollup_layer_binding is False
+
+
+def test_anchor_sign_bytes_v2_matches_chain_generated_vector(golden):
+    """The v2 builder matches bytes produced by the chain's own implementation."""
+    from qorrdk import anchor_sign_bytes_v2
+
+    v = golden["anchorSignBytes"]["v2"]
+    out = anchor_sign_bytes_v2(
+        v["chainId"],
+        v["layerId"],
+        v["layerHeight"],
+        v["stateRoot"],
+        v["validatorSetHash"],
+        v["transactionCount"],
+        v["compressedStateProof"],
+    )
+    assert out.hex() == v["expectedHex"]
+
+
+def test_anchor_sign_bytes_v1_still_matches(golden):
+    """Anchors written before the switch stay verifiable."""
+    from qorrdk import anchor_sign_bytes_v1
+
+    g = golden["anchorSignBytes"]
+    out = anchor_sign_bytes_v1(
+        g["layerId"], g["layerHeight"], g["stateRoot"], g["validatorSetHash"]
+    )
+    assert out.hex() == g["expectedHexV1"]
+
+
+def test_v2_binds_the_chain_id(golden):
+    """The same anchor signs differently per network -- the v1 weakness v2 closes."""
+    from qorrdk import anchor_sign_bytes_v2
+
+    g = golden["anchorSignBytes"]
+    args = (g["layerId"], g["layerHeight"], g["stateRoot"], g["validatorSetHash"], 7, "")
+    assert anchor_sign_bytes_v2("qorechain-diana", *args) != anchor_sign_bytes_v2(
+        "qorechain-vladi", *args
+    )
+
+
+def test_sign_bytes_version_selected_by_height():
+    """v2 from the activation height; v1 strictly below it."""
+    from qorrdk import anchor_sign_bytes_version_for
+
+    assert anchor_sign_bytes_version_for(6_905_033, 6_905_034) == "v1"
+    assert anchor_sign_bytes_version_for(6_905_034, 6_905_034) == "v2"
+    assert anchor_sign_bytes_version_for(9_000_000, 6_905_034) == "v2"
+    # A fresh chain enables the feature at genesis.
+    assert anchor_sign_bytes_version_for(1, 0) == "v2"
+
+
+def test_receipt_for_another_chain_is_refused(golden):
+    """A mainnet receipt must not verify against a testnet node."""
+    from dataclasses import replace
+
+    client, _ = _client(golden)
+    receipt = build_settlement_receipt(client, "r1", 0)
+    moved = replace(receipt, chain_id="qorechain-vladi")
+    v = verify_settlement_receipt(moved, client=client)
+    assert v.valid is False
+    assert v.checks.chain_binding is False
+    assert "qorechain-vladi" in (v.reason or "")

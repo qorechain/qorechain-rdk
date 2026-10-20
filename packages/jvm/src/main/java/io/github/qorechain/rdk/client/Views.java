@@ -34,6 +34,18 @@ public final class Views {
         public String stakeAmount = "0";
         public String layerId = "";
         public int createdHeight;
+        /** What the rollup still holds in the pooled module escrow, in uqor (chain v3.2.3+). */
+        public String escrowBalance = "0";
+        /**
+         * The rollup's own challenge window in seconds (chain v3.2.4+), or {@code null} from a
+         * node that does not expose it. The window is per rollup, so the global {@code
+         * default_challenge_window} param is only a fallback.
+         */
+        public Long challengeWindowSec;
+        /** The rollup's challenge bond in uqor (chain v3.2.4+), or {@code null}. */
+        public String challengeBond;
+        /** The rollup's proof system, e.g. {@code fraud} (chain v3.2.4+), or {@code null}. */
+        public String proofSystem;
     }
 
     /** A settlement batch. */
@@ -46,9 +58,21 @@ public final class Views {
         public String dataHash = "";
         public String proofType = "";
         public String status = "";
+        /**
+         * The <b>block height</b> the batch was submitted at — not a timestamp. Releases before
+         * 0.6.0 used it as Unix seconds, which broke every challenge deadline the health monitor
+         * computed.
+         */
         public int submittedAt;
+        /** The block height the batch was finalized at (0 while pending). */
         public int finalizedAt;
         public String withdrawalsRoot = "";
+        /**
+         * The submission block's time (Unix seconds) for a batch under the chain's time-based
+         * challenge window (v3.2.4). Zero for every earlier batch, which keeps the block-count
+         * window.
+         */
+        public long submittedTime;
     }
 
     /**
@@ -214,7 +238,21 @@ public final class Views {
         r.stakeAmount = asStr(pick(raw, "stake_amount", "stakeAmount"), "0");
         r.layerId = asStr(pick(raw, "layer_id", "layerId"), "");
         r.createdHeight = asNum(pick(raw, "created_height", "createdHeight"), 0);
+        r.escrowBalance = asStr(pick(raw, "escrow_balance", "escrowBalance"), "0");
+        Object window = present(pick(raw, "challenge_window_sec", "challengeWindowSec"));
+        r.challengeWindowSec = window == null ? null : asLong(window, 0);
+        Object bond = present(pick(raw, "challenge_bond", "challengeBond"));
+        r.challengeBond = bond == null ? null : asStr(bond, "");
+        Object proof = present(pick(raw, "proof_system", "proofSystem"));
+        r.proofSystem = proof == null ? null : asStr(proof, "");
         return r;
+    }
+
+    /** {@code null} when the node did not send the field (absent, null, or empty). */
+    private static Object present(Object v) {
+        if (v == null) return null;
+        if (v instanceof String && ((String) v).isEmpty()) return null;
+        return v;
     }
 
     public static AnchorView mapAnchorView(Map<String, Object> raw) {
@@ -254,6 +292,7 @@ public final class Views {
         b.submittedAt = asNum(pick(raw, "submitted_at", "submittedAt"), 0);
         b.finalizedAt = asNum(pick(raw, "finalized_at", "finalizedAt"), 0);
         b.withdrawalsRoot = asStr(pick(raw, "withdrawals_root", "withdrawalsRoot"), "");
+        b.submittedTime = asLong(pick(raw, "submitted_time", "submittedTime"), 0);
         return b;
     }
 }

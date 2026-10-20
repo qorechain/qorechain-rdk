@@ -19,7 +19,7 @@ describe("checkPreflight", () => {
     });
     const client = createRdkClient({ endpoints: { rest: "https://r" }, fetch });
     const result = await checkPreflight(client, {
-      config: presets.defi({ rollupId: "d" }).build(),
+      config: presets.defi({ rollupId: "roll-d" }).build(),
       signerAddress: "qor1me",
       expectedNetwork: "testnet",
     });

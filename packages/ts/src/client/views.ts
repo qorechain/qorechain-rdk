@@ -58,6 +58,23 @@ export interface RollupView {
   stakeAmount: string;
   layerId: string;
   createdHeight: number;
+  /**
+   * What the rollup still holds in the pooled module escrow, in uqor: what its
+   * withdrawals can still pay and what stopping it refunds (chain v3.2.3+).
+   * `0` from an older node.
+   */
+  escrowBalance: string;
+  /**
+   * The rollup's own challenge window in seconds, when the node exposes it.
+   * `undefined` from a node that does not, in which case a caller must supply
+   * it — the window is per rollup, so the global
+   * `default_challenge_window` param is only a fallback.
+   */
+  challengeWindowSec?: number;
+  /** The rollup's challenge bond in uqor, when the node exposes it (v3.2.4+). */
+  challengeBond?: string;
+  /** The rollup's proof system (e.g. `fraud`, `snark`), when exposed (v3.2.4+). */
+  proofSystem?: string;
 }
 
 /** A settlement batch. */
@@ -70,9 +87,21 @@ export interface BatchView {
   dataHash: string;
   proofType: string;
   status: string;
+  /**
+   * The **block height** the batch was submitted at. Not a timestamp —
+   * releases before 0.6.0 treated it as one, which broke every challenge
+   * deadline the health monitor and watchtower computed.
+   */
   submittedAt: number;
   finalizedAt: number;
   withdrawalsRoot: string;
+  /**
+   * The block time (Unix seconds) of the submission block, for a batch
+   * submitted under the chain's time-based challenge window (v3.2.4,
+   * `rdk-challenge-window-time`). `0` for every batch before it, which keeps
+   * the block-count window. Read when the node exposes it.
+   */
+  submittedTime: number;
 }
 
 /**
@@ -153,6 +182,19 @@ export function mapRollupView(raw: RawRecord): RollupView {
     stakeAmount: str(pick(raw, "stake_amount", "stakeAmount"), "0"),
     layerId: str(pick(raw, "layer_id", "layerId")),
     createdHeight: num(pick(raw, "created_height", "createdHeight")),
+    escrowBalance: str(pick(raw, "escrow_balance", "escrowBalance"), "0"),
+    challengeWindowSec: (() => {
+      const v = pick(raw, "challenge_window_sec", "challengeWindowSec");
+      return v === undefined || v === null || v === "" ? undefined : num(v);
+    })(),
+    challengeBond: (() => {
+      const v = pick(raw, "challenge_bond", "challengeBond");
+      return v === undefined || v === null || v === "" ? undefined : String(v);
+    })(),
+    proofSystem: (() => {
+      const v = pick(raw, "proof_system", "proofSystem");
+      return v === undefined || v === null || v === "" ? undefined : String(v);
+    })(),
   };
 }
 
@@ -169,5 +211,6 @@ export function mapBatchView(raw: RawRecord): BatchView {
     submittedAt: num(pick(raw, "submitted_at", "submittedAt")),
     finalizedAt: num(pick(raw, "finalized_at", "finalizedAt")),
     withdrawalsRoot: str(pick(raw, "withdrawals_root", "withdrawalsRoot")),
+    submittedTime: num(pick(raw, "submitted_time", "submittedTime")),
   };
 }

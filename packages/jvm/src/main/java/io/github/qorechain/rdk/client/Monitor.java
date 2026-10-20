@@ -52,6 +52,11 @@ public final class Monitor {
         public Consumer<RuntimeException> onError;
         /** Overrides the clock (unix seconds), for testing. */
         public LongSupplier nowSecs;
+        /**
+         * The chain tip each tick is judged against; return {@code null} to read it from the
+         * node's {@code /status}. A fixed tip keeps a test deterministic and off the network.
+         */
+        public java.util.function.Supplier<ChallengeWindow.ChainTip> tip;
     }
 
     /** A handle to a running rollup watch. */
@@ -90,13 +95,18 @@ public final class Monitor {
                     if (options.nowSecs != null) {
                         ho.nowSecs = options.nowSecs.getAsLong();
                     }
+                    if (options.tip != null) {
+                        ho.tip = options.tip.get();
+                    }
                     try {
                         RollupHealth health = Health.getRollupHealth(client, rollupId, ho);
-                        if (options.onUpdate != null) {
+                        if (running.get() && options.onUpdate != null) {
                             options.onUpdate.accept(health);
                         }
                     } catch (RuntimeException e) {
-                        if (options.onError != null) {
+                        // A failure caused by stop() interrupting an in-flight request is the
+                        // watcher shutting down, not an error to report.
+                        if (running.get() && options.onError != null) {
                             options.onError.accept(e);
                         }
                     }

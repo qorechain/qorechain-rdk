@@ -29,7 +29,9 @@ console.log(health.healthy);            // coarse flag: active + latest batch no
 console.log(health.hasBatches);         // has any batch been submitted?
 console.log(health.latestBatchIndex);   // e.g. 7
 console.log(health.latestBatchStatus);  // e.g. "submitted" | "challenged" | "finalized" | "rejected"
-console.log(health.batchAgeSecs);       // seconds since the latest batch was submitted
+console.log(health.latestBatchHeight);  // the height it was submitted at
+console.log(health.batchAgeBlocks);     // blocks since then
+console.log(health.batchAgeSecs);       // seconds since then — chain v3.2.4+ only
 console.log(health.notes);              // human-readable observations
 ```
 
@@ -47,28 +49,40 @@ qorollup status my-roll
 
 For optimistic settlement, a batch is not final the moment it is submitted — it
 must survive a **challenge window** during which anyone can dispute it with a
-fraud proof. `getRollupHealth` surfaces that countdown when the latest batch is
-`submitted` or `challenged`:
+fraud proof. `getRollupHealth` reports that window when the latest batch is
+`submitted` or `challenged`, computed with the chain's own rules:
 
 ```ts
-if (health.secondsUntilChallengeDeadline !== undefined) {
-  console.log("challenge window closes at", health.challengeDeadlineSecs); // unix seconds
-  console.log("seconds remaining:", health.secondsUntilChallengeDeadline); // negative once past
+const w = health.challengeWindow;
+if (w?.mode === "blocks") {
+  console.log(`closes after height ${w.deadlineHeight} (${w.blocksRemaining} blocks)`);
+} else if (w?.mode === "time") {
+  console.log(`closes at ${w.deadlineSecs} (${w.secondsRemaining}s)`);
 }
+console.log(w?.open, w?.finalizable); // can it still be challenged? could it finalize now?
 ```
 
-The deadline is computed as the batch's submission time plus the live
-`defaultChallengeWindow` module parameter, so it always reflects the chain's
-current setting. Once `secondsUntilChallengeDeadline` reaches zero (or goes
-negative) the window has elapsed and the batch can finalize. ZK settlement does
-not use this window — finalization there is gated by on-chain proof verification.
+The chain picks the rule per batch: a batch submitted from chain v3.2.4 is
+measured in seconds of block time from its recorded submission time (`mode:
+"time"`); every earlier batch, in blocks — `window / 6` of them from the
+submission height (`mode: "blocks"`). That older rule assumed 6-second blocks,
+so a 7-day window under it closes after about **3.75 days on mainnet** and **28
+hours on the testnet**. See [the Watchtower guide](watchtower.md#how-the-challenge-window-is-measured)
+for the details, including the one block where a batch is both finalizable and
+still challengeable.
 
-`qorollup status` prints the remaining seconds when applicable:
+The window used is the **rollup's own**, as the node reports it from v3.2.4;
+on an older node `getRollupHealth` falls back to the global
+`default_challenge_window` and adds a note saying so. It is judged against the
+chain tip, read from the RPC endpoint's `/status`; pass `tip` or
+`challengeWindowSecs` to set either explicitly. ZK settlement does not use this
+window — finalization there is gated by on-chain proof verification.
 
-```
-latest batch #7 (submitted), age 120s
-challenge window closes in 604680s
-```
+:::note `submitted_at` is a block height
+Releases before 0.6.0 treated it as a Unix timestamp, so their batch age and
+countdown were meaningless. They also requested the latest batch from a route
+the chain does not serve, and so reported "no batches yet" for every rollup.
+:::
 
 ## Live polling: `watchRollup`
 

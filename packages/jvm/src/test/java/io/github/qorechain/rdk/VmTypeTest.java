@@ -74,7 +74,7 @@ class VmTypeTest {
 
     @Test
     void validatesNativeAndTheNftPresetNowNative() {
-        RollupConfig cfg = Presets.nft(c -> c.rollupId = "r").build();
+        RollupConfig cfg = Presets.nft(c -> c.rollupId = "roll-r").build();
         assertEquals(VmType.NATIVE, cfg.vmType);
         ValidationResult r = Validate.validateRollupConfig(cfg);
         assertTrue(r.valid, () -> "errors: " + r.errors);

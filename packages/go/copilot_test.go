@@ -105,7 +105,7 @@ func TestRestAnchorAndPqcReads(t *testing.T) {
 			_, _ = w.Write([]byte(`{"anchors":[{"layer_id":"l1","layer_height":"42","state_root":"98d658fb28540a2eca2a8a5930c309a9c37f89979d48d025a72c36a77a74510d","validator_set_hash":"qrvM3e7/ABEiM0RVZneImaq7zN3u/wARIjNEVWZ3iJk=","main_chain_height":"100","anchored_at":"1700000000","transaction_count":"7"}]}`))
 		case strings.Contains(p, "/multilayer/v1/anchor/"):
 			_, _ = w.Write([]byte(`{"anchor":{"layer_id":"l1","layer_height":"7","state_root":"abcd"}}`))
-		case strings.Contains(p, "/pqc/v1/accounts/"):
+		case strings.Contains(p, "/pqc/v1/account/"):
 			_, _ = w.Write([]byte(`{"account":{"address":"qor1c","public_key":"deadbeef","algorithm_id":3,"algorithm_name":"ML-DSA-87"}}`))
 		case strings.Contains(p, "/ai/v1/fee-estimate"):
 			_, _ = w.Write([]byte(`{"uqor":"1000"}`))

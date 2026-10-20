@@ -33,6 +33,19 @@ def _str(value: Any, fallback: str = "") -> str:
     return str(value)
 
 
+def _optional_num(value: Any) -> Optional[int]:
+    """``None`` when the node did not send the field, else the integer."""
+    if value is None or value == "":
+        return None
+    return _num(value)
+
+
+def _optional_str(value: Any) -> Optional[str]:
+    if value is None or value == "":
+        return None
+    return str(value)
+
+
 def _num(value: Any, fallback: int = 0) -> int:
     if value is None or value == "":
         return fallback
@@ -71,6 +84,17 @@ class RollupView:
     stake_amount: str
     layer_id: str
     created_height: int
+    #: What the rollup still holds in the pooled module escrow, in uqor (chain
+    #: v3.2.3+). ``"0"`` from an older node.
+    escrow_balance: str = "0"
+    #: The rollup's own challenge window in seconds (chain v3.2.4+). ``None``
+    #: from a node that does not expose it -- the window is per rollup, so the
+    #: global ``default_challenge_window`` param is only a fallback.
+    challenge_window_sec: Optional[int] = None
+    #: The rollup's challenge bond in uqor (chain v3.2.4+).
+    challenge_bond: Optional[str] = None
+    #: The rollup's proof system, e.g. ``"fraud"`` (chain v3.2.4+).
+    proof_system: Optional[str] = None
 
 
 @dataclass
@@ -85,9 +109,16 @@ class BatchView:
     data_hash: str
     proof_type: str
     status: str
+    #: The **block height** the batch was submitted at -- not a timestamp.
+    #: Releases before 0.6.0 treated it as one, which broke every challenge
+    #: deadline the health monitor computed.
     submitted_at: int
     finalized_at: int
     withdrawals_root: str
+    #: The submission block's time (Unix seconds) for a batch under the chain's
+    #: time-based challenge window (v3.2.4). ``0`` for every earlier batch,
+    #: which keeps the block-count window.
+    submitted_time: int = 0
 
 
 @dataclass
@@ -180,6 +211,10 @@ def map_rollup_view(raw: RawRecord) -> RollupView:
         stake_amount=_str(_pick(raw, "stake_amount", "stakeAmount"), "0"),
         layer_id=_str(_pick(raw, "layer_id", "layerId")),
         created_height=_num(_pick(raw, "created_height", "createdHeight")),
+        escrow_balance=_str(_pick(raw, "escrow_balance", "escrowBalance"), "0"),
+        challenge_window_sec=_optional_num(_pick(raw, "challenge_window_sec", "challengeWindowSec")),
+        challenge_bond=_optional_str(_pick(raw, "challenge_bond", "challengeBond")),
+        proof_system=_optional_str(_pick(raw, "proof_system", "proofSystem")),
     )
 
 
@@ -196,6 +231,7 @@ def map_batch_view(raw: RawRecord) -> BatchView:
         submitted_at=_num(_pick(raw, "submitted_at", "submittedAt")),
         finalized_at=_num(_pick(raw, "finalized_at", "finalizedAt")),
         withdrawals_root=_str(_pick(raw, "withdrawals_root", "withdrawalsRoot")),
+        submitted_time=_num(_pick(raw, "submitted_time", "submittedTime")),
     )
 
 

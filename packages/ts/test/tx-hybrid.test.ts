@@ -31,6 +31,8 @@ const {
   generatePqcKeypair,
   resolveSignBytesVersion,
   isHybridSignBytesRejection,
+  anchorSignBytesForBatch: anchorSignBytesForBatchRef,
+  pqcVerify: pqcVerifyRef,
 } = await import("../src/index");
 
 const FEE: StdFee = { amount: [{ denom: "uqor", amount: "30000" }], gas: "200000" };
@@ -72,6 +74,7 @@ function fakeTransport(chainId = "qorechain-diana") {
         gasUsed: BigInt(111111),
         gasWanted: BigInt(200000),
         rawLog: "ok",
+        msgResponses: [{ typeUrl: "/qorechain.rdk.v1.MsgSubmitBatchResponse", value: new Uint8Array([7]) }],
       };
     },
     async broadcastTxSync(tx: Uint8Array) {
@@ -98,7 +101,7 @@ describe("RdkTxClient hybrid signing", () => {
 
     expect(rdk.isHybrid).toBe(false);
     const res = await rdk.createRollup({
-      rollupId: "r",
+      rollupId: "roll-r",
       profile: "defi",
       vmType: "evm",
       stakeAmount: "100",
@@ -124,7 +127,7 @@ describe("RdkTxClient hybrid signing", () => {
 
     expect(rdk.isHybrid).toBe(true);
     const res = await rdk.submitBatch(
-      { rollupId: "r", batchIndex: 0, stateRoot: "0xaa", txCount: 1, dataHash: "0xbb" },
+      { rollupId: "roll-r", batchIndex: 0, stateRoot: "0xaa", txCount: 1, dataHash: "0xbb" },
       { fee: FEE, memo: "batch" },
     );
 
@@ -133,6 +136,11 @@ describe("RdkTxClient hybrid signing", () => {
     expect(hybridSpy.calls).toHaveLength(1);
     expect(broadcasts).toHaveLength(1);
     expect(broadcasts[0].byteLength).toBeGreaterThan(4627); // carries the ML-DSA-87 signature
+
+    // The typed Msg*Response the node returned is forwarded, not dropped.
+    expect(res.msgResponses).toEqual([
+      { typeUrl: "/qorechain.rdk.v1.MsgSubmitBatchResponse", value: new Uint8Array([7]) },
+    ]);
 
     const opts = hybridSpy.calls[0];
     expect(opts.chainId).toBe("qorechain-diana");
@@ -156,7 +164,6 @@ describe("RdkTxClient hybrid signing", () => {
       gasWanted: BigInt(200000),
     });
     expect(res.events).toEqual([]);
-    expect(res.msgResponses).toEqual([]);
   });
 
   it('passes an explicit signBytesVersion: "v2" through to the SDK', async () => {
@@ -171,7 +178,7 @@ describe("RdkTxClient hybrid signing", () => {
     });
 
     await rdk.createRollup(
-      { rollupId: "r", profile: "defi", vmType: "evm", stakeAmount: "100" },
+      { rollupId: "roll-r", profile: "defi", vmType: "evm", stakeAmount: "100" },
       { fee: FEE },
     );
 
@@ -190,7 +197,7 @@ describe("RdkTxClient hybrid signing", () => {
 
     await expect(
       rdk.createRollup(
-        { rollupId: "r", profile: "defi", vmType: "evm", stakeAmount: "100" },
+        { rollupId: "roll-r", profile: "defi", vmType: "evm", stakeAmount: "100" },
         { fee: FEE },
       ),
     ).rejects.toThrow(/sign-bytes form for qorechain-diana without its REST endpoint/);
@@ -213,7 +220,7 @@ describe("RdkTxClient hybrid signing", () => {
     });
 
     await rdk.createRollup(
-      { rollupId: "r", profile: "defi", vmType: "evm", stakeAmount: "100" },
+      { rollupId: "roll-r", profile: "defi", vmType: "evm", stakeAmount: "100" },
       { fee: 200000 },
     );
     expect(hybridSpy.calls[0].fee).toEqual({
@@ -223,7 +230,7 @@ describe("RdkTxClient hybrid signing", () => {
 
     // "auto" simulates (120000) and applies the 1.4 multiplier → 168000 gas.
     await rdk.createRollup({
-      rollupId: "r2",
+      rollupId: "roll-r2",
       profile: "defi",
       vmType: "evm",
       stakeAmount: "100",
@@ -245,7 +252,7 @@ describe("RdkTxClient hybrid signing", () => {
     });
 
     await expect(
-      rdk.createRollup({ rollupId: "r", profile: "defi", vmType: "evm", stakeAmount: "100" }),
+      rdk.createRollup({ rollupId: "roll-r", profile: "defi", vmType: "evm", stakeAmount: "100" }),
     ).rejects.toThrow(/explicit fee|gasPrice/);
     expect(hybridSpy.calls).toHaveLength(0);
   });
@@ -272,3 +279,98 @@ describe("RdkTxClient hybrid signing", () => {
     expect(isHybridSignBytesRejection(new Error("unrelated"))).toBe(false);
   });
 });
+
+describe("RdkTxClient.submitBatch anchoring (chain v3.2.2+)", () => {
+  const { anchorSignBytesForBatch, pqcVerify } = await_import();
+  const layerId = "layer-roll-1";
+
+  /** Serve getRollup over the stubbed global fetch. */
+  function stubRollup(creator: string) {
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (String(url).includes("/qorechain/rdk/v1/rollup/")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ rollup: { rollup_id: "roll-r", creator, layer_id: layerId, status: "active" } }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+  }
+
+  async function hybridClient() {
+    const { client, broadcasts } = fakeTransport();
+    const signer = await directSigner();
+    const [account] = await signer.getAccounts();
+    const pqcKeypair = generatePqcKeypair(new Uint8Array(32).fill(3));
+    const rdk = RdkTxClient.fromClient(client, account.address, {
+      signer,
+      pqcKeypair,
+      rest: "https://node",
+      signBytesVersion: "v2",
+    });
+    return { rdk, address: account.address, pqcKeypair, broadcasts };
+  }
+
+  const batch = { rollupId: "roll-r", batchIndex: 7, stateRoot: "ab".repeat(32), txCount: 3, dataHash: "bb" };
+  const sentMsg = () => (hybridSpy.calls.at(-1)!.messages as EncodeObject[])[0].value as Record<string, Uint8Array>;
+
+  beforeEach(() => {
+    hybridSpy.calls.length = 0;
+    vi.unstubAllGlobals();
+  });
+
+  it("signs the anchor when this client is the rollup's creator, and the chain's bytes verify", async () => {
+    const { rdk, address, pqcKeypair } = await hybridClient();
+    stubRollup(address);
+    await rdk.submitBatch(batch, { fee: FEE });
+    const sig = sentMsg().anchorSignature;
+    expect(sig.length).toBe(4627); // an ML-DSA-87 signature
+    const message = anchorSignBytesForBatch({
+      chainId: "qorechain-diana",
+      layerId,
+      batchIndex: 7,
+      stateRoot: batch.stateRoot,
+      txCount: 3,
+    });
+    expect(pqcVerify(pqcKeypair.publicKey, message, sig)).toBe(true);
+  });
+
+  it("submits unanchored, not wrongly signed, when this client is not the creator", async () => {
+    // The chain checks the creator's key and refuses the whole batch on a bad
+    // anchor, so signing with our own key here would break the submission.
+    const { rdk } = await hybridClient();
+    stubRollup("qor1someoneelse000000000000000000000000000");
+    await rdk.submitBatch(batch, { fee: FEE });
+    expect(sentMsg().anchorSignature.length).toBe(0);
+  });
+
+  it("refuses with anchor: 'require' rather than submit unanchored, and broadcasts nothing", async () => {
+    const { rdk, broadcasts } = await hybridClient();
+    stubRollup("qor1someoneelse000000000000000000000000000");
+    await expect(rdk.submitBatch(batch, { fee: FEE, anchor: "require" })).rejects.toThrow(
+      /not the rollup's creator/,
+    );
+    expect(broadcasts).toHaveLength(0);
+  });
+
+  it("never signs with anchor: 'off'", async () => {
+    const { rdk, address } = await hybridClient();
+    stubRollup(address);
+    await rdk.submitBatch(batch, { fee: FEE, anchor: "off" });
+    expect(sentMsg().anchorSignature.length).toBe(0);
+  });
+
+  it("sends an explicit anchorSignature as given — the separate-sequencer path", async () => {
+    const { rdk } = await hybridClient();
+    stubRollup("qor1someoneelse000000000000000000000000000");
+    const outOfBand = new Uint8Array([1, 2, 3, 4]);
+    await rdk.submitBatch({ ...batch, anchorSignature: outOfBand }, { fee: FEE });
+    expect(Array.from(sentMsg().anchorSignature)).toEqual([1, 2, 3, 4]);
+  });
+});
+
+function await_import() {
+  // Resolved after the vi.mock above has been applied.
+  return { anchorSignBytesForBatch: anchorSignBytesForBatchRef, pqcVerify: pqcVerifyRef };
+}

@@ -75,7 +75,7 @@ fn native_alias_deserializes_from_the_cosmwasm_wire_value() {
 #[test]
 fn validates_native_and_the_nft_preset_now_native() {
     let cfg = preset(qorechain_rdk::config::Profile::Nft)
-        .set_rollup_id("r")
+        .set_rollup_id("roll-r")
         .build()
         .unwrap();
     assert_eq!(cfg.vm_type, VmType::Native);

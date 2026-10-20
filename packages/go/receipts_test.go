@@ -71,7 +71,7 @@ func receiptTestServer(t *testing.T, layerID, stateRoot, vsh, creator, pubHex st
 				layerID, b64(stateRoot), b64(vsh), base64.StdEncoding.EncodeToString(sig))
 		case strings.Contains(p, "/qorechain/multilayer/v1/anchor/"):
 			fmt.Fprintf(w, `{"anchor":{"layer_id":%q,"layer_height":42,"state_root":%q,"validator_set_hash":%q}}`, layerID, b64(stateRoot), b64(vsh))
-		case strings.Contains(p, "/qorechain/pqc/v1/accounts/"):
+		case strings.Contains(p, "/qorechain/pqc/v1/account/"):
 			fmt.Fprintf(w, `{"account":{"address":%q,"public_key":%q,"algorithm_name":"ML-DSA-87","algorithm_id":3}}`,
 				creator, base64.StdEncoding.EncodeToString(pubBytes))
 		default:
@@ -291,5 +291,63 @@ func TestFabricatedReceiptQSR20260055(t *testing.T) {
 	}
 	if v.Reason == "" {
 		t.Error("expected a reason for the rejection")
+	}
+}
+
+// TestAnchorSignBytesV2Golden asserts AnchorSignBytesV2 reproduces bytes
+// produced by the chain's own x/multilayer/types.AnchorSignBytesV2, so the port
+// is checked against the authority rather than against a reimplementation.
+func TestAnchorSignBytesV2Golden(t *testing.T) {
+	g := loadGolden(t)
+	v := g.AnchorSignBytes.V2
+	got := hex.EncodeToString(AnchorSignBytesV2(
+		v.ChainID, v.LayerID, v.LayerHeight, v.StateRoot, v.ValidatorSetHash,
+		v.TransactionCount, v.CompressedStateProof))
+	if got != v.ExpectedHex {
+		t.Fatalf("AnchorSignBytesV2 mismatch:\n got  %s\n want %s", got, v.ExpectedHex)
+	}
+}
+
+// TestAnchorSignBytesV1StillMatches keeps anchors written before the switch
+// verifiable.
+func TestAnchorSignBytesV1StillMatches(t *testing.T) {
+	g := loadGolden(t)
+	a := g.AnchorSignBytes
+	got := hex.EncodeToString(AnchorSignBytesV1(a.LayerID, a.LayerHeight, a.StateRoot, a.ValidatorSetHash))
+	if got != a.ExpectedHexV1 {
+		t.Fatalf("AnchorSignBytesV1 mismatch:\n got  %s\n want %s", got, a.ExpectedHexV1)
+	}
+}
+
+// TestAnchorSignBytesV2BindsChainID covers the weakness v2 was introduced to
+// close: v1 carries no chain id, so the same anchor signs identically on every
+// network, while v2 does not.
+func TestAnchorSignBytesV2BindsChainID(t *testing.T) {
+	g := loadGolden(t)
+	a := g.AnchorSignBytes
+	diana := hex.EncodeToString(AnchorSignBytesV2("qorechain-diana", a.LayerID, a.LayerHeight,
+		a.StateRoot, a.ValidatorSetHash, 7, ""))
+	vladi := hex.EncodeToString(AnchorSignBytesV2("qorechain-vladi", a.LayerID, a.LayerHeight,
+		a.StateRoot, a.ValidatorSetHash, 7, ""))
+	if diana == vladi {
+		t.Fatal("v2 anchor bytes must differ per chain id")
+	}
+}
+
+// TestAnchorSignBytesVersionFor pins the height-driven selection.
+func TestAnchorSignBytesVersionFor(t *testing.T) {
+	cases := []struct {
+		height, v2Height uint64
+		want             string
+	}{
+		{6_905_033, 6_905_034, "v1"},
+		{6_905_034, 6_905_034, "v2"},
+		{9_000_000, 6_905_034, "v2"},
+		{1, 0, "v2"}, // a fresh chain enables the feature at genesis
+	}
+	for _, c := range cases {
+		if got := AnchorSignBytesVersionFor(c.height, c.v2Height); got != c.want {
+			t.Errorf("AnchorSignBytesVersionFor(%d, %d) = %q, want %q", c.height, c.v2Height, got, c.want)
+		}
 	}
 }

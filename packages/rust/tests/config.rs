@@ -22,7 +22,7 @@ fn preset_builds_and_validates() {
 #[test]
 fn matrix_violation_is_rejected() {
     // Force an incompatible proof system onto an optimistic preset.
-    let mut config = preset(Profile::Nft).set_rollup_id("r").get();
+    let mut config = preset(Profile::Nft).set_rollup_id("roll-r").get();
     config.proof_system = qorechain_rdk::config::ProofSystem::Snark;
     let result = validate_rollup_config(&config);
     assert!(!result.valid);
@@ -31,7 +31,7 @@ fn matrix_violation_is_rejected() {
 
 #[test]
 fn based_settlement_requires_based_sequencer() {
-    let mut config = preset(Profile::Gaming).set_rollup_id("r").get();
+    let mut config = preset(Profile::Gaming).set_rollup_id("roll-r").get();
     config.sequencer = Sequencer::Dedicated;
     let result = validate_rollup_config(&config);
     assert!(!result.valid);
@@ -43,7 +43,7 @@ fn based_settlement_requires_based_sequencer() {
 
 #[test]
 fn celestia_emits_warning() {
-    let config = preset(Profile::Nft).set_rollup_id("r").get();
+    let config = preset(Profile::Nft).set_rollup_id("roll-r").get();
     let result = validate_rollup_config(&config);
     assert!(result.valid);
     assert!(result.warnings.iter().any(|w| w.contains("Celestia")));

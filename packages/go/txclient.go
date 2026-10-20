@@ -77,6 +77,9 @@ func (c *RdkTxClient) Sign(messages []Msg, p TxParams) []byte {
 // locally and broadcast via the REST txs endpoint, which requires a non-nil REST
 // client.
 func (c *RdkTxClient) Broadcast(ctx context.Context, messages []Msg, p TxParams) (map[string]any, error) {
+	if err := preflightMessages(messages); err != nil {
+		return nil, err
+	}
 	if c.Backend != nil {
 		return c.Backend.SignAndBroadcast(ctx, c.Account.Address, messages, p)
 	}

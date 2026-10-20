@@ -90,6 +90,17 @@ pub struct RollupView {
     pub layer_id: String,
     /// The block height the rollup was created at.
     pub created_height: i64,
+    /// What the rollup still holds in the pooled module escrow, in uqor (chain
+    /// v3.2.3+). `"0"` from an older node.
+    pub escrow_balance: String,
+    /// The rollup's own challenge window in seconds (chain v3.2.4+), or `None`
+    /// from a node that does not expose it. The window is per rollup, so the
+    /// global `default_challenge_window` param is only a fallback.
+    pub challenge_window_sec: Option<u64>,
+    /// The rollup's challenge bond in uqor (chain v3.2.4+).
+    pub challenge_bond: Option<String>,
+    /// The rollup's proof system, e.g. `fraud` (chain v3.2.4+).
+    pub proof_system: Option<String>,
 }
 
 /// A settlement batch.
@@ -111,12 +122,18 @@ pub struct BatchView {
     pub proof_type: String,
     /// Lifecycle status.
     pub status: String,
-    /// Submission unix timestamp (seconds).
+    /// The **block height** the batch was submitted at — not a timestamp.
+    /// Releases before 0.6.0 documented and used it as Unix seconds, which
+    /// broke every challenge deadline the health monitor computed.
     pub submitted_at: i64,
-    /// Finalization unix timestamp (seconds).
+    /// The block height the batch was finalized at (0 while pending).
     pub finalized_at: i64,
     /// Withdrawals Merkle root (hex).
     pub withdrawals_root: String,
+    /// The submission block's time (Unix seconds) for a batch under the chain's
+    /// time-based challenge window (v3.2.4). Zero for every earlier batch,
+    /// which keeps the block-count window.
+    pub submitted_time: i64,
 }
 
 /// A subsidiary-layer state anchor committed to the Main Chain (the
@@ -236,6 +253,22 @@ pub fn map_rollup_view(raw: &Value) -> RollupView {
         stake_amount: str_of(pick(raw, &["stake_amount", "stakeAmount"]), "0"),
         layer_id: str_of(pick(raw, &["layer_id", "layerId"]), ""),
         created_height: num_of(pick(raw, &["created_height", "createdHeight"]), 0),
+        escrow_balance: str_of(pick(raw, &["escrow_balance", "escrowBalance"]), "0"),
+        challenge_window_sec: present(pick(raw, &["challenge_window_sec", "challengeWindowSec"]))
+            .map(|v| num_of(Some(v), 0).max(0) as u64),
+        challenge_bond: present(pick(raw, &["challenge_bond", "challengeBond"]))
+            .map(|v| str_of(Some(v), "")),
+        proof_system: present(pick(raw, &["proof_system", "proofSystem"]))
+            .map(|v| str_of(Some(v), "")),
+    }
+}
+
+/// `None` when the node did not send the field (absent, null or empty).
+fn present(value: Option<&Value>) -> Option<&Value> {
+    match value {
+        None | Some(Value::Null) => None,
+        Some(Value::String(s)) if s.is_empty() => None,
+        other => other,
     }
 }
 
@@ -253,5 +286,6 @@ pub fn map_batch_view(raw: &Value) -> BatchView {
         submitted_at: num_of(pick(raw, &["submitted_at", "submittedAt"]), 0),
         finalized_at: num_of(pick(raw, &["finalized_at", "finalizedAt"]), 0),
         withdrawals_root: str_of(pick(raw, &["withdrawals_root", "withdrawalsRoot"]), ""),
+        submitted_time: num_of(pick(raw, &["submitted_time", "submittedTime"]), 0),
     }
 }

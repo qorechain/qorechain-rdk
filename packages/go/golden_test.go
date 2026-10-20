@@ -38,6 +38,18 @@ type golden struct {
 		StateRoot        string `json:"stateRoot"`
 		ValidatorSetHash string `json:"validatorSetHash"`
 		ExpectedHex      string `json:"expectedHex"`
+		ExpectedHexV1    string `json:"expectedHexV1"`
+		V2               struct {
+			Domain               string `json:"domain"`
+			ChainID              string `json:"chainId"`
+			LayerID              string `json:"layerId"`
+			LayerHeight          uint64 `json:"layerHeight"`
+			StateRoot            string `json:"stateRoot"`
+			ValidatorSetHash     string `json:"validatorSetHash"`
+			TransactionCount     uint64 `json:"transactionCount"`
+			CompressedStateProof string `json:"compressedStateProof"`
+			ExpectedHex          string `json:"expectedHex"`
+		} `json:"v2"`
 	} `json:"anchorSignBytes"`
 	MldsaVector struct {
 		Algorithm    string `json:"algorithm"`

@@ -48,7 +48,7 @@ def test_emits_cosmwasm_on_the_wire_when_config_says_native():
     msg = create_rollup_msg(
         CreateRollupInput(
             creator="qor1creator",
-            rollup_id="r",
+            rollup_id="roll-r",
             profile="nft",
             vm_type="native",
             stake_amount=1,
@@ -60,6 +60,6 @@ def test_emits_cosmwasm_on_the_wire_when_config_says_native():
 
 
 def test_validates_native_and_the_nft_preset_now_native():
-    cfg = presets.nft("r").build()
+    cfg = presets.nft("roll-r").build()
     assert getattr(cfg.vm_type, "value", cfg.vm_type) == "native"
     assert validate_rollup_config(cfg).valid is True

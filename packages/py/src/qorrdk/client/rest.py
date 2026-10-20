@@ -7,7 +7,7 @@ one-to-one.
 from __future__ import annotations
 
 from typing import Any, Optional, Union
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from .http import Transport, default_transport
 from .views import (
@@ -74,16 +74,53 @@ class RestClient:
         )
         return map_batch_view(_as_record(body.get("batch", body)))
 
-    def list_batches(self, rollup_id: str) -> list[BatchView]:
-        """All settlement batches for a rollup."""
-        body = self._get(f"/qorechain/rdk/v1/batches/{quote(rollup_id, safe='')}")
-        return [map_batch_view(b) for b in _as_array(body.get("batches"))]
+    def list_batches_page(
+        self,
+        rollup_id: str,
+        start_index: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> tuple[list[BatchView], int]:
+        """One page of a rollup's batches, in index order, from ``start_index``.
+
+        The chain returns at most ``limit`` (default 50, capped at 100) and a
+        ``next_index`` that is ``0`` when there is no further page.
+        """
+        params = {}
+        if start_index is not None:
+            params["start_index"] = str(start_index)
+        if limit is not None:
+            params["limit"] = str(limit)
+        qs = ("?" + urlencode(params)) if params else ""
+        body = self._get(f"/qorechain/rdk/v1/batches/{quote(rollup_id, safe='')}{qs}")
+        batches = [map_batch_view(b) for b in _as_array(body.get("batches"))]
+        return batches, int(body.get("next_index") or body.get("nextIndex") or 0)
+
+    def list_batches(self, rollup_id: str, start_index: Optional[int] = None) -> list[BatchView]:
+        """All settlement batches for a rollup, following every page.
+
+        The chain's ``Batches`` query is paged (50 per page by default).
+        Releases before 0.6.0 read only the first page, so nothing past batch
+        #49 was ever returned.
+        """
+        out: list[BatchView] = []
+        start = start_index
+        for _ in range(100_000):  # bounded against a misbehaving node
+            page, next_index = self.list_batches_page(rollup_id, start, 100)
+            out.extend(page)
+            if next_index == 0 or not page:
+                break
+            start = next_index
+        return out
 
     def get_latest_batch(self, rollup_id: str) -> BatchView:
-        """The latest settlement batch for a rollup."""
-        body = self._get(
-            f"/qorechain/rdk/v1/batches/{quote(rollup_id, safe='')}?latest=true"
-        )
+        """The latest settlement batch for a rollup (the chain's ``LatestBatch``).
+
+        Releases before 0.6.0 requested ``/batches/{id}?latest=true``, which is
+        not a chain route: the node returned the first page of the list, which
+        was then read as one empty batch -- so health reported "no batches yet"
+        for every rollup.
+        """
+        body = self._get(f"/qorechain/rdk/v1/latest_batch/{quote(rollup_id, safe='')}")
         return map_batch_view(_as_record(body.get("batch", body)))
 
     def get_blob(self, rollup_id: str, blob_index: Union[int, str]) -> RawRecord:
@@ -121,7 +158,7 @@ class RestClient:
         verification key.
         """
         body = self._get(
-            f"/qorechain/pqc/v1/accounts/{quote(address, safe='')}"
+            f"/qorechain/pqc/v1/account/{quote(address, safe='')}"
         )
         return map_pqc_account_view(_as_record(body.get("account", body)))
 

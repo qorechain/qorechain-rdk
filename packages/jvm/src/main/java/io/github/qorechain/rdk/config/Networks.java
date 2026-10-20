@@ -40,18 +40,47 @@ public final class Networks {
         public String name;
         public String chainId;
         public Endpoints endpoints;
+        /**
+         * The Main Chain height at which this network switched the canonical anchor message from
+         * v1 to v2 (the chain's {@code rdk-integrity} feature, shipped in v3.2.2). An anchor at or
+         * above it is signed over v2; below, v1. A fresh chain enables it at genesis, so {@code 0}
+         * suits a local network.
+         */
+        public long anchorSignV2Height;
 
         public NetworkConfig() {}
 
         public NetworkConfig(String name, String chainId, Endpoints endpoints) {
+            this(name, chainId, endpoints, anchorSignV2Height(name));
+        }
+
+        public NetworkConfig(String name, String chainId, Endpoints endpoints, long anchorSignV2Height) {
             this.name = name;
             this.chainId = chainId;
             this.endpoints = endpoints;
+            this.anchorSignV2Height = anchorSignV2Height;
         }
 
         public NetworkConfig copy() {
-            return new NetworkConfig(name, chainId, endpoints == null ? null : endpoints.copy());
+            return new NetworkConfig(
+                    name, chainId, endpoints == null ? null : endpoints.copy(), anchorSignV2Height);
         }
+    }
+
+    /**
+     * The height at which a network switched to the v2 anchor message. In practice every anchor
+     * the {@code rdk} module ever wrote is v2: before the feature the chain's anchor attempt failed
+     * for RDK batches. v1 survives only for standalone {@code x/multilayer} anchors recorded before
+     * these heights.
+     */
+    public static long anchorSignV2Height(String name) {
+        if ("testnet".equals(name)) {
+            return 6_905_034L; // rdk-integrity applied on qorechain-diana (2026-10-02)
+        }
+        if ("mainnet".equals(name)) {
+            return 3_556_788L; // rdk-integrity applied on qorechain-vladi (2026-10-16)
+        }
+        return 0L;
     }
 
     /** Localhost defaults, for running against a local node. */

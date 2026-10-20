@@ -32,6 +32,7 @@ from cosmpy.protos.cosmos.tx.v1beta1.tx_pb2 import (
     TxRaw,
 )
 
+from ..rules import rollup_id_error, withdrawal_errors
 from ..accounts.wallet import Signer
 from ..client.http import Transport, default_transport
 from ..enums import RollupStatus
@@ -310,7 +311,15 @@ class RdkTxClient:
         stake_amount,
         opts: Optional[TxOptions] = None,
     ) -> BroadcastResult:
-        """Create a rollup. The client's address is the creator."""
+        """Create a rollup. The client's address is the creator.
+
+        Raises before broadcasting if ``rollup_id`` breaks the chain's id
+        grammar (enforced at creation from v3.2.2), since the chain would refuse
+        it only after the creation fee had been paid.
+        """
+        id_error = rollup_id_error(rollup_id)
+        if id_error:
+            raise ValueError(f'rollup_id "{rollup_id}" {id_error}')
         msg = msgs.create_rollup_msg(
             msgs.CreateRollupInput(
                 creator=self.address,
@@ -392,8 +401,23 @@ class RdkTxClient:
     def execute_withdrawal(
         self, inp: "msgs.ExecuteWithdrawalInput | dict", opts: Optional[TxOptions] = None
     ) -> BroadcastResult:
-        """Execute a finalized-batch withdrawal. The client's address is the submitter."""
+        """Execute a finalized-batch withdrawal. The client's address is the submitter.
+
+        Raises before broadcasting if the chain would refuse the withdrawal at
+        the start of ``ExecuteWithdrawal`` (v3.2.3+), which it would do only
+        after the fee had been paid.
+        """
         data = _coerce(inp, msgs.ExecuteWithdrawalInput, submitter=self.address)
+        errors = withdrawal_errors(
+            submitter=data.submitter,
+            rollup_id=data.rollup_id,
+            recipient=data.recipient,
+            denom=data.denom,
+            amount=data.amount,
+            proof=data.proof,
+        )
+        if errors:
+            raise ValueError("withdrawal would be refused by the chain: " + "; ".join(errors))
         return self.broadcast_messages([msgs.execute_withdrawal_msg(data)], opts)
 
 

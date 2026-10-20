@@ -81,7 +81,7 @@ func TestCreateRollupMsgWireValue(t *testing.T) {
 
 // TestNFTPresetUsesNative: the nft preset advertises native and validates.
 func TestNFTPresetUsesNative(t *testing.T) {
-	cfg := PresetNFT().SetRollupID("r").Get()
+	cfg := PresetNFT().SetRollupID("roll-r").Get()
 	if cfg.VmType != VmNative {
 		t.Errorf("nft preset vmType = %q, want native", cfg.VmType)
 	}

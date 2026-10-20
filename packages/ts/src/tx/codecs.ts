@@ -31,6 +31,16 @@ export interface MsgSubmitBatch {
   dataHash: Uint8Array;
   proof: Uint8Array;
   withdrawalsRoot: Uint8Array;
+  /**
+   * Field 10 (chain v3.2.2+): the rollup creator's Dilithium signature over the
+   * v2 anchor sign bytes of this batch. When present the chain anchors the
+   * batch in `x/multilayer` in the same transaction, and a refused anchor
+   * refuses the batch. When absent the batch settles unanchored — and no
+   * settlement receipt can ever be built for it.
+   */
+  anchorSignature: Uint8Array;
+  /** Field 11 (chain v3.2.2+): the validator-set commitment carried in the anchor. */
+  validatorSetHash: Uint8Array;
 }
 export interface MsgChallengeBatch {
   challenger: string;
@@ -167,6 +177,8 @@ export const MsgSubmitBatch = {
     if (message.dataHash.length !== 0) writer.uint32(58).bytes(message.dataHash);
     if (message.proof.length !== 0) writer.uint32(66).bytes(message.proof);
     if (message.withdrawalsRoot.length !== 0) writer.uint32(74).bytes(message.withdrawalsRoot);
+    if (message.anchorSignature.length !== 0) writer.uint32(82).bytes(message.anchorSignature);
+    if (message.validatorSetHash.length !== 0) writer.uint32(90).bytes(message.validatorSetHash);
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgSubmitBatch {
@@ -182,6 +194,8 @@ export const MsgSubmitBatch = {
       dataHash: new Uint8Array(),
       proof: new Uint8Array(),
       withdrawalsRoot: new Uint8Array(),
+      anchorSignature: new Uint8Array(),
+      validatorSetHash: new Uint8Array(),
     };
     while (reader.pos < end) {
       const tag = reader.uint32();
@@ -213,6 +227,12 @@ export const MsgSubmitBatch = {
         case 9:
           message.withdrawalsRoot = reader.bytes();
           break;
+        case 10:
+          message.anchorSignature = reader.bytes();
+          break;
+        case 11:
+          message.validatorSetHash = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -231,6 +251,8 @@ export const MsgSubmitBatch = {
       dataHash: object.dataHash ?? new Uint8Array(),
       proof: object.proof ?? new Uint8Array(),
       withdrawalsRoot: object.withdrawalsRoot ?? new Uint8Array(),
+      anchorSignature: object.anchorSignature ?? new Uint8Array(),
+      validatorSetHash: object.validatorSetHash ?? new Uint8Array(),
     };
   },
 };

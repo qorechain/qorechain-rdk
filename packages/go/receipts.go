@@ -12,7 +12,12 @@ import (
 const ReceiptAlgorithm = "ML-DSA-87"
 
 // ReceiptVersion is the current receipt schema version.
-const ReceiptVersion = 1
+// ReceiptVersion is the current receipt schema version.
+//
+// v2 adds ChainID. The v2 anchor message binds the signature to one network,
+// and a receipt shown to a third party should say which network it is for
+// rather than leave them to assume. Version-1 receipts still verify.
+const ReceiptVersion = 2
 
 // SettlementReceipt is a portable record that a rollup's settlement batch was
 // anchored to the QoreChain Main Chain under a post-quantum (ML-DSA-87 /
@@ -49,6 +54,18 @@ type SettlementReceipt struct {
 	// the receipt was built. Informational only — verification compares the
 	// receipt against the chain's batch, never against this copy of it.
 	BatchStateRoot string
+	// ChainID is the chain the receipt was built on (e.g. "qorechain-vladi").
+	// It is bound into the v2 anchor signature, and cross-checked against the
+	// node being queried. Empty on version-1 receipts.
+	ChainID string
+	// TransactionCount is the anchor's transaction count, covered by the v2
+	// signature. Carried so a receipt stays self-describing; verification uses
+	// the chain's copy.
+	TransactionCount uint64
+	// CompressedStateProof is the anchor's compressed state proof (hex),
+	// covered by the v2 signature. Empty for a settlement batch. Verification
+	// uses the chain's copy.
+	CompressedStateProof string
 }
 
 // ReceiptVerificationMode says how a receipt was checked.
@@ -85,6 +102,10 @@ type ReceiptChecks struct {
 	// PqcSignature is true when the Dilithium-5 signature over the canonical
 	// message verified.
 	PqcSignature bool
+	// ChainBinding is true when the receipt names the chain that was actually
+	// queried. A version-1 receipt carries no chain id and passes on the
+	// strength of the anchor having been found on this chain.
+	ChainBinding bool
 }
 
 // ReceiptVerification is the outcome of verifying a receipt.
@@ -94,18 +115,28 @@ type ReceiptVerification struct {
 	// Mode records which check was actually performed.
 	Mode   ReceiptVerificationMode
 	Checks ReceiptChecks
-	Reason string
+	// SignBytesVersion records which canonical anchor message the signature
+	// was checked against: "v2" from the chain's rdk-integrity height, "v1"
+	// below it.
+	SignBytesVersion string
+	Reason           string
 }
 
-// AnchorSignBytes reconstructs the canonical message the chain signs for a state
-// anchor:
+// AnchorSignDomainV2 tags the v2 anchor sign bytes (chain v3.2.2 and above).
+const AnchorSignDomainV2 = "qorechain-multilayer-anchor-v2"
+
+// AnchorSignBytesV1 is the pre-v3.2.2 canonical anchor message:
 //
 //	layer_id || layer_height(8B BE) || state_root || validator_set_hash
 //
-// stateRootHex and vshHex are hex strings (with or without a 0x prefix) and
-// layerHeight is a uint64. Invalid hex inputs are treated as empty byte runs, so
-// callers that have validated their inputs get an exact canonical encoding.
-func AnchorSignBytes(layerID string, layerHeight uint64, stateRootHex, vshHex string) []byte {
+// It is kept because anchors written before the chain's rdk-integrity switch
+// are signed this way and stay valid forever. Do not use it for new work: it
+// carries no length prefixes, so field boundaries are ambiguous, and no chain
+// id, so a signature is valid on every chain. Both are why v2 exists.
+//
+// Invalid hex inputs are treated as empty byte runs, so callers that have
+// validated their inputs get an exact canonical encoding.
+func AnchorSignBytesV1(layerID string, layerHeight uint64, stateRootHex, vshHex string) []byte {
 	height := make([]byte, 8)
 	binary.BigEndian.PutUint64(height, layerHeight)
 	stateRoot, _ := HexToBytes(stateRootHex)
@@ -116,6 +147,73 @@ func AnchorSignBytes(layerID string, layerHeight uint64, stateRootHex, vshHex st
 	out = append(out, stateRoot...)
 	out = append(out, vsh...)
 	return out
+}
+
+// AnchorSignBytesV2 is the v3.2.2 and later canonical anchor message. Every
+// variable-length field carries an 8-byte big-endian length, the chain id binds
+// the signature to one network, and the transaction count and compressed state
+// proof are covered too, because the chain computes its anchor fraud check from
+// them:
+//
+//	"qorechain-multilayer-anchor-v2"
+//	 | BE64 len(chain_id)               chain_id
+//	 | BE64 len(layer_id)               layer_id
+//	 | BE64                             layer_height
+//	 | BE64 len(state_root)             state_root
+//	 | BE64 len(validator_set_hash)     validator_set_hash
+//	 | BE64                             transaction_count
+//	 | BE64 len(compressed_state_proof) compressed_state_proof
+//
+// For a settlement batch the chain maps these as: layer_id is the rollup's
+// layer id, layer_height is the batch index, state_root is the batch state
+// root, transaction_count is the batch's transaction count, and
+// compressed_state_proof is empty.
+func AnchorSignBytesV2(
+	chainID, layerID string,
+	layerHeight uint64,
+	stateRootHex, vshHex string,
+	txCount uint64,
+	compressedStateProofHex string,
+) []byte {
+	stateRoot, _ := HexToBytes(stateRootHex)
+	vsh, _ := HexToBytes(vshHex)
+	proof, _ := HexToBytes(compressedStateProofHex)
+
+	out := make([]byte, 0, len(AnchorSignDomainV2)+6*8+len(chainID)+len(layerID)+
+		len(stateRoot)+len(vsh)+len(proof))
+	out = append(out, []byte(AnchorSignDomainV2)...)
+	putBytes := func(b []byte) {
+		out = binary.BigEndian.AppendUint64(out, uint64(len(b)))
+		out = append(out, b...)
+	}
+	putBytes([]byte(chainID))
+	putBytes([]byte(layerID))
+	out = binary.BigEndian.AppendUint64(out, layerHeight)
+	putBytes(stateRoot)
+	putBytes(vsh)
+	out = binary.BigEndian.AppendUint64(out, txCount)
+	putBytes(proof)
+	return out
+}
+
+// AnchorSignBytesVersionFor reports which anchor message a given anchor was
+// signed over: the form in force at the Main Chain height it was recorded at.
+//
+// Deciding by height rather than trying both forms matters. A v1 signature
+// covers no chain id, so it is valid on every chain; accepting v1 where v2 is in
+// force would re-admit exactly the weakness v2 was introduced to close.
+func AnchorSignBytesVersionFor(anchorMainChainHeight, v2Height uint64) string {
+	if anchorMainChainHeight >= v2Height {
+		return "v2"
+	}
+	return "v1"
+}
+
+// AnchorSignBytes is the v1 canonical anchor message, kept for backwards
+// compatibility. New code should call AnchorSignBytesV1 or AnchorSignBytesV2
+// explicitly.
+func AnchorSignBytes(layerID string, layerHeight uint64, stateRootHex, vshHex string) []byte {
+	return AnchorSignBytesV1(layerID, layerHeight, stateRootHex, vshHex)
 }
 
 // BuildSettlementReceipt builds a settlement receipt for rollupID's batch
@@ -178,25 +276,56 @@ func BuildSettlementReceipt(ctx context.Context, client *RdkClient, rollupID str
 		AnchoredAt:       anchor.AnchoredAt,
 		PqcSignature:     anchor.PqcSignature,
 		BatchStateRoot:   batchStateRootHex,
+
+		ChainID:              client.Network.ChainID,
+		TransactionCount:     anchor.TransactionCount,
+		CompressedStateProof: anchor.CompressedStateProof,
 	}, nil
 }
 
-// signatureOver checks the receipt's Dilithium-5 anchor signature against
-// publicKeyHex over the canonical anchor message.
-func signatureOver(receipt SettlementReceipt, publicKeyHex string) bool {
-	if publicKeyHex == "" || receipt.PqcSignature == "" {
+// signatureOver verifies an anchor's post-quantum signature.
+//
+// Every signed field is taken from the chain's anchor, never from the receipt —
+// the receipt only says which anchor to go and look for. chainID likewise comes
+// from the network being queried.
+func signatureOver(anchor AnchorView, publicKeyHex, chainID, version string) bool {
+	if publicKeyHex == "" || anchor.PqcSignature == "" {
 		return false
 	}
 	pub, err := HexToBytes(publicKeyHex)
 	if err != nil {
 		return false
 	}
-	sig, err := HexToBytes(receipt.PqcSignature)
+	sig, err := HexToBytes(anchor.PqcSignature)
 	if err != nil {
 		return false
 	}
-	message := AnchorSignBytes(receipt.LayerID, receipt.LayerHeight, receipt.StateRoot, receipt.ValidatorSetHash)
+	var message []byte
+	if version == "v2" {
+		message = AnchorSignBytesV2(chainID, anchor.LayerID, anchor.LayerHeight,
+			anchor.StateRoot, anchor.ValidatorSetHash, anchor.TransactionCount,
+			anchor.CompressedStateProof)
+	} else {
+		message = AnchorSignBytesV1(anchor.LayerID, anchor.LayerHeight,
+			anchor.StateRoot, anchor.ValidatorSetHash)
+	}
 	return pqc.MLDSA87.Verify(pub, message, sig)
+}
+
+// receiptAsAnchor exposes the receipt's own copies of the signed fields, for
+// signature-only mode where there is no chain to read.
+func receiptAsAnchor(receipt SettlementReceipt) AnchorView {
+	return AnchorView{
+		LayerID:              receipt.LayerID,
+		LayerHeight:          receipt.LayerHeight,
+		StateRoot:            receipt.StateRoot,
+		ValidatorSetHash:     receipt.ValidatorSetHash,
+		MainChainHeight:      receipt.MainChainHeight,
+		AnchoredAt:           receipt.AnchoredAt,
+		PqcSignature:         receipt.PqcSignature,
+		TransactionCount:     receipt.TransactionCount,
+		CompressedStateProof: receipt.CompressedStateProof,
+	}
 }
 
 // VerifySettlementReceipt verifies a settlement receipt against live chain
@@ -227,7 +356,19 @@ func VerifySettlementReceipt(ctx context.Context, receipt SettlementReceipt, cre
 				Reason: "no client supplied — pass a client to verify against chain state; a receipt on its own proves nothing",
 			}
 		}
-		checks.PqcSignature = signatureOver(receipt, creatorPublicKeyHex)
+		// Without a client there is no chain to read, so the receipt's own
+		// copies are all there is — which is why this mode is never valid.
+		// Both forms are tried because nothing here reveals the anchor's height.
+		asAnchor := receiptAsAnchor(receipt)
+		signVersion := ""
+		if receipt.ChainID != "" && signatureOver(asAnchor, creatorPublicKeyHex, receipt.ChainID, "v2") {
+			checks.PqcSignature = true
+			signVersion = "v2"
+		} else if signatureOver(asAnchor, creatorPublicKeyHex, "", "v1") {
+			checks.PqcSignature = true
+			signVersion = "v1"
+		}
+		_ = signVersion
 		reason := "signature did not verify against the supplied key"
 		if checks.PqcSignature {
 			reason = "signature is valid for the supplied key, but nothing was checked against the chain — pass a client to verify settlement"
@@ -279,16 +420,19 @@ func VerifySettlementReceipt(ctx context.Context, receipt SettlementReceipt, cre
 	if err != nil {
 		return fail("could not read anchors for layer %q: %v", receipt.LayerID, err)
 	}
-	for _, a := range anchors {
+	var matched *AnchorView
+	for i := range anchors {
+		a := anchors[i]
 		if a.StateRoot == receipt.StateRoot &&
 			a.LayerHeight == receipt.LayerHeight &&
 			a.ValidatorSetHash == receipt.ValidatorSetHash &&
 			a.PqcSignature == receipt.PqcSignature {
 			checks.AnchorOnChain = true
+			matched = &a
 			break
 		}
 	}
-	if !checks.AnchorOnChain {
+	if matched == nil {
 		return fail("no anchor on chain matches this receipt — it is fabricated or superseded")
 	}
 
@@ -305,10 +449,31 @@ func VerifySettlementReceipt(ctx context.Context, receipt SettlementReceipt, cre
 		return fail("no post-quantum key is registered for creator %s", rollup.Creator)
 	}
 
-	// 5. Finally the post-quantum signature over the canonical anchor message.
-	checks.PqcSignature = signatureOver(receipt, account.PublicKey)
-	if !checks.PqcSignature {
-		return fail("Dilithium-5 anchor signature did not verify against the creator's registered key")
+	// 5. The receipt must name the chain we actually queried. A version-1
+	// receipt carries no chain id; it still verifies, because step 3 already
+	// required the anchor to exist on this chain, but the binding is the chain
+	// read rather than the receipt's own word.
+	chainID := client.Network.ChainID
+	if receipt.ChainID != "" && receipt.ChainID != chainID {
+		return fail("receipt is for chain %q but this client is connected to %q — verify it against a node for its own network",
+			receipt.ChainID, chainID)
 	}
-	return ReceiptVerification{Valid: true, Mode: ReceiptModeChain, Checks: checks}
+	checks.ChainBinding = true
+
+	// 6. Finally the post-quantum signature, over the form the chain had in
+	// force at the height this anchor was recorded at.
+	version := AnchorSignBytesVersionFor(matched.MainChainHeight, client.Network.AnchorSignV2Height)
+	checks.PqcSignature = signatureOver(*matched, account.PublicKey, chainID, version)
+	if !checks.PqcSignature {
+		return ReceiptVerification{
+			Valid:            false,
+			Mode:             ReceiptModeChain,
+			Checks:           checks,
+			SignBytesVersion: version,
+			Reason: fmt.Sprintf(
+				"Dilithium-5 anchor signature did not verify against the creator's registered key (checked as %s, for an anchor at height %d)",
+				version, matched.MainChainHeight),
+		}
+	}
+	return ReceiptVerification{Valid: true, Mode: ReceiptModeChain, Checks: checks, SignBytesVersion: version}
 }

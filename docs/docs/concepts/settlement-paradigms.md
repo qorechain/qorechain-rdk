@@ -13,7 +13,7 @@ systems it can use.
 
 | Paradigm | Finality | Proofs | Sequencer | Notes |
 | --- | --- | --- | --- | --- |
-| `optimistic` | Delayed (challenge window) | Interactive fraud proofs | `dedicated` / `shared` | Default 7-day window with a challenge bond |
+| `optimistic` | Delayed (challenge window) | Interactive fraud proofs | `dedicated` / `shared` | Default 604,800 s window with a challenge bond (see below) |
 | `zk` | Instant on a valid proof | SNARK or STARK | `dedicated` / `shared` | On-chain verification gates finalization |
 | `based` | ~2 blocks | None | `based` only | Host-chain proposers sequence the rollup |
 | `sovereign` | The rollup's own consensus | None | `dedicated` / `shared` | Self-sequenced, settles off the Main Chain |
@@ -21,7 +21,14 @@ systems it can use.
 ## `optimistic`
 
 A batch is accepted on submission **without** a proof and finalizes after a
-challenge window (default 7 days) unless a challenger proves it fraudulent.
+challenge window (default 604,800 s, nominally 7 days) unless a challenger proves it fraudulent.
+
+How long that is in practice depends on when the batch was submitted. From chain
+v3.2.4 the window is measured in seconds of block time, so 604,800 s is 7 days.
+Batches submitted before it use the original rule of `window / 6` blocks, which
+assumed 6-second blocks: on mainnet (about 3.2 s blocks) that is roughly 3.75
+days, on the testnet (about 1 s) roughly 28 hours. See
+[how the window is measured](../guides/watchtower.md#how-the-challenge-window-is-measured).
 Challenges and the operator's response are interactive fraud proofs, backed by a
 challenge bond. Optimistic settlement uses the `fraud` proof system.
 

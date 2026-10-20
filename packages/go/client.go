@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // HTTPDoer is the minimal HTTP capability the clients depend on. *http.Client
@@ -47,21 +48,39 @@ type RollupView struct {
 	StakeAmount    string
 	LayerID        string
 	CreatedHeight  int
+	// EscrowBalance is what the rollup still holds in the pooled module escrow,
+	// in uqor (chain v3.2.3+). "0" from an older node.
+	EscrowBalance string
+	// ChallengeWindowSec is the rollup's own challenge window in seconds (chain
+	// v3.2.4+), or nil from a node that does not expose it. The window is per
+	// rollup, so the global default_challenge_window param is only a fallback.
+	ChallengeWindowSec *uint64
+	// ChallengeBond is the rollup's challenge bond in uqor (chain v3.2.4+).
+	ChallengeBond string
+	// ProofSystem is the rollup's proof system, e.g. "fraud" (chain v3.2.4+).
+	ProofSystem string
 }
 
 // BatchView holds a settlement batch.
 type BatchView struct {
-	RollupID        string
-	BatchIndex      int
-	StateRoot       string
-	PrevStateRoot   string
-	TxCount         int
-	DataHash        string
-	ProofType       string
-	Status          string
+	RollupID      string
+	BatchIndex    int
+	StateRoot     string
+	PrevStateRoot string
+	TxCount       int
+	DataHash      string
+	ProofType     string
+	Status        string
+	// SubmittedAt is the BLOCK HEIGHT the batch was submitted at — not a
+	// timestamp. Releases before 0.6.0 treated it as one, which broke every
+	// challenge deadline the health monitor computed.
 	SubmittedAt     int
 	FinalizedAt     int
 	WithdrawalsRoot string
+	// SubmittedTime is the submission block's time (Unix seconds) for a batch
+	// under the chain's time-based challenge window (v3.2.4). Zero for every
+	// earlier batch, which keeps the block-count window.
+	SubmittedTime int64
 }
 
 // AnchorView holds a subsidiary-layer state anchor committed to the Main Chain
@@ -181,7 +200,24 @@ func MapRollupView(raw map[string]any) RollupView {
 		StakeAmount:    asStr(pick(raw, "stake_amount", "stakeAmount"), "0"),
 		LayerID:        asStr(pick(raw, "layer_id", "layerId"), ""),
 		CreatedHeight:  asNum(pick(raw, "created_height", "createdHeight"), 0),
+
+		EscrowBalance:      asStr(pick(raw, "escrow_balance", "escrowBalance"), "0"),
+		ChallengeWindowSec: optionalU64(pick(raw, "challenge_window_sec", "challengeWindowSec")),
+		ChallengeBond:      asStr(pick(raw, "challenge_bond", "challengeBond"), ""),
+		ProofSystem:        asStr(pick(raw, "proof_system", "proofSystem"), ""),
 	}
+}
+
+// optionalU64 is nil when the node did not send the field.
+func optionalU64(v any) *uint64 {
+	if v == nil {
+		return nil
+	}
+	if s, ok := v.(string); ok && s == "" {
+		return nil
+	}
+	n := asU64(v, 0)
+	return &n
 }
 
 // MapBatchView maps a raw batch payload to a BatchView.
@@ -198,6 +234,7 @@ func MapBatchView(raw map[string]any) BatchView {
 		SubmittedAt:     asNum(pick(raw, "submitted_at", "submittedAt"), 0),
 		FinalizedAt:     asNum(pick(raw, "finalized_at", "finalizedAt"), 0),
 		WithdrawalsRoot: asStr(pick(raw, "withdrawals_root", "withdrawalsRoot"), ""),
+		SubmittedTime:   int64(asU64(pick(raw, "submitted_time", "submittedTime"), 0)),
 	}
 }
 
@@ -353,22 +390,67 @@ func (c *RestClient) GetBatch(ctx context.Context, rollupID string, batchIndex u
 	return MapBatchView(body), nil
 }
 
-// ListBatches reads all settlement batches for a rollup.
-func (c *RestClient) ListBatches(ctx context.Context, rollupID string) ([]BatchView, error) {
-	body, err := c.get(ctx, "/qorechain/rdk/v1/batches/"+url.PathEscape(rollupID))
+// ListBatchesPage reads one page of a rollup's batches, in index order, from
+// startIndex. The chain returns at most limit (0 means 50, capped at 100) and a
+// next index that is 0 when there is no further page.
+func (c *RestClient) ListBatchesPage(ctx context.Context, rollupID string, startIndex uint64, limit uint32) ([]BatchView, uint64, error) {
+	q := url.Values{}
+	if startIndex > 0 {
+		q.Set("start_index", strconv.FormatUint(startIndex, 10))
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.FormatUint(uint64(limit), 10))
+	}
+	path := "/qorechain/rdk/v1/batches/" + url.PathEscape(rollupID)
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	body, err := c.get(ctx, path)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	out := []BatchView{}
 	for _, b := range asArray(pick(body, "batches")) {
 		out = append(out, MapBatchView(b))
 	}
+	return out, asU64(pick(body, "next_index", "nextIndex"), 0), nil
+}
+
+// ListBatches reads all settlement batches for a rollup, following every page.
+//
+// The chain's Batches query is paged (50 per page by default). Releases before
+// 0.6.0 read only the first page, so nothing past batch #49 was ever returned.
+func (c *RestClient) ListBatches(ctx context.Context, rollupID string) ([]BatchView, error) {
+	return c.ListBatchesFrom(ctx, rollupID, 0)
+}
+
+// ListBatchesFrom reads every batch from startIndex onwards, following pages.
+func (c *RestClient) ListBatchesFrom(ctx context.Context, rollupID string, startIndex uint64) ([]BatchView, error) {
+	out := []BatchView{}
+	start := startIndex
+	for pages := 0; pages < 100_000; pages++ { // bounded against a misbehaving node
+		page, next, err := c.ListBatchesPage(ctx, rollupID, start, 100)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page...)
+		if next == 0 || len(page) == 0 {
+			break
+		}
+		start = next
+	}
 	return out, nil
 }
 
-// GetLatestBatch reads the latest settlement batch for a rollup.
+// GetLatestBatch reads the latest settlement batch for a rollup (the chain's
+// LatestBatch query).
+//
+// Releases before 0.6.0 requested /batches/{id}?latest=true, which is not a
+// chain route: the node returned the first page of the list, which was then
+// read as one empty batch — so health reported "no batches yet" for every
+// rollup.
 func (c *RestClient) GetLatestBatch(ctx context.Context, rollupID string) (BatchView, error) {
-	body, err := c.get(ctx, "/qorechain/rdk/v1/batches/"+url.PathEscape(rollupID)+"?latest=true")
+	body, err := c.get(ctx, "/qorechain/rdk/v1/latest_batch/"+url.PathEscape(rollupID))
 	if err != nil {
 		return BatchView{}, err
 	}
@@ -419,7 +501,7 @@ func (c *RestClient) GetAnchors(ctx context.Context, layerID string) ([]AnchorVi
 // query). The PublicKey is the registered ML-DSA-87 (Dilithium-5) verification
 // key.
 func (c *RestClient) GetPqcAccount(ctx context.Context, address string) (PqcAccountView, error) {
-	body, err := c.get(ctx, "/qorechain/pqc/v1/accounts/"+url.PathEscape(address))
+	body, err := c.get(ctx, "/qorechain/pqc/v1/account/"+url.PathEscape(address))
 	if err != nil {
 		return PqcAccountView{}, err
 	}
@@ -725,6 +807,8 @@ type RdkClient struct {
 	Rest *RestClient
 	// Qor is the qor_ JSON-RPC client.
 	Qor *QorClient
+
+	http HTTPDoer
 }
 
 // NewRdkClient creates an RdkClient. It defaults to the public testnet.
@@ -745,11 +829,57 @@ func NewRdkClient(options RdkClientOptions) *RdkClient {
 			net.Endpoints.EvmRPC = o.EvmRPC
 		}
 	}
+	doer := options.HTTP
+	if doer == nil {
+		doer = http.DefaultClient
+	}
 	return &RdkClient{
 		Network: net,
 		Rest:    NewRestClient(net.Endpoints.Rest, options.HTTP),
 		Qor:     NewQorClient(net.Endpoints.EvmRPC, options.HTTP),
+		http:    doer,
 	}
+}
+
+// GetChainTip reads the chain tip — latest height and its block time — from the
+// consensus RPC's /status. A challenge window is judged against this, not the
+// local clock: the block-count path counts heights, and the time-based path
+// compares block time, which can lag wall time.
+func (c *RdkClient) GetChainTip(ctx context.Context) (ChainTip, error) {
+	u := strings.TrimRight(c.Network.Endpoints.RPC, "/") + "/status"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return ChainTip{}, err
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return ChainTip{}, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return ChainTip{}, fmt.Errorf("could not read the chain tip from %s (HTTP %d)", u, res.StatusCode)
+	}
+	var body struct {
+		Result struct {
+			SyncInfo struct {
+				LatestBlockHeight string `json:"latest_block_height"`
+				LatestBlockTime   string `json:"latest_block_time"`
+			} `json:"sync_info"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		return ChainTip{}, fmt.Errorf("could not decode %s: %w", u, err)
+	}
+	info := body.Result.SyncInfo
+	height, err := strconv.ParseInt(info.LatestBlockHeight, 10, 64)
+	if err != nil {
+		return ChainTip{}, fmt.Errorf("the node at %s did not report a latest block height", u)
+	}
+	t, err := time.Parse(time.RFC3339Nano, info.LatestBlockTime)
+	if err != nil {
+		return ChainTip{}, fmt.Errorf("the node at %s did not report a latest block time", u)
+	}
+	return ChainTip{Height: height, TimeSecs: t.Unix()}, nil
 }
 
 // Params reads the live rdk module parameters from the chain.

@@ -34,7 +34,7 @@ class ConfigTest {
 
     @Test
     void validateAcceptsAValidPreset() {
-        RollupConfig config = Presets.defi(c -> c.rollupId = "ok").get();
+        RollupConfig config = Presets.defi(c -> c.rollupId = "roll-ok").get();
         ValidationResult r = Validate.validateRollupConfig(config);
         assertTrue(r.valid, () -> "errors: " + r.errors);
     }
@@ -59,7 +59,7 @@ class ConfigTest {
 
     @Test
     void validateWarnsOnCelestia() {
-        RollupConfig config = Presets.nft(c -> c.rollupId = "n").get();
+        RollupConfig config = Presets.nft(c -> c.rollupId = "roll-n").get();
         ValidationResult r = Validate.validateRollupConfig(config);
         assertTrue(r.valid, () -> "errors: " + r.errors);
         assertTrue(r.warnings.stream().anyMatch(w -> w.contains("Celestia")));

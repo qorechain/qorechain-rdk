@@ -21,6 +21,16 @@ export interface NetworkConfig {
   name: NetworkName;
   chainId: string;
   endpoints: Endpoints;
+  /**
+   * The Main Chain height at which this network switched the canonical anchor
+   * message from v1 to v2 (the chain's `rdk-integrity` feature, shipped in
+   * v3.2.2). An anchor recorded at or above this height is signed over the v2
+   * message; below it, v1.
+   *
+   * A fresh chain enables the feature at genesis, so `0` is the right value for
+   * a local or custom network.
+   */
+  anchorSignV2Height: number;
 }
 
 /** Localhost defaults, for running against a local node. */
@@ -57,12 +67,29 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     name: "testnet",
     chainId: CHAIN_IDS.testnet,
     endpoints: { ...TESTNET_ENDPOINTS },
+    // `rdk-integrity` applied on qorechain-diana at this height (2026-10-02).
+    anchorSignV2Height: 6_905_034,
   },
   mainnet: {
     name: "mainnet",
     chainId: CHAIN_IDS.mainnet,
     endpoints: { ...MAINNET_ENDPOINTS },
+    // `rdk-integrity` applied on qorechain-vladi at this height (2026-10-16).
+    anchorSignV2Height: 3_556_788,
   },
+};
+
+/**
+ * The height at which a network switched to the v2 anchor message, by name.
+ *
+ * In practice every anchor the `rdk` module ever wrote is v2: before the
+ * feature the chain's anchor attempt failed for RDK batches, so no RDK batch
+ * was anchored under v1. v1 survives only for standalone `x/multilayer`
+ * anchors recorded before these heights.
+ */
+export const ANCHOR_SIGN_V2_HEIGHTS: Record<NetworkName, number> = {
+  testnet: NETWORKS.testnet.anchorSignV2Height,
+  mainnet: NETWORKS.mainnet.anchorSignV2Height,
 };
 
 /** Look up a network preset by name. Defaults to testnet. */

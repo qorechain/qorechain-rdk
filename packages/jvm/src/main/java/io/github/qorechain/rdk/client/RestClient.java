@@ -71,20 +71,71 @@ public final class RestClient {
         return Views.mapBatchView(b != null ? Views.asRecord(b) : body);
     }
 
-    /** Read all settlement batches for a rollup. */
-    public List<BatchView> listBatches(String rollupId) {
-        Map<String, Object> body = get("/qorechain/rdk/v1/batches/" + pathEscape(rollupId));
+    /** One page of batches and the start index of the next page (0 when there is none). */
+    public static final class BatchPage {
+        public final List<BatchView> batches;
+        public final long nextIndex;
+
+        BatchPage(List<BatchView> batches, long nextIndex) {
+            this.batches = batches;
+            this.nextIndex = nextIndex;
+        }
+    }
+
+    /**
+     * Read one page of a rollup's batches, in index order, from {@code startIndex}. The chain
+     * returns at most {@code limit} (0 means 50, capped at 100).
+     */
+    public BatchPage listBatchesPage(String rollupId, long startIndex, int limit) {
+        StringBuilder path = new StringBuilder("/qorechain/rdk/v1/batches/").append(pathEscape(rollupId));
+        String sep = "?";
+        if (startIndex > 0) {
+            path.append(sep).append("start_index=").append(startIndex);
+            sep = "&";
+        }
+        if (limit > 0) {
+            path.append(sep).append("limit=").append(limit);
+        }
+        Map<String, Object> body = get(path.toString());
         List<BatchView> out = new ArrayList<>();
         for (Map<String, Object> b : Views.asArray(Views.pick(body, "batches"))) {
             out.add(Views.mapBatchView(b));
         }
+        return new BatchPage(out, Views.asLong(Views.pick(body, "next_index", "nextIndex"), 0));
+    }
+
+    /**
+     * Read all settlement batches for a rollup, following every page. The chain's {@code Batches}
+     * query is paged (50 per page by default); releases before 0.6.0 read only the first page, so
+     * nothing past batch #49 was ever returned.
+     */
+    public List<BatchView> listBatches(String rollupId) {
+        return listBatchesFrom(rollupId, 0);
+    }
+
+    /** Read every batch from {@code startIndex} onwards, following pages. */
+    public List<BatchView> listBatchesFrom(String rollupId, long startIndex) {
+        List<BatchView> out = new ArrayList<>();
+        long start = startIndex;
+        for (int pages = 0; pages < 100_000; pages++) { // bounded against a misbehaving node
+            BatchPage page = listBatchesPage(rollupId, start, 100);
+            out.addAll(page.batches);
+            if (page.nextIndex == 0 || page.batches.isEmpty()) {
+                break;
+            }
+            start = page.nextIndex;
+        }
         return out;
     }
 
-    /** Read the latest settlement batch for a rollup. */
+    /**
+     * Read the latest settlement batch for a rollup (the chain's {@code LatestBatch}). Releases
+     * before 0.6.0 requested {@code /batches/{id}?latest=true}, which is not a chain route: the node
+     * returned the first page of the list, read as one empty batch — so health reported "no
+     * batches yet" for every rollup.
+     */
     public BatchView getLatestBatch(String rollupId) {
-        Map<String, Object> body =
-                get("/qorechain/rdk/v1/batches/" + pathEscape(rollupId) + "?latest=true");
+        Map<String, Object> body = get("/qorechain/rdk/v1/latest_batch/" + pathEscape(rollupId));
         Object b = Views.pick(body, "batch");
         return Views.mapBatchView(b != null ? Views.asRecord(b) : body);
     }
@@ -126,7 +177,7 @@ public final class RestClient {
      * {@code publicKey} is the registered ML-DSA-87 (Dilithium-5) verification key.
      */
     public PqcAccountView getPqcAccount(String address) {
-        Map<String, Object> body = get("/qorechain/pqc/v1/accounts/" + pathEscape(address));
+        Map<String, Object> body = get("/qorechain/pqc/v1/account/" + pathEscape(address));
         Object a = Views.pick(body, "account");
         return Views.mapPqcAccountView(a != null ? Views.asRecord(a) : body);
     }

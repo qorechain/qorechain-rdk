@@ -34,6 +34,15 @@ export interface SubmitBatchInput {
   dataHash: Bytes;
   proof?: Bytes;
   withdrawalsRoot?: Bytes;
+  /**
+   * The rollup creator's ML-DSA-87 signature over this batch's v2 anchor sign
+   * bytes (see `anchorSignBytesForBatch`). With it the chain anchors the batch
+   * in the same transaction, which is what makes a settlement receipt possible.
+   * `RdkTxClient.submitBatch` produces it for you when it signs hybrid.
+   */
+  anchorSignature?: Bytes;
+  /** The validator-set commitment covered by `anchorSignature`. */
+  validatorSetHash?: Bytes;
 }
 
 export interface ChallengeBatchInput {
@@ -100,6 +109,8 @@ export function submitBatchMsg(input: SubmitBatchInput): EncodeObject {
       dataHash: toBytes(input.dataHash),
       proof: input.proof ? toBytes(input.proof) : EMPTY,
       withdrawalsRoot: input.withdrawalsRoot ? toBytes(input.withdrawalsRoot) : EMPTY,
+      anchorSignature: input.anchorSignature ? toBytes(input.anchorSignature) : EMPTY,
+      validatorSetHash: input.validatorSetHash ? toBytes(input.validatorSetHash) : EMPTY,
     }),
   };
 }

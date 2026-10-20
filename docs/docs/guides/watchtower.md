@@ -7,9 +7,9 @@ sidebar_position: 15
 # Watchtower
 
 The Watchtower is an auto-challenger framework for optimistic rollups. It follows
-a rollup's settlement batches, surfaces each new batch and its challenge-window
-deadline, and — when **your** validity predicate rejects a batch — hands it to
-your `onInvalid` callback so you can wire up a challenge.
+a rollup's settlement batches, judges each batch's challenge window exactly as
+the chain does, and — when **your** validity predicate rejects a batch — hands it
+to your `onInvalid` callback so you can wire up a challenge.
 
 The framework watches and decides *when*; **you supply the validity check**. The
 Watchtower never decides on its own that a batch is fraudulent — it calls your
@@ -18,18 +18,19 @@ Watchtower never decides on its own that a batch is fraudulent — it calls your
 ## `watchBatches`
 
 ```ts
-import { createRdkClient, watchBatches, challengeBatch } from "@qorechain/rdk";
+import { createRdkClient, watchBatches, signerFromEnv, pqcKeypairFromEnv } from "@qorechain/rdk";
 
-const rdk = createRdkClient({
-  endpoints: {
-    rest: "https://api-testnet.qore.host",
-    rpc: "https://rpc-testnet.qore.host", // needed to broadcast a challenge
-  },
-});
+const rdk = createRdkClient({ network: "testnet" });
+
+// A connected client to submit challenges (it signs hybrid; see Keys & funding).
+const signer = (await signerFromEnv())!;
+const [{ address }] = await signer.getAccounts();
+const pqc = (await pqcKeypairFromEnv(rdk, address))!;
+const tx = await rdk.connectTx(signer, { gasPrice: "0.15uqor", pqcKeypair: pqc.keypair });
 
 const watcher = watchBatches(rdk, "my-roll", {
   onBatch: (batch) => {
-    console.log("new batch", batch.index);
+    console.log("new batch", batch.batchIndex);
   },
 
   // Your validity predicate. Return false to flag the batch as invalid.
@@ -38,13 +39,18 @@ const watcher = watchBatches(rdk, "my-roll", {
   },
 
   // Called when validate() returns false — wire it to a challenge.
-  onInvalid: async (batch) => {
-    await challengeBatch(rdk, "my-roll", batch.index /* + your fraud proof */);
+  onInvalid: async ({ batch, window }) => {
+    if (window && !window.open) return; // too late: the chain would refuse it
+    await tx.challengeBatch({
+      rollupId: "my-roll",
+      batchIndex: batch.batchIndex,
+      proof: buildFraudProof(batch), // your fraud proof
+    });
   },
 
-  // Called as a batch approaches the end of its challenge window.
-  onDeadline: (batch) => {
-    console.warn("challenge window closing for batch", batch.index);
+  // Called once as a still-open window nears its end.
+  onDeadline: ({ batch, window }) => {
+    console.warn(`window closing for batch ${batch.batchIndex}`, window);
   },
 });
 
@@ -55,11 +61,55 @@ watcher.stop();
 The framework surfaces:
 
 - **new batches** via `onBatch`,
-- **challenge-window deadlines** via `onDeadline`, and
-- **invalid batches** (where your `validate` returned `false`) via `onInvalid`.
+- **invalid batches** (where your `validate` returned `false`) via `onInvalid`, and
+- **windows about to close** via `onDeadline` — once per batch, and only while
+  the window is still open.
 
 Wiring `onInvalid` to `challengeBatch` turns the Watchtower into a complete
 auto-challenger; leave it unset to run in observe-only mode.
+
+## How the challenge window is measured
+
+The chain measures a batch's window one of two ways, and chooses **per batch**.
+The Watchtower applies the same rule, and every callback receives it as
+`window` (`{ mode, open, finalizable, … }`):
+
+| Batch | Rule | Reported as |
+| --- | --- | --- |
+| submitted from chain v3.2.4 (`rdk-challenge-window-time`) | closes once block time reaches `submitted_time + window` | `mode: "time"`, `secondsRemaining` |
+| submitted before | closes `window / 6` **blocks** after the submission height | `mode: "blocks"`, `blocksRemaining` |
+
+The block-count rule assumed 6-second blocks. Real blocks are about 3.2 seconds
+on mainnet and 1 second on the testnet, so a 7-day (604,800 s) window under that
+rule closes after roughly **3.75 days on mainnet** and **28 hours on the
+testnet**. Plan challenge latency around the real figure, not the nominal one.
+
+On the block-count path the chain refuses a challenge once
+`height − submitted_at > window_blocks`, but finalizes once it is `>=` — so for
+exactly one block a batch is both finalizable and still challengeable. `window`
+reports `open` and `finalizable` separately.
+
+The window used is the **rollup's own** (`challenge_window_sec`, exposed from
+chain v3.2.4); the global `default_challenge_window` param is a fallback for
+older nodes. Pass `challengeWindowSecs` to set it explicitly.
+
+Windows are judged against the **chain tip** (`/status` on the RPC endpoint),
+not your machine's clock: heights are what the block-count rule counts, and
+block time is what the time-based rule compares.
+
+## Following every batch
+
+The chain's `Batches` query is paged, 50 per page by default. The Watchtower
+reads every page, polling forward from the oldest batch whose window is still
+open — so it keeps re-judging a batch as its deadline approaches, and never
+stops seeing new batches as the rollup grows.
+
+:::note Releases before 0.6.0
+They read the submission height as a Unix timestamp, so every deadline was
+wrong and `onDeadline` fired at once for every batch; they read only the first
+page of batches; and they judged each batch once, on first sight. Upgrade before
+relying on the Watchtower.
+:::
 
 ## CLI
 
@@ -68,5 +118,5 @@ qorollup watchtower my-roll
 ```
 
 `watchtower` runs the framework from the command line, printing new batches and
-challenge-window deadlines until you press Ctrl-C. See the
+closing windows until you press Ctrl-C. See the
 [qorollup reference](../reference/cli-qorollup.md).

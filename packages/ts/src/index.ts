@@ -11,7 +11,7 @@
  */
 
 /** RDK package version. */
-export const VERSION = "0.5.0";
+export const VERSION = "0.6.0";
 
 // Network and module constants (documented defaults; read live values from the chain).
 export * from "./constants";
@@ -39,6 +39,7 @@ export { RDK_TYPES, createRdkRegistry } from "./tx/registry";
 export * from "./tx/messages";
 export {
   RdkTxClient,
+  anchorSignBytesForBatch,
   type TxFee,
   type TxOptions,
   type RdkTxClientConnectOptions,
@@ -54,6 +55,10 @@ export {
   isHybridSignBytesRejection,
   type SignBytesVersionOption,
 } from "@qorechain/sdk";
+
+// Client-side copies of chain rules (id grammar, withdrawal checks), so a
+// transaction the chain would refuse is caught before a fee is paid.
+export * from "./rules";
 
 // Lifecycle: rollup/batch state-machine awareness and challenge-window math.
 export * from "./lifecycle/state-machine";

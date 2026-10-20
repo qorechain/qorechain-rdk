@@ -78,6 +78,12 @@ func WatchRollup(ctx context.Context, client *RdkClient, rollupID string, option
 		}
 		health, err := GetRollupHealth(ctx, client, rollupID, healthOpts)
 		if err != nil {
+			// An error caused by Stop cancelling an in-flight request is the
+			// watcher shutting down, not a failure; reporting it made every
+			// caller that fails on OnError see a spurious "context canceled".
+			if ctx.Err() != nil {
+				return
+			}
 			if options.OnError != nil {
 				options.OnError(err)
 			}

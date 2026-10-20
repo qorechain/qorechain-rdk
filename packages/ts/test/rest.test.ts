@@ -43,7 +43,7 @@ describe("RestClient", () => {
     expect(calls[1].url).toBe("http://node.example/qorechain/rdk/v1/batch/r/5");
 
     await rest.getLatestBatch("r");
-    expect(calls[2].url).toBe("http://node.example/qorechain/rdk/v1/batches/r?latest=true");
+    expect(calls[2].url).toBe("http://node.example/qorechain/rdk/v1/latest_batch/r");
   });
 
   it("maps a rollups list", async () => {

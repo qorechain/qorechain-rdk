@@ -105,7 +105,7 @@ const params = await rdk.params();
 | `maxRollups` | `100` | Maximum registered rollups |
 | `minStakeForRollup` | `10000000000` uqor (10,000 QOR) | Minimum stake to create a rollup |
 | `rollupCreationBurnRate` | `0.01` | Fraction of stake burned on creation |
-| `defaultChallengeWindow` | `604800` s (7 days) | Optimistic challenge window |
+| `defaultChallengeWindow` | `604800` s | Optimistic challenge window — 7 days of block time from chain v3.2.4; `window / 6` blocks before it (about 3.75 days on mainnet, 28 hours on the testnet). Each rollup can set its own. |
 | `maxDaBlobSize` | `2097152` bytes (2 MiB) | Maximum native DA blob size |
 | `blobRetentionBlocks` | `432000` (~30 days) | Blocks before expired blobs are pruned |
 | `maxBatchesPerBlock` | `10` | Maximum settlement batches per block |

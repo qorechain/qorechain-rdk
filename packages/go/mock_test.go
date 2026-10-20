@@ -13,7 +13,7 @@ func TestMockTxClientRecordsCreateAndLifecycle(t *testing.T) {
 	fee := Fee{Amount: []Coin{{Denom: "uqor", Amount: "1000"}}, GasLimit: 200000}
 
 	// Create.
-	createMsg := client.CreateRollup(CreateRollupInput{RollupID: "r1", Profile: "defi", VmType: "evm", StakeAmount: 1})
+	createMsg := client.CreateRollup(CreateRollupInput{RollupID: "roll-r1", Profile: "defi", VmType: "evm", StakeAmount: 1})
 	resp, err := client.Broadcast(ctx, []Msg{createMsg}, TxParams{Fee: fee, Memo: "create"})
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +74,7 @@ func TestMockTxClientSimulate(t *testing.T) {
 	client := NewRdkTxClient(acc, "qorechain-diana", nil).WithBackend(mock)
 
 	gas, err := client.Simulate(context.Background(),
-		[]Msg{client.CreateRollup(CreateRollupInput{RollupID: "r1", Profile: "defi", VmType: "evm", StakeAmount: 1})},
+		[]Msg{client.CreateRollup(CreateRollupInput{RollupID: "roll-r1", Profile: "defi", VmType: "evm", StakeAmount: 1})},
 		TxParams{})
 	if err != nil {
 		t.Fatal(err)

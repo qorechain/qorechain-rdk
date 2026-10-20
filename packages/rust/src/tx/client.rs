@@ -64,6 +64,10 @@ pub enum TxError {
     /// The REST broadcast failed.
     #[error(transparent)]
     Rest(#[from] RestError),
+    /// The chain would refuse this transaction — caught before any fee is
+    /// paid, because the chain only checks it after.
+    #[error("{0}")]
+    WouldBeRefused(String),
 }
 
 /// Per-transaction options: the fee and an optional memo. The fee defaults to a
@@ -230,6 +234,14 @@ impl<S: Signer> RdkTxClient<S> {
             vm_type: vm_type.into(),
             stake_amount,
         };
+        // The chain enforces the id grammar at creation from v3.2.2 — after the
+        // creation fee is paid.
+        if let Some(e) = crate::rules::rollup_id_error(&input.rollup_id) {
+            return Err(TxError::WouldBeRefused(format!(
+                "rollupId \"{}\" {e}",
+                input.rollup_id
+            )));
+        }
         self.broadcast(&input.to_msg(), opts)
     }
 
@@ -324,7 +336,24 @@ impl<S: Signer> RdkTxClient<S> {
         opts: &TxOptions,
     ) -> Result<Value, TxError> {
         input.submitter = self.address().to_string();
-        self.broadcast(&input.to_msg(), opts)
+        let msg = input.to_msg();
+        // The chain refuses these at the start of ExecuteWithdrawal (v3.2.3+) —
+        // after the fee is paid.
+        let errors = crate::rules::withdrawal_errors(
+            &msg.submitter,
+            &msg.rollup_id,
+            &msg.recipient,
+            &msg.denom,
+            msg.amount,
+            &msg.proof,
+        );
+        if !errors.is_empty() {
+            return Err(TxError::WouldBeRefused(format!(
+                "withdrawal would be refused by the chain: {}",
+                errors.join("; ")
+            )));
+        }
+        self.broadcast(&msg, opts)
     }
 }
 

@@ -31,14 +31,51 @@ import type {
   OfflineDirectSigner,
 } from "@cosmjs/proto-signing";
 import {
+  pqcSign,
   signAndBroadcastHybrid,
   type PqcKeypair,
   type SignBytesVersionOption,
 } from "@qorechain/sdk";
+import { RestClient } from "../client/rest";
+import { rollupIdError, withdrawalErrors } from "../rules";
+import { anchorSignBytesV2 } from "../receipts";
+import { bytesToHex, toBytes } from "../utils/bytes";
 import type { RollupStatus } from "../config/enums";
 import { assertRollupAction } from "../lifecycle/state-machine";
 import { createRdkRegistry } from "./registry";
 import * as msgs from "./messages";
+
+/**
+ * The exact bytes a rollup creator signs to anchor a settlement batch (the v2
+ * anchor message, chain v3.2.2+), with the mapping the chain uses for a batch:
+ * `layer_id` is the rollup's layer id, `layer_height` is the batch index,
+ * `state_root` the batch state root, `transaction_count` the batch's
+ * transaction count, and the compressed state proof empty.
+ *
+ * For a rollup whose sequencer is not its creator: build these bytes, have the
+ * creator sign them with their registered ML-DSA-87 key, and pass the result
+ * as `anchorSignature` to `submitBatch`.
+ */
+export function anchorSignBytesForBatch(input: {
+  chainId: string;
+  layerId: string;
+  batchIndex: number | bigint | string;
+  /** Hex string or raw bytes. */
+  stateRoot: string | Uint8Array;
+  txCount: number | bigint | string;
+  /** Hex string or raw bytes; omit or empty when the batch carries none. */
+  validatorSetHash?: string | Uint8Array;
+}): Uint8Array {
+  return anchorSignBytesV2({
+    chainId: input.chainId,
+    layerId: input.layerId,
+    layerHeight: BigInt(input.batchIndex),
+    stateRoot: bytesToHex(toBytes(input.stateRoot)),
+    validatorSetHash: input.validatorSetHash ? bytesToHex(toBytes(input.validatorSetHash)) : "",
+    transactionCount: BigInt(input.txCount),
+    compressedStateProof: "",
+  });
+}
 
 /** A transaction fee: an explicit `StdFee`, a gas number, or `"auto"`. */
 export type TxFee = StdFee | number | "auto";
@@ -316,7 +353,9 @@ export class RdkTxClient {
       transactionHash: result.transactionHash,
       events: (result.events ?? []) as DeliverTxResponse["events"],
       rawLog: result.rawLog,
-      msgResponses: [],
+      // The typed Msg*Response for each message, which the SDK forwards from the
+      // node (0.9.0+). Earlier releases dropped them.
+      msgResponses: (result.msgResponses ?? []).map((r) => ({ typeUrl: r.typeUrl, value: new Uint8Array(r.value) })),
       gasUsed: result.gasUsed ?? BigInt(0),
       gasWanted: result.gasWanted ?? BigInt(0),
     };
@@ -329,20 +368,101 @@ export class RdkTxClient {
     return this.client.signAndBroadcast(this.address, messages, opts.fee ?? "auto", opts.memo ?? "");
   }
 
-  /** Create a rollup. The client's address is the creator. */
-  createRollup(
+  /**
+   * Create a rollup. The client's address is the creator.
+   *
+   * Throws before broadcasting if `rollupId` breaks the chain's id grammar
+   * (enforced at creation from v3.2.2), since the chain would refuse it only
+   * after the creation fee had been paid.
+   */
+  async createRollup(
     input: Omit<msgs.CreateRollupInput, "creator">,
     opts?: TxOptions,
   ): Promise<DeliverTxResponse> {
+    const idError = rollupIdError(input.rollupId);
+    if (idError) throw new Error(`rollupId "${input.rollupId}" ${idError}`);
     return this.broadcast([msgs.createRollupMsg({ creator: this.address, ...input })], opts);
   }
 
-  /** Submit a settlement batch. The client's address is the sequencer. */
-  submitBatch(
+  /**
+   * Submit a settlement batch. The client's address is the sequencer.
+   *
+   * **Anchoring.** From chain v3.2.2 a batch is anchored in `x/multilayer` only
+   * if it carries the rollup creator's ML-DSA-87 signature over its v2 anchor
+   * sign bytes, and only an anchored batch can ever yield a settlement receipt.
+   * With `anchor: "auto"` (the default) this client signs it for you when it
+   * can do so correctly: it signs hybrid, and **it is the rollup's creator** —
+   * the chain verifies the signature against the creator's registered key, and
+   * "a refused anchor refuses the batch", so signing with any other key would
+   * not skip anchoring but break the submission. In every other case the batch
+   * is submitted unanchored, exactly as before.
+   *
+   * - `"require"` throws instead of submitting unanchored.
+   * - `"off"` never signs.
+   * - An explicit `anchorSignature` in `input` is always sent as given — the
+   *   path for a rollup with a separate sequencer, which must obtain the
+   *   creator's signature out of band (see {@link anchorSignBytesForBatch}).
+   */
+  async submitBatch(
     input: Omit<msgs.SubmitBatchInput, "sequencer">,
-    opts?: TxOptions,
+    opts: TxOptions & { anchor?: "auto" | "require" | "off" } = {},
   ): Promise<DeliverTxResponse> {
-    return this.broadcast([msgs.submitBatchMsg({ sequencer: this.address, ...input })], opts);
+    const mode = opts.anchor ?? "auto";
+    let anchored = input;
+    if (!input.anchorSignature && mode !== "off") {
+      const sig = await this.tryAnchorSignature(input);
+      if (sig.signature) {
+        anchored = { ...input, anchorSignature: sig.signature };
+      } else if (mode === "require") {
+        throw new Error(`cannot anchor batch ${String(input.batchIndex)}: ${sig.reason}`);
+      }
+    }
+    return this.broadcast([msgs.submitBatchMsg({ sequencer: this.address, ...anchored })], opts);
+  }
+
+  /**
+   * Produce this batch's anchor signature if — and only if — this client can
+   * produce the one the chain will accept. Never throws; says why not.
+   */
+  private async tryAnchorSignature(
+    input: Omit<msgs.SubmitBatchInput, "sequencer">,
+  ): Promise<{ signature?: Uint8Array; reason: string }> {
+    if (!this.hybrid) {
+      return { reason: "this client does not sign hybrid, so it holds no post-quantum key to sign the anchor" };
+    }
+    if (!this.hybrid.rest) {
+      return { reason: "no REST endpoint configured, so the rollup's layer and creator cannot be read" };
+    }
+    const transport = this.client as Partial<HybridTxCapable>;
+    if (typeof transport.getChainId !== "function") {
+      return { reason: "the underlying client cannot report the chain id" };
+    }
+    let rollup;
+    try {
+      rollup = await new RestClient(this.hybrid.rest).getRollup(input.rollupId);
+    } catch (err) {
+      return { reason: `could not read rollup "${input.rollupId}": ${(err as Error).message}` };
+    }
+    if (!rollup.layerId) {
+      return { reason: `rollup "${input.rollupId}" has no layer_id, so there is nothing to anchor to` };
+    }
+    if (rollup.creator !== this.address) {
+      return {
+        reason:
+          `this client (${this.address}) is not the rollup's creator (${rollup.creator}); the chain ` +
+          "verifies the anchor against the creator's key, so the creator must sign it out of band",
+      };
+    }
+    const chainId = await transport.getChainId();
+    const message = anchorSignBytesForBatch({
+      chainId,
+      layerId: rollup.layerId,
+      batchIndex: input.batchIndex,
+      stateRoot: input.stateRoot,
+      txCount: input.txCount,
+      validatorSetHash: input.validatorSetHash,
+    });
+    return { signature: pqcSign(this.hybrid.pqcKeypair.secretKey, message), reason: "signed" };
   }
 
   /** Challenge an optimistic batch with a fraud proof. */
@@ -398,10 +518,16 @@ export class RdkTxClient {
   }
 
   /** Execute a finalized-batch withdrawal. The client's address is the submitter. */
-  executeWithdrawal(
+  async executeWithdrawal(
     input: Omit<msgs.ExecuteWithdrawalInput, "submitter">,
     opts?: TxOptions,
   ): Promise<DeliverTxResponse> {
+    // The chain refuses these at the start of ExecuteWithdrawal (v3.2.3+) —
+    // after the fee is paid. Catch them first.
+    const errors = withdrawalErrors({ submitter: this.address, ...input });
+    if (errors.length > 0) {
+      throw new Error(`withdrawal would be refused by the chain: ${errors.join("; ")}`);
+    }
     return this.broadcast([msgs.executeWithdrawalMsg({ submitter: this.address, ...input })], opts);
   }
 }

@@ -1,3 +1,4 @@
+import { rollupIdError } from "../rules";
 import {
   DA_BACKENDS,
   GAS_MODELS,
@@ -38,6 +39,11 @@ export function validateRollupConfig(config: RollupConfig): ValidationResult {
 
   if (!config.rollupId || config.rollupId.trim() === "") {
     errors.push("rollupId must be a non-empty string");
+  } else {
+    // The chain enforces this at creation from v3.2.2; checking here means a
+    // refused id costs nothing instead of a creation fee.
+    const idError = rollupIdError(config.rollupId);
+    if (idError) errors.push(`rollupId "${config.rollupId}" ${idError}`);
   }
 
   if (!SETTLEMENT_PARADIGMS.includes(config.settlement)) {

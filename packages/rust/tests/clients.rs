@@ -387,7 +387,13 @@ fn watch_rollup_polls_and_stops() {
             updates_cb.fetch_add(1, Ordering::SeqCst);
         },
         |_err| panic!("unexpected polling error"),
-        || 1_000,
+        // A fixed tip keeps the test deterministic and off the network.
+        || {
+            Some(qorechain_rdk::challenge_window::ChainTip {
+                height: 1_000,
+                time_secs: 0,
+            })
+        },
     );
 
     // Give the loop time to produce at least one update, then stop.

@@ -46,7 +46,7 @@ func TestTxClientSimulateViaRest(t *testing.T) {
 	}
 	client := NewRdkTxClient(acc, "qorechain-diana", NewRestClient(srv.URL, srv.Client()))
 	gas, err := client.Simulate(context.Background(),
-		[]Msg{client.CreateRollup(CreateRollupInput{RollupID: "r1", Profile: "defi", VmType: "evm", StakeAmount: 1})},
+		[]Msg{client.CreateRollup(CreateRollupInput{RollupID: "roll-r1", Profile: "defi", VmType: "evm", StakeAmount: 1})},
 		TxParams{Fee: Fee{GasLimit: 200000}})
 	if err != nil {
 		t.Fatal(err)

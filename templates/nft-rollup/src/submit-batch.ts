@@ -4,14 +4,14 @@ import {
   buildDaBlob,
   isDaBackendAvailable,
 } from "@qorechain/rdk";
-import { getClient, GAS_PRICE, ROLLUP_ID } from "./client.js";
-import { getSigner } from "./signer.js";
+import { getClient, ROLLUP_ID } from "./client.js";
+import { connectOperator } from "./signer.js";
 
 async function main(): Promise<void> {
   const client = getClient();
   const params = await client.params();
-  const signer = await getSigner();
-  const tx = await client.connectTx(signer, { gasPrice: GAS_PRICE });
+  // Signs hybrid: both networks refuse a classical-only native-lane transaction.
+  const tx = await connectOperator(client);
 
   // In a real rollup these roots come from your execution layer. Here they are
   // illustrative fixed values.
