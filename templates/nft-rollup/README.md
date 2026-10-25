@@ -31,7 +31,7 @@ Edit `.env`: set `QORE_NETWORK`, the `QORE_*_URL` endpoints, and your operator k
 pnpm create          # validate the config, show the cost, and create the rollup
 pnpm query-status    # read the rollup config and its latest settlement batch
 pnpm submit-batch    # submit an optimistic batch
-pnpm challenge       # raise a fraud-proof challenge against a batch
+pnpm challenge       # check a batch; challenge it only if its root is provably wrong
 ```
 
 ## Operate
@@ -66,17 +66,23 @@ compatibility matrix on `.validate()` / `.build()`). A submitted batch is
 presumed valid and finalizes after its challenge window elapses, unless someone
 disputes it:
 
-1. `pnpm submit-batch` posts a batch optimistically (no validity proof).
-2. During the challenge window, a challenger calls
-   `tx.challengeBatch({ rollupId, batchIndex, proof })` with a fraud proof and a
-   bond — see `src/challenge.ts` (it uses a clearly-labeled placeholder proof).
-3. A resolver closes it with
-   `tx.resolveChallenge({ rollupId, batchIndex, fraudUpheld })`:
-   - `fraudUpheld: true` rejects the batch and awards the bond;
+1. `pnpm submit-batch` posts a batch optimistically (no validity proof). Its
+   state root is the chain's **canonical transition root** of the batch's
+   inputs (`batchTransitionRoot`); any other root is provably fraudulent.
+2. During the challenge window, `pnpm challenge` reads a batch from chain,
+   recomputes that root under the binding the chain judges the batch by
+   (`transitionRootVersionForBatch`), and only if the published root differs
+   calls `tx.challengeBatch({ rollupId, batchIndex, proof })` with
+   `fraudProof(prevStateRoot, canonicalRoot)` and a bond. A challenge against an
+   honest batch is dismissed and its bond is forfeited, so it sends none.
+3. Any account (chain v3.2.5) closes it with
+   `tx.resolveChallenge({ rollupId, batchIndex, fraudUpheld })`; the chain checks
+   the stored proof and refuses an assertion that does not match:
+   - `fraudUpheld: true` rejects the batch and everything built on it, refunds
+     the bond and pays a reward from the rollup's escrow;
    - `fraudUpheld: false` dismisses the challenge and the batch proceeds.
 
-The exact fraud-proof encoding is defined by the network's verifier — replace the
-placeholder in `src/challenge.ts` before any live use.
+Set `QORE_BATCH_INDEX` to check a batch other than 0.
 
 ## Quantum-safe signing
 

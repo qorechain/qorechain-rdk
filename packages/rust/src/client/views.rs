@@ -134,6 +134,11 @@ pub struct BatchView {
     /// time-based challenge window (v3.2.4). Zero for every earlier batch,
     /// which keeps the block-count window.
     pub submitted_time: i64,
+    /// Whether the chain judges this batch by the v2 transition binding (chain
+    /// v3.2.5, `rdk-withdrawals-binding`). True only when the node serves the
+    /// field as true; `transition_root_version_for_batch` otherwise decides by
+    /// height.
+    pub withdrawals_bound: bool,
 }
 
 /// A subsidiary-layer state anchor committed to the Main Chain (the
@@ -287,5 +292,7 @@ pub fn map_batch_view(raw: &Value) -> BatchView {
         finalized_at: num_of(pick(raw, &["finalized_at", "finalizedAt"]), 0),
         withdrawals_root: str_of(pick(raw, &["withdrawals_root", "withdrawalsRoot"]), ""),
         submitted_time: num_of(pick(raw, &["submitted_time", "submittedTime"]), 0),
+        withdrawals_bound: pick(raw, &["withdrawals_bound", "withdrawalsBound"])
+            == Some(&Value::Bool(true)),
     }
 }

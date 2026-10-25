@@ -108,6 +108,20 @@ produce it.
 - **`anchorSignBytesV1`** / **`anchorSignBytesV2`** / **`anchorSignBytesVersionFor`**
   — the two canonical anchor messages and the height-based choice between them.
 
+### Transition roots
+
+- **`batchTransitionRoot(input, version)`** / **`batchTransitionRootV1`** /
+  **`batchTransitionRootV2`** — the canonical state root the chain judges an
+  optimistic batch by. Tested against vectors from the chain's own implementation.
+- **`transitionRootVersionFor(rest)`** — the binding a batch submitted now is
+  judged by (`v2` once the chain reports `rdk-withdrawals-binding`).
+- **`transitionRootVersionForBatch(rest, batch)`** — the binding an existing
+  batch is judged by, from its own flag or the height v3.2.5 was applied at.
+- **`fraudProof(prevStateRoot, correctRoot)`** — the 64-byte proof the chain's
+  optimistic verifier reads.
+- **`RestClient.getProtocolFeatures`** / **`isProtocolFeatureEnabled`** /
+  **`getAppliedPlanHeight`** — the chain reads these rest on.
+
 ### Chain rules (checked before a fee is paid)
 
 - **`rollupIdError`** / **`isValidRollupId`** — the v3.2.2 id grammar.

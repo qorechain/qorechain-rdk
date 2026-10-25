@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { batchTransitionRoot, bytesToHex, transitionRootVersionFor } from "@qorechain/rdk";
 import { getClient, ROLLUP_ID } from "./client.js";
 import { connectOperator } from "./signer.js";
 
@@ -7,30 +8,36 @@ async function main(): Promise<void> {
   // Signs hybrid: both networks refuse a classical-only native-lane transaction.
   const tx = await connectOperator(client);
 
-  // In a real rollup these roots come from your execution layer. Here they are
-  // illustrative fixed values.
-  const stateRoot = `0x${"11".repeat(32)}`;
-  const prevStateRoot = `0x${"00".repeat(32)}`;
+  // An optimistic batch must publish the chain's canonical transition root
+  // for its inputs. Any other root is provably fraudulent: a challenger who
+  // names the canonical root wins, and from chain v3.2.5 any account can
+  // resolve that challenge and be paid from this rollup's escrow. Compute it
+  // right before submitting: the chain switches binding at its v3.2.5 height.
+  const prevStateRoot = `0x${"00".repeat(32)}`; // the last settled root (zero for batch 0)
+  const txCount = 1;
+  const version = await transitionRootVersionFor(client.rest);
+  const stateRoot = batchTransitionRoot(
+    { chainId: client.network.chainId, rollupId: ROLLUP_ID, prevStateRoot, txCount },
+    version,
+  );
 
   // No data hash: on QoreChain's native data availability no transaction
   // stores the blob on chain, so the chain refuses a batch whose data_hash
-  // claims one. The state roots and proof bind the batch.
+  // claims one.
 
-  // This template defaults to optimistic settlement, whose proof system is
-  // `fraud`. Optimistic batches are posted without a validity proof and only
-  // disputed via a fraud proof during the challenge window. The placeholder
-  // bytes below stand in for that fraud-proof material — replace it (and adjust
-  // the proof system) to match the settlement you choose in `rollup.config.ts`.
-  const proof = new TextEncoder().encode("PLACEHOLDER_FRAUD_PROOF");
+  // Optimistic settlement (proof system `fraud`) posts a batch without a
+  // proof; it is disputed only by a fraud proof during the challenge window.
+  // If you switch `rollup.config.ts` to zk settlement, attach the validity
+  // proof here instead.
 
   const res = await tx.submitBatch({
     rollupId: ROLLUP_ID,
     batchIndex: 0,
     stateRoot,
     prevStateRoot,
-    txCount: 1,
-    proof,
+    txCount,
   });
+  console.log(`State root ${version}: ${bytesToHex(stateRoot)}`);
   console.log(`Batch submitted: ${res.transactionHash} (code ${res.code})`);
 }
 

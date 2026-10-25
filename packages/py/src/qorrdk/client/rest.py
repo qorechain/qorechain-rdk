@@ -123,6 +123,30 @@ class RestClient:
         body = self._get(f"/qorechain/rdk/v1/latest_batch/{quote(rollup_id, safe='')}")
         return map_batch_view(_as_record(body.get("batch", body)))
 
+    def get_protocol_features(self) -> list:
+        """The chain's protocol switches (``/qorechain/pqc/v1/protocol_features``)
+        as ``[{"name": str, "enabled": bool}, ...]``. Chains before the route
+        existed answer 404 or 501, which this raises; see
+        :meth:`is_protocol_feature_enabled`."""
+        body = self._get("/qorechain/pqc/v1/protocol_features")
+        features = body.get("features") if isinstance(body.get("features"), list) else []
+        return [
+            {"name": str(f.get("name", "")), "enabled": f.get("enabled") is True}
+            for f in features
+            if isinstance(f, dict)
+        ]
+
+    def is_protocol_feature_enabled(self, name: str) -> bool:
+        """Whether the chain reports feature ``name`` as enabled. A chain that
+        does not serve the feature route has none of its features, so an
+        unavailable route (404/501) reads as ``False``; other errors raise."""
+        try:
+            return any(f["name"] == name and f["enabled"] for f in self.get_protocol_features())
+        except RuntimeError as err:
+            if " failed: 404" in str(err) or " failed: 501" in str(err):
+                return False
+            raise
+
     def get_blob(self, rollup_id: str, blob_index: Union[int, str]) -> RawRecord:
         """Raw data-availability blob details (status, size, expiry)."""
         return self._get(

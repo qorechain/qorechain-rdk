@@ -17,6 +17,12 @@ import {
   type RollupView,
 } from "./views";
 
+/** One protocol switch as the chain reports it. */
+export interface ProtocolFeature {
+  name: string;
+  enabled: boolean;
+}
+
 export interface RestClientOptions {
   fetch?: FetchLike;
 }
@@ -134,6 +140,45 @@ export class RestClient {
       `/qorechain/rdk/v1/latest_batch/${encodeURIComponent(rollupId)}`,
     );
     return mapBatchView(asRecord(body.batch ?? body));
+  }
+
+  /**
+   * The chain's protocol switches (`/qorechain/pqc/v1/protocol_features`):
+   * each feature's name and whether it is enabled at the current height.
+   * Chains before the route existed answer 404 or 501, which this reports as
+   * an error; {@link isProtocolFeatureEnabled} treats that as "not enabled".
+   */
+  async getProtocolFeatures(): Promise<ProtocolFeature[]> {
+    const body = await this.get("/qorechain/pqc/v1/protocol_features");
+    const list = Array.isArray(body.features) ? body.features : [];
+    return list.map((f) => {
+      const r = asRecord(f);
+      return { name: String(r.name ?? ""), enabled: r.enabled === true };
+    });
+  }
+
+  /**
+   * Whether the chain reports protocol feature `name` as enabled. A chain
+   * that does not serve the feature route has none of the features it lists,
+   * so an unavailable route reads as `false`; other errors are raised.
+   */
+  async isProtocolFeatureEnabled(name: string): Promise<boolean> {
+    try {
+      return (await this.getProtocolFeatures()).some((f) => f.name === name && f.enabled);
+    } catch (err) {
+      if (/\b(404|501)\b/.test((err as Error).message)) return false;
+      throw err;
+    }
+  }
+
+  /**
+   * The height at which upgrade plan `name` was applied on this chain
+   * (`/cosmos/upgrade/v1beta1/applied_plan/{name}`), or 0 if it has not been.
+   */
+  async getAppliedPlanHeight(name: string): Promise<number> {
+    const body = await this.get(`/cosmos/upgrade/v1beta1/applied_plan/${encodeURIComponent(name)}`);
+    const h = Number(body.height ?? 0);
+    return Number.isFinite(h) && h > 0 ? h : 0;
   }
 
   /** Raw data-availability blob details (status, size, expiry). */

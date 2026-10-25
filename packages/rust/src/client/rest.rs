@@ -227,6 +227,59 @@ impl RestClient {
         Ok(map_batch_view(Self::obj_or(&body, &["batch"])))
     }
 
+    /// The chain's protocol switches (`/qorechain/pqc/v1/protocol_features`)
+    /// as `(name, enabled)` pairs. Chains before the route existed answer 404
+    /// or 501, which is returned as an error; see
+    /// [`RestClient::is_protocol_feature_enabled`].
+    pub fn get_protocol_features(&self) -> Result<Vec<(String, bool)>, RestError> {
+        let body = self.get("/qorechain/pqc/v1/protocol_features")?;
+        let list = body
+            .get("features")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        Ok(list
+            .iter()
+            .map(|f| {
+                (
+                    f.get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    f.get("enabled") == Some(&Value::Bool(true)),
+                )
+            })
+            .collect())
+    }
+
+    /// Whether the chain reports feature `name` as enabled. A chain that does
+    /// not serve the feature route has none of its features, so an unavailable
+    /// route (404/501) reads as `false`; other errors are returned.
+    pub fn is_protocol_feature_enabled(&self, name: &str) -> Result<bool, RestError> {
+        match self.get_protocol_features() {
+            Ok(list) => Ok(list.iter().any(|(n, on)| n == name && *on)),
+            Err(RestError::Status {
+                status: 404 | 501, ..
+            }) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// The height at which upgrade plan `name` was applied on this chain
+    /// (`/cosmos/upgrade/v1beta1/applied_plan/{name}`), or 0 if it has not been.
+    pub fn get_applied_plan_height(&self, name: &str) -> Result<i64, RestError> {
+        let body = self.get(&format!(
+            "/cosmos/upgrade/v1beta1/applied_plan/{}",
+            urlencode(name)
+        ))?;
+        let h = match body.get("height") {
+            Some(Value::String(s)) => s.parse().unwrap_or(0),
+            Some(Value::Number(n)) => n.as_i64().unwrap_or(0),
+            _ => 0,
+        };
+        Ok(h.max(0))
+    }
+
     /// Raw data-availability blob details (status, size, expiry).
     pub fn get_blob(&self, rollup_id: &str, blob_index: u64) -> Result<Value, RestError> {
         self.get(&format!(

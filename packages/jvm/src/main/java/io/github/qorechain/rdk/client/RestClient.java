@@ -140,6 +140,50 @@ public final class RestClient {
         return Views.mapBatchView(b != null ? Views.asRecord(b) : body);
     }
 
+    /**
+     * The chain's protocol switches ({@code /qorechain/pqc/v1/protocol_features}) as name to
+     * enabled. Chains before the route existed answer 404 or 501, which this throws; see {@link
+     * #isProtocolFeatureEnabled}.
+     */
+    public Map<String, Boolean> getProtocolFeatures() {
+        Map<String, Object> body = get("/qorechain/pqc/v1/protocol_features");
+        Map<String, Boolean> out = new LinkedHashMap<>();
+        Object list = body.get("features");
+        if (list instanceof List) {
+            for (Object f : (List<?>) list) {
+                Map<String, Object> r = Views.asRecord(f);
+                out.put(String.valueOf(r.getOrDefault("name", "")), Boolean.TRUE.equals(r.get("enabled")));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Whether the chain reports feature {@code name} as enabled. A chain that does not serve the
+     * feature route has none of its features, so an unavailable route (404/501) reads as false;
+     * other errors are thrown.
+     */
+    public boolean isProtocolFeatureEnabled(String name) {
+        try {
+            return Boolean.TRUE.equals(getProtocolFeatures().get(name));
+        } catch (RuntimeException err) {
+            String msg = String.valueOf(err.getMessage());
+            if (msg.endsWith(" failed: 404") || msg.endsWith(" failed: 501")) {
+                return false;
+            }
+            throw err;
+        }
+    }
+
+    /**
+     * The height at which upgrade plan {@code name} was applied on this chain ({@code
+     * /cosmos/upgrade/v1beta1/applied_plan/{name}}), or 0 if it has not been.
+     */
+    public long getAppliedPlanHeight(String name) {
+        Map<String, Object> body = get("/cosmos/upgrade/v1beta1/applied_plan/" + pathEscape(name));
+        return Math.max(0, Views.asLong(body.get("height"), 0));
+    }
+
     /** Read raw data-availability blob details. */
     public Map<String, Object> getBlob(String rollupId, long blobIndex) {
         return get("/qorechain/rdk/v1/blob/" + pathEscape(rollupId) + "/" + blobIndex);

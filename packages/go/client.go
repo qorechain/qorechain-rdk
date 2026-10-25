@@ -81,6 +81,11 @@ type BatchView struct {
 	// under the chain's time-based challenge window (v3.2.4). Zero for every
 	// earlier batch, which keeps the block-count window.
 	SubmittedTime int64
+	// WithdrawalsBound reports the chain's v2 transition binding (v3.2.5,
+	// rdk-withdrawals-binding) for this batch. It is true only when the node
+	// serves the field as true; TransitionRootVersionForBatch otherwise decides
+	// by height.
+	WithdrawalsBound bool
 }
 
 // AnchorView holds a subsidiary-layer state anchor committed to the Main Chain
@@ -235,6 +240,8 @@ func MapBatchView(raw map[string]any) BatchView {
 		FinalizedAt:     asNum(pick(raw, "finalized_at", "finalizedAt"), 0),
 		WithdrawalsRoot: asStr(pick(raw, "withdrawals_root", "withdrawalsRoot"), ""),
 		SubmittedTime:   int64(asU64(pick(raw, "submitted_time", "submittedTime"), 0)),
+
+		WithdrawalsBound: pick(raw, "withdrawals_bound", "withdrawalsBound") == true,
 	}
 }
 
@@ -317,6 +324,61 @@ func NewRestClient(baseURL string, doer HTTPDoer) *RestClient {
 		doer = http.DefaultClient
 	}
 	return &RestClient{base: strings.TrimRight(baseURL, "/"), http: doer}
+}
+
+// ProtocolFeature is one protocol switch as the chain reports it.
+type ProtocolFeature struct {
+	Name    string
+	Enabled bool
+}
+
+// GetProtocolFeatures reads the chain's protocol switches
+// (/qorechain/pqc/v1/protocol_features). Chains before the route existed
+// answer 404 or 501, which is returned as an error; see
+// IsProtocolFeatureEnabled.
+func (c *RestClient) GetProtocolFeatures(ctx context.Context) ([]ProtocolFeature, error) {
+	body, err := c.get(ctx, "/qorechain/pqc/v1/protocol_features")
+	if err != nil {
+		return nil, err
+	}
+	list, _ := body["features"].([]any)
+	out := make([]ProtocolFeature, 0, len(list))
+	for _, f := range list {
+		r := asRecord(f)
+		out = append(out, ProtocolFeature{Name: asStr(r["name"], ""), Enabled: r["enabled"] == true})
+	}
+	return out, nil
+}
+
+// IsProtocolFeatureEnabled reports whether the chain has feature name
+// enabled. A chain that does not serve the feature route has none of its
+// features, so an unavailable route (404/501) reads as false; other errors are
+// returned.
+func (c *RestClient) IsProtocolFeatureEnabled(ctx context.Context, name string) (bool, error) {
+	features, err := c.GetProtocolFeatures(ctx)
+	if err != nil {
+		if msg := err.Error(); strings.Contains(msg, " failed: 404") || strings.Contains(msg, " failed: 501") {
+			return false, nil
+		}
+		return false, err
+	}
+	for _, f := range features {
+		if f.Name == name && f.Enabled {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// GetAppliedPlanHeight returns the height at which upgrade plan name was
+// applied on this chain (/cosmos/upgrade/v1beta1/applied_plan/{name}), or 0 if
+// it has not been.
+func (c *RestClient) GetAppliedPlanHeight(ctx context.Context, name string) (int64, error) {
+	body, err := c.get(ctx, "/cosmos/upgrade/v1beta1/applied_plan/"+url.PathEscape(name))
+	if err != nil {
+		return 0, err
+	}
+	return int64(asU64(body["height"], 0)), nil
 }
 
 func (c *RestClient) get(ctx context.Context, path string) (map[string]any, error) {

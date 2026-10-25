@@ -68,6 +68,59 @@ The framework surfaces:
 Wiring `onInvalid` to `challengeBatch` turns the Watchtower into a complete
 auto-challenger; leave it unset to run in observe-only mode.
 
+## Checking a batch against the chain's rule
+
+The chain upholds a fraud challenge against an optimistic batch exactly when
+the batch's published state root differs from the **canonical transition root**
+of its inputs and the proof names that root. You can apply the same rule
+yourself, so a validity predicate needs no knowledge of the rollup's execution:
+
+```ts
+import {
+  batchTransitionRoot,
+  bytesToHex,
+  decodeWireBytes,
+  fraudProof,
+  transitionRootVersionForBatch,
+  type BatchView,
+} from "@qorechain/rdk";
+
+async function canonicalRoot(batch: BatchView): Promise<Uint8Array> {
+  // The binding this batch is judged by: v2 for batches included at or above
+  // the height where chain v3.2.5 was applied, v1 before.
+  const version = await transitionRootVersionForBatch(rdk.rest, batch);
+  return batchTransitionRoot(
+    {
+      chainId: rdk.network.chainId,
+      rollupId: "my-roll",
+      prevStateRoot: decodeWireBytes(batch.prevStateRoot),
+      dataHash: decodeWireBytes(batch.dataHash),
+      txCount: batch.txCount,
+      withdrawalsRoot: decodeWireBytes(batch.withdrawalsRoot),
+    },
+    version,
+  );
+}
+
+watchBatches(rdk, "my-roll", {
+  validate: async (batch) =>
+    bytesToHex(decodeWireBytes(batch.stateRoot)) === bytesToHex(await canonicalRoot(batch)),
+  onInvalid: async ({ batch, window }) => {
+    if (window && !window.open) return;
+    await tx.challengeBatch({
+      rollupId: "my-roll",
+      batchIndex: batch.batchIndex,
+      proof: fraudProof(decodeWireBytes(batch.prevStateRoot), await canonicalRoot(batch)),
+    });
+  },
+});
+```
+
+Use the batch's own binding, not the current one: a proof built on the other
+binding is dismissed and the bond forfeited. The same functions exist in every
+language (`batch_transition_root`, `BatchTransitionRoot`,
+`Transition.root`).
+
 ## How the challenge window is measured
 
 The chain measures a batch's window one of two ways, and chooses **per batch**.

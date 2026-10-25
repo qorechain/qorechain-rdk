@@ -96,6 +96,12 @@ export interface BatchView {
   finalizedAt: number;
   withdrawalsRoot: string;
   /**
+   * Whether the chain judges this batch by the v2 transition binding (chain
+   * v3.2.5, `rdk-withdrawals-binding`). Undefined when the node does not serve
+   * the field; {@link transitionRootVersionForBatch} then decides by height.
+   */
+  withdrawalsBound?: boolean;
+  /**
    * The block time (Unix seconds) of the submission block, for a batch
    * submitted under the chain's time-based challenge window (v3.2.4,
    * `rdk-challenge-window-time`). `0` for every batch before it, which keeps
@@ -211,6 +217,7 @@ export function mapBatchView(raw: RawRecord): BatchView {
     submittedAt: num(pick(raw, "submitted_at", "submittedAt")),
     finalizedAt: num(pick(raw, "finalized_at", "finalizedAt")),
     withdrawalsRoot: str(pick(raw, "withdrawals_root", "withdrawalsRoot")),
+    withdrawalsBound: pick(raw, "withdrawals_bound", "withdrawalsBound") === true ? true : undefined,
     submittedTime: num(pick(raw, "submitted_time", "submittedTime")),
   };
 }

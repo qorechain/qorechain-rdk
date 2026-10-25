@@ -259,8 +259,22 @@ from .rules import (
     withdrawal_errors,
 )
 from .lifecycle.state_machine import ChainTip, ChallengeWindowStatus, batch_challenge_window
+from .transition import (
+    FEATURE_RDK_WITHDRAWALS_BINDING,
+    batch_transition_root,
+    batch_transition_root_v1,
+    batch_transition_root_v2,
+    fraud_proof,
+    transition_root_version_for,
+)
 
 __all__ = [
+    "FEATURE_RDK_WITHDRAWALS_BINDING",
+    "batch_transition_root",
+    "batch_transition_root_v1",
+    "batch_transition_root_v2",
+    "fraud_proof",
+    "transition_root_version_for",
     "data_hash_error",
     "ID_MAX_LENGTH",
     "ID_MIN_LENGTH",

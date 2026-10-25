@@ -73,6 +73,12 @@ public final class Views {
          * window.
          */
         public long submittedTime;
+        /**
+         * Whether the chain judges this batch by the v2 transition binding (chain v3.2.5, {@code
+         * rdk-withdrawals-binding}). True only when the node serves the field as true; {@code
+         * Transition.versionForBatch} otherwise decides by height.
+         */
+        public boolean withdrawalsBound;
     }
 
     /**
@@ -293,6 +299,7 @@ public final class Views {
         b.finalizedAt = asNum(pick(raw, "finalized_at", "finalizedAt"), 0);
         b.withdrawalsRoot = asStr(pick(raw, "withdrawals_root", "withdrawalsRoot"), "");
         b.submittedTime = asLong(pick(raw, "submitted_time", "submittedTime"), 0);
+        b.withdrawalsBound = Boolean.TRUE.equals(pick(raw, "withdrawals_bound", "withdrawalsBound"));
         return b;
     }
 }

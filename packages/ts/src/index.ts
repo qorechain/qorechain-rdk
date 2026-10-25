@@ -59,6 +59,9 @@ export {
 // Client-side copies of chain rules (id grammar, withdrawal checks), so a
 // transaction the chain would refuse is caught before a fee is paid.
 export * from "./rules";
+// The canonical batch transition root the chain judges optimistic batches by,
+// and the fraud-proof layout its verifier reads.
+export * from "./transition";
 
 // Lifecycle: rollup/batch state-machine awareness and challenge-window math.
 export * from "./lifecycle/state-machine";

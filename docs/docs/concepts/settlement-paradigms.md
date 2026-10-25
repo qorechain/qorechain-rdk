@@ -32,6 +32,16 @@ days, on the testnet (about 1 s) roughly 28 hours. See
 Challenges and the operator's response are interactive fraud proofs, backed by a
 challenge bond. Optimistic settlement uses the `fraud` proof system.
 
+**What "fraudulent" means on chain.** The chain does not run your rollup. It
+holds the operator to one rule: a batch's published `stateRoot` must equal the
+**canonical transition root** of the batch's own inputs (previous root, data
+hash, transaction count, and from chain v3.2.5 also the chain id, rollup id and
+withdrawals root). A challenge whose proof names that root is upheld whenever
+the batch published anything else, and from v3.2.5 any account can resolve it,
+paid from the rollup's escrow. Compute the root with `batchTransitionRoot` (see
+[Watchtower](../guides/watchtower.md#checking-a-batch-against-the-chains-rule)):
+a placeholder or a root from your own scheme is provably fraudulent.
+
 **Choose it when** you want low submission overhead and can tolerate delayed
 finality — general-purpose app-chains, NFT platforms, anything not latency-
 critical.
