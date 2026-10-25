@@ -201,8 +201,9 @@ class ReceiptsTest {
         byte[][] evil = Pqc.mldsaKeygen("ml-dsa-87");
         String evilPubHex = Bytes.bytesToHex(evil[0]);
 
+        // A version-1 receipt: it carries no chainId and is signed over v1 bytes.
         SettlementReceipt fake = new SettlementReceipt();
-        fake.version = Receipts.RECEIPT_VERSION;
+        fake.version = 1;
         fake.rollupId = "victim-rollup";
         fake.layerId = "layer-victim";
         fake.batchIndex = 999;

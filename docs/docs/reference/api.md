@@ -77,8 +77,10 @@ produce it.
 
 ### Data availability
 
-- **`buildDaBlob(opts)`** — assemble a native DA blob and compute its
-  `dataHash`, enforcing the maximum blob size.
+- **`buildDaBlob(opts)`** — assemble a blob and compute its SHA-256 commitment,
+  enforcing the maximum blob size. No transaction posts a blob to the chain
+  today, so do **not** put this hash in a batch on a `native` or `both` rollup
+  (see [Data availability](../guides/data-availability.md)).
 - **`assertDaBackendAvailable(backend)`** — guard against not-yet-active
   backends (Celestia / both).
 
@@ -98,6 +100,11 @@ produce it.
 - **`buildSettlementReceipt`** / **`verifySettlementReceipt`** — portable
   receipts, verified against live chain state. Schema version 2 records
   `chainId`; the result reports `signBytesVersion` and a `chainBinding` check.
+  Every receipt field is compared with the chain; the result carries the
+  chain's `anchor` and, when valid, the `verifiedReceipt` rebuilt from chain
+  state.
+- **`receiptSchemaError`** / **`SUPPORTED_RECEIPT_VERSIONS`** — the version,
+  algorithm and required-field check run before any chain read.
 - **`anchorSignBytesV1`** / **`anchorSignBytesV2`** / **`anchorSignBytesVersionFor`**
   — the two canonical anchor messages and the height-based choice between them.
 
@@ -106,6 +113,9 @@ produce it.
 - **`rollupIdError`** / **`isValidRollupId`** — the v3.2.2 id grammar.
 - **`withdrawalErrors`** — the v3.2.3 withdrawal checks (denom, amount, proof
   depth and sibling length, addresses).
+- **`dataHashError`** — a batch on a `native` or `both` DA rollup must leave
+  `dataHash` empty. `RdkTxClient.submitBatch` applies it when it can read the
+  rollup.
 
 ### Multi-VM
 

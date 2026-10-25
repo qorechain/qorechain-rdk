@@ -13,7 +13,7 @@ account derivation) works fully offline.
 
 from __future__ import annotations
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 
 # Constants.
 from .constants import (  # noqa: E402
@@ -215,6 +215,7 @@ from .receipts import (  # noqa: E402
     MODE_SIGNATURE_ONLY,
     RECEIPT_ALGORITHM,
     RECEIPT_VERSION,
+    SUPPORTED_RECEIPT_VERSIONS,
     ReceiptChecks,
     ReceiptVerification,
     ReceiptVerificationMode,
@@ -225,6 +226,7 @@ from .receipts import (  # noqa: E402
     anchor_sign_bytes_version_for,
     ANCHOR_SIGN_DOMAIN_V2,
     build_settlement_receipt,
+    receipt_schema_error,
     verify_settlement_receipt,
 )
 
@@ -251,6 +253,7 @@ from .rules import (
     ID_MIN_LENGTH,
     MAX_WITHDRAWAL_PROOF_DEPTH,
     ROLLUP_ESCROW_DENOM,
+    data_hash_error,
     is_valid_rollup_id,
     rollup_id_error,
     withdrawal_errors,
@@ -258,6 +261,7 @@ from .rules import (
 from .lifecycle.state_machine import ChainTip, ChallengeWindowStatus, batch_challenge_window
 
 __all__ = [
+    "data_hash_error",
     "ID_MAX_LENGTH",
     "ID_MIN_LENGTH",
     "MAX_WITHDRAWAL_PROOF_DEPTH",
@@ -443,6 +447,8 @@ __all__ = [
     "ANCHOR_SIGN_DOMAIN_V2",
     "build_settlement_receipt",
     "verify_settlement_receipt",
+    "receipt_schema_error",
+    "SUPPORTED_RECEIPT_VERSIONS",
     # copilot
     "CopilotSuggestion",
     "RollupAdvice",

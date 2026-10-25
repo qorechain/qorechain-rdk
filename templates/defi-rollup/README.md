@@ -27,7 +27,7 @@ Edit `.env`: set `QORE_NETWORK`, the `QORE_*_URL` endpoints, and your operator k
 ```sh
 pnpm create          # validate the config, show the cost, and create the rollup
 pnpm query-status    # read the rollup config and its latest settlement batch
-pnpm submit-batch    # assemble a native DA blob + SNARK proof and submit a batch
+pnpm submit-batch    # submit a batch with a SNARK proof
 ```
 
 ## Operate

@@ -101,3 +101,19 @@ func preflightMessages(messages []Msg) error {
 	}
 	return nil
 }
+
+// DataHashError says why a batch with dataHash would be refused for a rollup on
+// daBackend, or returns "" if the chain accepts it.
+//
+// On a "native" or "both" rollup the chain accepts a non-empty data_hash only
+// when a matching blob is stored on chain, and no transaction stores one: the
+// batch is refused as data unavailable. Leave it empty there; the batch's state
+// roots and proof still bind it. ("celestia" is not checked by the chain, and
+// is not active on the network.)
+func DataHashError(daBackend string, dataHash []byte) string {
+	if len(dataHash) == 0 || (daBackend != "native" && daBackend != "both") {
+		return ""
+	}
+	return "data_hash must be empty on a rollup with " + daBackend + " data availability: no transaction " +
+		"stores a data-availability blob on chain, so the chain refuses a batch that claims one"
+}

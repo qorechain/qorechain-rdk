@@ -285,13 +285,15 @@ describe("RdkTxClient.submitBatch anchoring (chain v3.2.2+)", () => {
   const layerId = "layer-roll-1";
 
   /** Serve getRollup over the stubbed global fetch. */
-  function stubRollup(creator: string) {
+  function stubRollup(creator: string, daBackend = "") {
     vi.stubGlobal("fetch", async (url: string) => {
       if (String(url).includes("/qorechain/rdk/v1/rollup/")) {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ rollup: { rollup_id: "roll-r", creator, layer_id: layerId, status: "active" } }),
+          json: async () => ({
+            rollup: { rollup_id: "roll-r", creator, layer_id: layerId, status: "active", da_backend: daBackend },
+          }),
         };
       }
       return { ok: false, status: 404, json: async () => ({}) };
@@ -352,6 +354,24 @@ describe("RdkTxClient.submitBatch anchoring (chain v3.2.2+)", () => {
       /not the rollup's creator/,
     );
     expect(broadcasts).toHaveLength(0);
+  });
+
+  it("refuses a data hash on a native-DA rollup before broadcasting", async () => {
+    // No transaction stores a DA blob, so the chain would refuse the batch.
+    const { rdk, address, broadcasts } = await hybridClient();
+    stubRollup(address, "native");
+    await expect(rdk.submitBatch(batch, { fee: FEE })).rejects.toThrow(/dataHash must be empty/);
+    expect(broadcasts).toHaveLength(0);
+  });
+
+  it("submits a native-DA batch that leaves the data hash empty", async () => {
+    const { rdk, address } = await hybridClient();
+    stubRollup(address, "native");
+    const withoutHash: Partial<typeof batch> = { ...batch };
+    delete withoutHash.dataHash;
+    await rdk.submitBatch(withoutHash as Omit<typeof batch, "dataHash">, { fee: FEE });
+    expect(sentMsg().dataHash.length).toBe(0);
+    expect(sentMsg().anchorSignature.length).toBe(4627);
   });
 
   it("never signs with anchor: 'off'", async () => {

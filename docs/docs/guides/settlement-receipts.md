@@ -112,17 +112,37 @@ console.log(result.valid); // true only when the chain confirms the receipt
 console.log(result.mode);  // "chain"
 ```
 
-Verification against a `client` checks **five** things, each read from the chain
-rather than from the receipt:
+Before anything is read from the chain, the receipt's **schema** is checked: a
+`version` other than `1` or `2`, or an `algorithm` other than `ML-DSA-87`, is
+refused rather than guessed at, and a version-2 receipt must carry `chainId`,
+`transactionCount` and `compressedStateProof`.
+
+Verification against a `client` then checks **six** things, each read from the
+chain rather than from the receipt:
 
 1. **`rollupLayerBinding`** — the chain says this rollup belongs to that layer.
-2. **`batchStateRoot`** — the chain's batch carries the receipt's state root.
-3. **`anchorOnChain`** — an anchor with this state root, height, validator-set
-   hash and signature **actually exists on chain**.
+2. **`batchStateRoot`** — the chain's batch carries the receipt's state root
+   (both `stateRoot` and `batchStateRoot`).
+3. **`anchorOnChain`** — an anchor **actually exists on chain** and agrees with
+   the receipt on every anchor field: state root, layer height, validator-set
+   hash, signature, Main Chain height, anchor time, transaction count and
+   compressed state proof. A mismatch names the field.
 4. **`creatorAuthority`** — the signing key is resolved from the chain for the
    rollup's registered creator, never taken from the receipt.
-5. **`pqcSignature`** — the Dilithium-5 signature over the canonical anchor
+5. **`chainBinding`** — the receipt names the network you queried.
+6. **`pqcSignature`** — the Dilithium-5 signature over the canonical anchor
    message verifies under that key.
+
+So every field of a receipt that verifies is bound to chain state. Still, read
+facts from the result rather than from the file: `result.anchor` is the chain's
+own anchor, and on a valid result `result.verifiedReceipt` is the receipt
+rebuilt from chain state.
+
+```ts
+if (result.valid) {
+  const { mainChainHeight, anchoredAt } = result.verifiedReceipt!; // read from chain
+}
+```
 
 ### Signature-only mode
 

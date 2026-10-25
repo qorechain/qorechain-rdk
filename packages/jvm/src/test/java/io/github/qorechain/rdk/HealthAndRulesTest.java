@@ -237,4 +237,13 @@ class HealthAndRulesTest {
         tx.broadcast(List.of(good), new io.github.qorechain.rdk.tx.TxBackend.TxParams());
         assertEquals(1, signed[0]);
     }
+
+    @Test
+    void aDataHashMustBeEmptyOnNativeAndBothDa() {
+        assertNotNull(Rules.dataHashError("native", new byte[] {(byte) 0xbb}));
+        assertNotNull(Rules.dataHashError("both", new byte[] {1}));
+        assertNull(Rules.dataHashError("native", new byte[0]));
+        assertNull(Rules.dataHashError("native", null));
+        assertNull(Rules.dataHashError("celestia", new byte[] {(byte) 0xbb}));
+    }
 }

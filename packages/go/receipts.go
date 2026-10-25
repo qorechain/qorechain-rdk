@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"strings"
 
 	pqc "github.com/qorechain/qorechain-pqc/go"
 )
@@ -12,12 +13,15 @@ import (
 const ReceiptAlgorithm = "ML-DSA-87"
 
 // ReceiptVersion is the current receipt schema version.
-// ReceiptVersion is the current receipt schema version.
 //
 // v2 adds ChainID. The v2 anchor message binds the signature to one network,
 // and a receipt shown to a third party should say which network it is for
 // rather than leave them to assume. Version-1 receipts still verify.
 const ReceiptVersion = 2
+
+// SupportedReceiptVersions are the receipt schema versions this release can
+// verify.
+var SupportedReceiptVersions = []int{1, 2}
 
 // SettlementReceipt is a portable record that a rollup's settlement batch was
 // anchored to the QoreChain Main Chain under a post-quantum (ML-DSA-87 /
@@ -51,20 +55,20 @@ type SettlementReceipt struct {
 	// PqcSignature is the Dilithium-5 anchor signature (hex).
 	PqcSignature string
 	// BatchStateRoot is the state root read from the settlement batch (hex) when
-	// the receipt was built. Informational only — verification compares the
-	// receipt against the chain's batch, never against this copy of it.
+	// the receipt was built. Verification requires it to equal the chain's
+	// batch root.
 	BatchStateRoot string
 	// ChainID is the chain the receipt was built on (e.g. "qorechain-vladi").
 	// It is bound into the v2 anchor signature, and cross-checked against the
 	// node being queried. Empty on version-1 receipts.
 	ChainID string
 	// TransactionCount is the anchor's transaction count, covered by the v2
-	// signature. Carried so a receipt stays self-describing; verification uses
-	// the chain's copy.
+	// signature. Verification requires it to equal the chain's anchor on a
+	// version-2 receipt, and on a version-1 receipt whenever it is non-zero.
 	TransactionCount uint64
 	// CompressedStateProof is the anchor's compressed state proof (hex),
-	// covered by the v2 signature. Empty for a settlement batch. Verification
-	// uses the chain's copy.
+	// covered by the v2 signature. Empty for a settlement batch. Compared like
+	// TransactionCount.
 	CompressedStateProof string
 }
 
@@ -72,7 +76,7 @@ type SettlementReceipt struct {
 type ReceiptVerificationMode string
 
 const (
-	// ReceiptModeChain means every field was reproduced from live chain state.
+	// ReceiptModeChain means every receipt field was checked against live chain state.
 	// Only this mode can yield Valid: true.
 	ReceiptModeChain ReceiptVerificationMode = "chain"
 	// ReceiptModeSignatureOnly means only the ML-DSA-87 signature was checked,
@@ -92,8 +96,10 @@ type ReceiptChecks struct {
 	// BatchStateRoot is true when the chain's batch carries the receipt's state
 	// root.
 	BatchStateRoot bool
-	// AnchorOnChain is true when an anchor with this state root, height,
-	// validator-set hash and signature exists on chain.
+	// AnchorOnChain is true when an anchor exists on chain that matches every
+	// anchor field of the receipt: state root, layer height, validator-set
+	// hash, signature, Main Chain height, anchor time, transaction count and
+	// compressed state proof.
 	AnchorOnChain bool
 	// CreatorAuthority is true when the receipt names the chain's rollup creator
 	// and that creator has a registered post-quantum key (resolved from chain,
@@ -120,6 +126,59 @@ type ReceiptVerification struct {
 	// below it.
 	SignBytesVersion string
 	Reason           string
+	// Anchor is the chain's own anchor the receipt was matched to, once one
+	// was found. Read facts from this, not from the receipt you were handed.
+	Anchor *AnchorView
+	// VerifiedReceipt is the receipt rebuilt from chain state, set only when
+	// Valid is true.
+	VerifiedReceipt *SettlementReceipt
+}
+
+// ReceiptSchemaError says why receipt cannot be verified at all, or returns ""
+// when its version, algorithm and required fields are acceptable. It is
+// checked before anything is read from chain: an unknown version or algorithm
+// is refused, never guessed.
+func ReceiptSchemaError(receipt SettlementReceipt) string {
+	supported := false
+	for _, v := range SupportedReceiptVersions {
+		if receipt.Version == v {
+			supported = true
+		}
+	}
+	if !supported {
+		return fmt.Sprintf("unsupported receipt version %d (this release verifies versions 1 and 2)", receipt.Version)
+	}
+	if receipt.Algorithm != ReceiptAlgorithm {
+		return fmt.Sprintf("unsupported algorithm %q: QoreChain anchors are signed with %s", receipt.Algorithm, ReceiptAlgorithm)
+	}
+	if receipt.Version == 2 && receipt.ChainID == "" {
+		return "a version-2 receipt must name its chain (ChainID)"
+	}
+	return ""
+}
+
+// anchorFieldMismatch names the first anchor field on which receipt and the
+// chain's anchor differ, or returns "". A version-1 receipt may predate the
+// transaction count and proof, so those are compared on it only when set.
+func anchorFieldMismatch(receipt SettlementReceipt, anchor AnchorView) string {
+	if receipt.ValidatorSetHash != anchor.ValidatorSetHash {
+		return fmt.Sprintf("receipt's ValidatorSetHash %q does not match the chain's anchor (%q)", receipt.ValidatorSetHash, anchor.ValidatorSetHash)
+	}
+	if receipt.MainChainHeight != anchor.MainChainHeight {
+		return fmt.Sprintf("receipt's MainChainHeight %d does not match the chain's anchor (%d)", receipt.MainChainHeight, anchor.MainChainHeight)
+	}
+	if receipt.AnchoredAt != anchor.AnchoredAt {
+		return fmt.Sprintf("receipt's AnchoredAt %d does not match the chain's anchor (%d)", receipt.AnchoredAt, anchor.AnchoredAt)
+	}
+	v2 := receipt.Version == 2
+	if (v2 || receipt.TransactionCount != 0) && receipt.TransactionCount != anchor.TransactionCount {
+		return fmt.Sprintf("receipt's TransactionCount %d does not match the chain's anchor (%d)", receipt.TransactionCount, anchor.TransactionCount)
+	}
+	claimed, onChain := strings.ToLower(receipt.CompressedStateProof), strings.ToLower(anchor.CompressedStateProof)
+	if (v2 || claimed != "") && claimed != onChain {
+		return fmt.Sprintf("receipt's CompressedStateProof %q does not match the chain's anchor (%q)", claimed, onChain)
+	}
+	return ""
 }
 
 // AnchorSignDomainV2 tags the v2 anchor sign bytes (chain v3.2.2 and above).
@@ -262,12 +321,18 @@ func BuildSettlementReceipt(ctx context.Context, client *RdkClient, rollupID str
 			"no anchor commits batch %d's state root yet (latest anchored height %d); the batch may not be anchored to the Main Chain",
 			batchIndex, anchor.LayerHeight)
 	}
+	return receiptFromParts(rollupID, rollup.LayerID, batchIndex, rollup.Creator, *anchor,
+		batchStateRootHex, client.Network.ChainID), nil
+}
+
+func receiptFromParts(rollupID, layerID string, batchIndex uint64, creator string,
+	anchor AnchorView, batchStateRootHex, chainID string) SettlementReceipt {
 	return SettlementReceipt{
 		Version:          ReceiptVersion,
 		RollupID:         rollupID,
-		LayerID:          rollup.LayerID,
+		LayerID:          layerID,
 		BatchIndex:       batchIndex,
-		Creator:          rollup.Creator,
+		Creator:          creator,
 		Algorithm:        ReceiptAlgorithm,
 		StateRoot:        anchor.StateRoot,
 		LayerHeight:      anchor.LayerHeight,
@@ -277,10 +342,10 @@ func BuildSettlementReceipt(ctx context.Context, client *RdkClient, rollupID str
 		PqcSignature:     anchor.PqcSignature,
 		BatchStateRoot:   batchStateRootHex,
 
-		ChainID:              client.Network.ChainID,
+		ChainID:              chainID,
 		TransactionCount:     anchor.TransactionCount,
 		CompressedStateProof: anchor.CompressedStateProof,
-	}, nil
+	}
 }
 
 // signatureOver verifies an anchor's post-quantum signature.
@@ -347,6 +412,14 @@ func receiptAsAnchor(receipt SettlementReceipt) AnchorView {
 func VerifySettlementReceipt(ctx context.Context, receipt SettlementReceipt, creatorPublicKeyHex string, client *RdkClient) ReceiptVerification {
 	checks := ReceiptChecks{}
 
+	if reason := ReceiptSchemaError(receipt); reason != "" {
+		mode := ReceiptModeChain
+		if client == nil {
+			mode = ReceiptModeSignatureOnly
+		}
+		return ReceiptVerification{Valid: false, Mode: mode, Checks: checks, Reason: reason}
+	}
+
 	if client == nil {
 		if creatorPublicKeyHex == "" {
 			return ReceiptVerification{
@@ -410,12 +483,15 @@ func VerifySettlementReceipt(ctx context.Context, receipt SettlementReceipt, cre
 		return fail("batch %d not found on chain: %v", receipt.BatchIndex, err)
 	}
 	onChainRoot := hexWireBytes(batch.StateRoot)
-	checks.BatchStateRoot = onChainRoot != "" && onChainRoot == receipt.StateRoot
+	checks.BatchStateRoot = onChainRoot != "" && onChainRoot == receipt.StateRoot &&
+		onChainRoot == receipt.BatchStateRoot
 	if !checks.BatchStateRoot {
-		return fail("the chain's batch does not carry the receipt's state root")
+		return fail("the chain's batch does not carry the receipt's state root (StateRoot and BatchStateRoot)")
 	}
 
-	// 3. An anchor matching this receipt must actually exist on chain.
+	// 3. An anchor matching this receipt must actually exist on chain, and agree
+	//    with it on every anchor field the receipt states. The matched anchor,
+	//    not the receipt, is what step 6 verifies and what is returned.
 	anchors, err := rest.GetAnchors(ctx, receipt.LayerID)
 	if err != nil {
 		return fail("could not read anchors for layer %q: %v", receipt.LayerID, err)
@@ -425,9 +501,7 @@ func VerifySettlementReceipt(ctx context.Context, receipt SettlementReceipt, cre
 		a := anchors[i]
 		if a.StateRoot == receipt.StateRoot &&
 			a.LayerHeight == receipt.LayerHeight &&
-			a.ValidatorSetHash == receipt.ValidatorSetHash &&
 			a.PqcSignature == receipt.PqcSignature {
-			checks.AnchorOnChain = true
 			matched = &a
 			break
 		}
@@ -435,18 +509,27 @@ func VerifySettlementReceipt(ctx context.Context, receipt SettlementReceipt, cre
 	if matched == nil {
 		return fail("no anchor on chain matches this receipt — it is fabricated or superseded")
 	}
+	failAt := func(format string, args ...any) ReceiptVerification {
+		v := fail(format, args...)
+		v.Anchor = matched
+		return v
+	}
+	if mismatch := anchorFieldMismatch(receipt, *matched); mismatch != "" {
+		return failAt("%s", mismatch)
+	}
+	checks.AnchorOnChain = true
 
 	// 4. The signing key is resolved from the chain, never taken from the receipt.
 	account, err := rest.GetPqcAccount(ctx, rollup.Creator)
 	if err != nil {
-		return fail("could not resolve the creator's post-quantum key: %v", err)
+		return failAt("could not resolve the creator's post-quantum key: %v", err)
 	}
 	if receipt.Creator != rollup.Creator {
-		return fail("receipt names creator %q but the chain says the rollup's creator is %q", receipt.Creator, rollup.Creator)
+		return failAt("receipt names creator %q but the chain says the rollup's creator is %q", receipt.Creator, rollup.Creator)
 	}
 	checks.CreatorAuthority = account.PublicKey != ""
 	if !checks.CreatorAuthority {
-		return fail("no post-quantum key is registered for creator %s", rollup.Creator)
+		return failAt("no post-quantum key is registered for creator %s", rollup.Creator)
 	}
 
 	// 5. The receipt must name the chain we actually queried. A version-1
@@ -455,7 +538,7 @@ func VerifySettlementReceipt(ctx context.Context, receipt SettlementReceipt, cre
 	// read rather than the receipt's own word.
 	chainID := client.Network.ChainID
 	if receipt.ChainID != "" && receipt.ChainID != chainID {
-		return fail("receipt is for chain %q but this client is connected to %q — verify it against a node for its own network",
+		return failAt("receipt is for chain %q but this client is connected to %q — verify it against a node for its own network",
 			receipt.ChainID, chainID)
 	}
 	checks.ChainBinding = true
@@ -470,10 +553,20 @@ func VerifySettlementReceipt(ctx context.Context, receipt SettlementReceipt, cre
 			Mode:             ReceiptModeChain,
 			Checks:           checks,
 			SignBytesVersion: version,
+			Anchor:           matched,
 			Reason: fmt.Sprintf(
 				"Dilithium-5 anchor signature did not verify against the creator's registered key (checked as %s, for an anchor at height %d)",
 				version, matched.MainChainHeight),
 		}
 	}
-	return ReceiptVerification{Valid: true, Mode: ReceiptModeChain, Checks: checks, SignBytesVersion: version}
+	verified := receiptFromParts(receipt.RollupID, rollup.LayerID, receipt.BatchIndex, rollup.Creator,
+		*matched, receipt.BatchStateRoot, chainID)
+	return ReceiptVerification{
+		Valid:            true,
+		Mode:             ReceiptModeChain,
+		Checks:           checks,
+		SignBytesVersion: version,
+		Anchor:           matched,
+		VerifiedReceipt:  &verified,
+	}
 }

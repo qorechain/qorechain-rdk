@@ -10,11 +10,14 @@ import (
 const DACelestiaUnavailableMessage = "Celestia data availability is selectable but not yet active on the QoreChain " +
 	"network. Use the 'native' backend, or wait until Celestia is enabled."
 
-// DaBlob is a prepared native DA blob and the commitment to place in a batch.
+// DaBlob is a prepared DA blob and its SHA-256 commitment. No transaction posts
+// a blob to the native DA store yet, so on a "native" or "both" rollup the chain
+// refuses a batch whose data_hash claims one: leave it empty there (see
+// DataHashError).
 type DaBlob struct {
 	// Data is the blob bytes.
 	Data []byte
-	// DataHash is the SHA-256 of the blob, 0x-prefixed, for the batch data_hash.
+	// DataHash is the SHA-256 of the blob, 0x-prefixed.
 	DataHash string
 	// Size is the blob size in bytes.
 	Size int

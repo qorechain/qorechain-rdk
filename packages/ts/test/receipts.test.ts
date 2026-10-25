@@ -332,4 +332,73 @@ describe("settlement receipts on a v2 network", () => {
     expect(v.checks.chainBinding).toBe(false);
     expect(v.reason).toMatch(/qorechain-vladi.*qorechain-diana|own network/s);
   });
+
+  it("returns the chain's anchor and a receipt rebuilt from chain state", async () => {
+    const c = client();
+    const receipt = await buildSettlementReceipt(c, "r", batchIndex);
+    const v = await verifySettlementReceipt(receipt, { client: c });
+    expect(v.valid).toBe(true);
+    expect(v.anchor?.mainChainHeight).toBe(anchoredAtHeight);
+    expect(v.verifiedReceipt).toEqual(receipt);
+  });
+
+  // Every anchor field the receipt states is bound to the chain, not only the
+  // four the signature lookup uses. Each forged copy below keeps a genuine
+  // signature, so only the field comparison can catch it.
+  it.each([
+    ["mainChainHeight", { mainChainHeight: 999_999 }],
+    ["anchoredAt", { anchoredAt: 9_999_999_999 }],
+    ["validatorSetHash", { validatorSetHash: "00".repeat(32) }],
+    ["transactionCount", { transactionCount: txCount + 1 }],
+    ["compressedStateProof", { compressedStateProof: "deadbeef" }],
+  ] as const)("refuses a genuine receipt with a forged %s", async (field, forged) => {
+    const c = client();
+    const receipt = await buildSettlementReceipt(c, "r", batchIndex);
+    const v = await verifySettlementReceipt({ ...receipt, ...forged }, { client: c });
+    expect(v.valid).toBe(false);
+    expect(v.checks.anchorOnChain).toBe(false);
+    expect(v.reason).toContain(field);
+    expect(v.verifiedReceipt).toBeUndefined();
+  });
+
+  it("refuses a forged batchStateRoot", async () => {
+    const c = client();
+    const receipt = await buildSettlementReceipt(c, "r", batchIndex);
+    const v = await verifySettlementReceipt({ ...receipt, batchStateRoot: "11".repeat(32) }, { client: c });
+    expect(v.valid).toBe(false);
+    expect(v.checks.batchStateRoot).toBe(false);
+  });
+
+  it.each([
+    ["an unknown version", { version: 99 }, /unsupported receipt version 99/],
+    ["a non-integer version", { version: 2.5 }, /unsupported receipt version/],
+    ["another algorithm", { algorithm: "ML-DSA-44" }, /unsupported algorithm "ML-DSA-44"/],
+    ["a v2 receipt without chainId", { chainId: undefined }, /chainId/],
+    ["a v2 receipt without transactionCount", { transactionCount: undefined }, /transactionCount/],
+  ] as const)("refuses %s before reading the chain", async (_name, forged, reason) => {
+    let calls = 0;
+    const counting = createRdkClient({
+      network: "testnet",
+      endpoints: { rest: "http://node" },
+      fetch: async () => {
+        calls++;
+        return new Response("{}");
+      },
+    });
+    const receipt = await buildSettlementReceipt(client(), "r", batchIndex);
+    const v = await verifySettlementReceipt({ ...receipt, ...forged }, { client: counting });
+    expect(v.valid).toBe(false);
+    expect(v.reason).toMatch(reason);
+    expect(calls).toBe(0);
+  });
+
+  it("still verifies a version-1 receipt, which carries no chainId or v2 fields", async () => {
+    const c = client();
+    const v1 = { ...(await buildSettlementReceipt(c, "r", batchIndex)), version: 1 };
+    delete v1.chainId;
+    delete v1.transactionCount;
+    delete v1.compressedStateProof;
+    const v = await verifySettlementReceipt(v1, { client: c });
+    expect(v.valid).toBe(true);
+  });
 });

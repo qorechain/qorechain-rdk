@@ -302,3 +302,90 @@ def test_receipt_for_another_chain_is_refused(golden):
     assert v.valid is False
     assert v.checks.chain_binding is False
     assert "qorechain-vladi" in (v.reason or "")
+
+
+def test_valid_result_returns_the_chain_anchor_and_rebuilt_receipt(golden):
+    client, _ = _client(golden)
+    receipt = build_settlement_receipt(client, "r1", 0)
+    v = verify_settlement_receipt(receipt, client=client)
+    assert v.valid is True
+    assert v.anchor is not None and v.anchor.main_chain_height == 1000
+    assert v.verified_receipt == receipt
+
+
+import pytest  # noqa: E402
+
+
+# Every anchor field the receipt states is bound to the chain, not only the
+# four the anchor lookup uses. Each forged copy keeps a genuine signature, so
+# only the field comparison can catch it.
+@pytest.mark.parametrize(
+    "field_name,forged",
+    [
+        ("main_chain_height", {"main_chain_height": 999999}),
+        ("anchored_at", {"anchored_at": 9999999999}),
+        ("validator_set_hash", {"validator_set_hash": "00" * 32}),
+        ("transaction_count", {"transaction_count": 8}),
+        ("compressed_state_proof", {"compressed_state_proof": "deadbeef"}),
+    ],
+)
+def test_forged_anchor_metadata_is_refused(golden, field_name, forged):
+    from dataclasses import replace
+
+    client, _ = _client(golden)
+    receipt = build_settlement_receipt(client, "r1", 0)
+    v = verify_settlement_receipt(replace(receipt, **forged), client=client)
+    assert v.valid is False
+    assert v.checks.anchor_on_chain is False
+    assert field_name in (v.reason or "")
+    assert v.verified_receipt is None
+
+
+def test_forged_batch_state_root_is_refused(golden):
+    from dataclasses import replace
+
+    client, _ = _client(golden)
+    receipt = build_settlement_receipt(client, "r1", 0)
+    v = verify_settlement_receipt(replace(receipt, batch_state_root="11" * 32), client=client)
+    assert v.valid is False
+    assert v.checks.batch_state_root is False
+
+
+@pytest.mark.parametrize(
+    "forged,reason",
+    [
+        ({"version": 99}, "unsupported receipt version 99"),
+        ({"version": True}, "unsupported receipt version"),
+        ({"algorithm": "ML-DSA-44"}, "unsupported algorithm 'ML-DSA-44'"),
+        ({"chain_id": None}, "chain_id"),
+        ({"transaction_count": None}, "transaction_count"),
+    ],
+)
+def test_unknown_schema_is_refused_before_reading_the_chain(golden, forged, reason):
+    from dataclasses import replace
+
+    client, _ = _client(golden)
+    receipt = build_settlement_receipt(client, "r1", 0)
+    calls = []
+
+    def counting(method, url, headers=None, body=None):
+        calls.append(url)
+        return HttpResponse(404, "Not Found", "{}")
+
+    v = verify_settlement_receipt(
+        replace(receipt, **forged), client=create_rdk_client(transport=counting)
+    )
+    assert v.valid is False
+    assert reason in (v.reason or "")
+    assert calls == []
+
+
+def test_version_1_receipt_without_v2_fields_still_verifies(golden):
+    from dataclasses import replace
+
+    client, _ = _client(golden)
+    receipt = build_settlement_receipt(client, "r1", 0)
+    v1 = replace(
+        receipt, version=1, chain_id=None, transaction_count=None, compressed_state_proof=None
+    )
+    assert verify_settlement_receipt(v1, client=client).valid is True

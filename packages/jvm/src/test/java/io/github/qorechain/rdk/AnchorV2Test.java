@@ -72,6 +72,7 @@ class AnchorV2Test {
         // to stop, so the verifier must refuse.
         SettlementReceipt r = new SettlementReceipt();
         r.rollupId = "roll-1";
+        r.chainId = "qorechain-diana";
         ReceiptVerification v =
                 Receipts.verifySettlementReceipt(
                         r, new Receipts.VerifyReceiptOptions().rest(new RestClient("http://unused", new io.github.qorechain.rdk.client.HttpTransport())));

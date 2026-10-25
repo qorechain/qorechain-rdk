@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  dataHashError,
   isValidRollupId,
   rollupIdError,
   withdrawalErrors,
@@ -80,5 +81,22 @@ describe("withdrawal pre-checks (chain v3.2.3+)", () => {
     // Ids created before v3.2.2 may sit outside it and stay valid; the chain
     // checks only emptiness for a withdrawal.
     expect(withdrawalErrors({ ...good(), rollupId: "Legacy/ID" })).toEqual([]);
+  });
+});
+
+describe("dataHashError", () => {
+  it("refuses a data hash on native and both DA, where no blob can be stored", () => {
+    expect(dataHashError("native", "bb")).toMatch(/must be empty/);
+    expect(dataHashError("both", new Uint8Array([1]))).toMatch(/must be empty/);
+  });
+
+  it("accepts an empty data hash in any spelling", () => {
+    for (const empty of [undefined, "", "0x", new Uint8Array()]) {
+      expect(dataHashError("native", empty)).toBeUndefined();
+    }
+  });
+
+  it("leaves other backends to the chain", () => {
+    expect(dataHashError("celestia", "bb")).toBeUndefined();
   });
 });

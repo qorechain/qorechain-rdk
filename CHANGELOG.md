@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.6.1
+
+### Security
+
+- **Settlement-receipt verification now binds every field of the receipt.**
+  Reported through the Break QoreChain bug bounty. Verification matched the
+  chain's anchor on its state root, layer height, validator-set hash and
+  signature, but never compared the receipt's `mainChainHeight`, `anchoredAt`,
+  `algorithm` or `version`, nor, on a version-2 receipt, its
+  `transactionCount` and `compressedStateProof`; `batchStateRoot` was also only
+  informational. A genuine receipt with those fields altered still verified, and
+  `qorollup receipt verify` said every field had been reproduced from chain.
+  The settlement claim itself was always bound (state root, anchor signature,
+  creator key), so no settlement could be forged; what a relying party could
+  not trust was the metadata shown next to it. Now, in all five languages:
+  - every anchor field the receipt states must equal the chain's anchor, and a
+    mismatch names the field;
+  - `batchStateRoot` must equal the chain's batch root;
+  - a receipt with an unknown `version` or an `algorithm` other than `ML-DSA-87`
+    is refused before anything is read from chain, and a version-2 receipt must
+    carry `chainId` (and, where the language can tell, `transactionCount` and
+    `compressedStateProof`);
+  - the result carries the chain's matched `anchor` and, when valid, a
+    `verifiedReceipt` rebuilt from chain state (`verified_receipt` in Python and
+    Rust, `VerifiedReceipt` in Go);
+  - `qorollup receipt verify --json` returns that chain-read receipt as
+    `receipt` (`null` when not valid) instead of echoing the file, and the
+    success line names the fields that were checked.
+
+  Version-1 receipts, which predate the transaction count and proof, still
+  verify; those two fields are compared on them only when present.
+
+### Fixed
+
+- **The rollup templates submitted batches the chain refuses.** All six
+  starter templates put a `dataHash` on their batches, but every rollup profile
+  uses `native` data availability, where the chain accepts a non-empty
+  `data_hash` only when a matching blob is stored on chain, and no transaction
+  stores one. Every template batch was refused, after paying the fee. The
+  templates now leave `dataHash` empty, and the data-availability docs (which
+  said the chain stores the blob) are corrected.
+- **`RdkTxClient.submitBatch` refuses such a batch before broadcasting** when it
+  can read the rollup (a hybrid client with a REST endpoint).
+
+### Added
+
+- `dataHashError` (`data_hash_error`, `DataHashError`, `Rules.dataHashError`):
+  the native/both data-hash rule, in all five languages.
+- `receiptSchemaError` and `SUPPORTED_RECEIPT_VERSIONS` in all five languages.
+
+### Changed
+
+- `SubmitBatchInput.dataHash` is optional in TypeScript; omitted means empty.
+- The templates pin `@qorechain/rdk ^0.6.1`.
+
 ## 0.6.0
 
 Ready for QoreChain v3.2.2 through v3.2.4. Every finding below was checked

@@ -32,7 +32,7 @@ Edit `.env`: set `QORE_NETWORK`, the `QORE_*_URL` endpoints, and your operator k
 ```sh
 pnpm create          # validate the config, show the cost, and create the rollup
 pnpm query-status    # read the rollup config and its latest settlement batch
-pnpm submit-batch    # assemble a native DA blob and submit a batch (no proof)
+pnpm submit-batch    # submit a batch (no proof)
 ```
 
 ## Operate
@@ -52,8 +52,9 @@ The enterprise profile settles via the **based** paradigm, whose proof system is
 `none`. Host-chain proposers include the rollup's batches directly, so a
 settlement batch is submitted **without** a `proof` field — there is no
 SNARK/STARK or fraud proof to generate. `src/submit-batch.ts` shows the flow:
-build the native DA blob, then `tx.submitBatch(...)` with the batch roots and
-`dataHash` only.
+`tx.submitBatch(...)` with the batch roots only. It leaves `dataHash` empty: no
+transaction posts a data-availability blob to the chain yet, so the chain
+refuses a batch that claims one.
 
 The compatibility matrix (enforced on `.validate()` / `.build()`) requires based
 settlement to use the `none` proof system and the based sequencer mode.

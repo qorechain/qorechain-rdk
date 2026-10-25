@@ -162,3 +162,14 @@ fn time_window_applies_when_the_submission_time_is_recorded() {
     assert_eq!(w.seconds_remaining, Some(100));
     assert!(w.open && !w.finalizable);
 }
+
+#[test]
+fn data_hash_must_be_empty_on_native_and_both_da() {
+    use qorechain_rdk::rules::data_hash_error;
+    assert!(data_hash_error("native", &[0xbb])
+        .unwrap()
+        .contains("must be empty"));
+    assert!(data_hash_error("both", &[1]).is_some());
+    assert!(data_hash_error("native", &[]).is_none());
+    assert!(data_hash_error("celestia", &[0xbb]).is_none());
+}

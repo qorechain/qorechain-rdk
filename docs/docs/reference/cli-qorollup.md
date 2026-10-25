@@ -243,13 +243,23 @@ Receipt claims — my-roll batch #7
 
   PASS  rollup belongs to the receipt's layer
   PASS  chain's batch carries the receipt's state root
-  PASS  a matching anchor exists on chain
+  PASS  a matching anchor exists on chain (heights, time, validator set, tx count, proof)
   PASS  creator matches the chain and has a registered key
+  PASS  receipt names the network that was queried
   PASS  quantum-safe anchor signature verifies
 
-✓ Receipt is genuine — every field was reproduced from live chain state on
-  mainnet. Your trust anchor is the node you queried.
+✓ Receipt is genuine on mainnet: the rollup and its layer, the batch's state
+  root, the anchor (state root, layer and Main Chain heights, anchor time,
+  validator set, transaction count, proof, signature), the creator and the
+  network all match live chain state, and the signature verifies under the
+  creator's registered key. Your trust anchor is the node you queried.
 ```
+
+With `--json` the output is `{ valid, receipt, verification }`, where `receipt`
+is the receipt **as read from the chain** (or `null` when it did not verify),
+never the file's own copy: a relying party reading the JSON gets chain facts
+only. A receipt with an unknown `version` or `algorithm` is refused before the
+chain is queried.
 
 The exit code is `0` only when the receipt is genuine, so this is safe to use in
 a script or a CI gate. A malformed or truncated file is reported as such (naming

@@ -1,12 +1,10 @@
 import "dotenv/config";
-import { buildDaBlob } from "@qorechain/rdk";
 import { getClient, ROLLUP_ID } from "./client.js";
 import { connectOperator } from "./signer.js";
 import { generateProof } from "./prover.js";
 
 async function main(): Promise<void> {
   const client = getClient();
-  const params = await client.params();
   // Signs hybrid: both networks refuse a classical-only native-lane transaction.
   const tx = await connectOperator(client);
 
@@ -15,11 +13,9 @@ async function main(): Promise<void> {
   const stateRoot = `0x${"11".repeat(32)}`;
   const prevStateRoot = `0x${"00".repeat(32)}`;
 
-  // Assemble the native DA blob and its commitment for the batch.
-  const blob = buildDaBlob({
-    data: new TextEncoder().encode("example batch data"),
-    maxBlobSize: params.maxDaBlobSize,
-  });
+  // No data hash: on QoreChain's native data availability no transaction
+  // stores the blob on chain, so the chain refuses a batch whose data_hash
+  // claims one. The state roots and proof bind the batch.
 
   // Assemble the SNARK proof (reference prover). On-chain verification gates
   // finalization.
@@ -31,7 +27,6 @@ async function main(): Promise<void> {
     stateRoot,
     prevStateRoot,
     txCount: 1,
-    dataHash: blob.dataHash,
     proof,
   });
   console.log(`Batch submitted: ${res.transactionHash} (code ${res.code})`);

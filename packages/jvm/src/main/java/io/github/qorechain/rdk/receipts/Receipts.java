@@ -11,6 +11,7 @@ import io.github.qorechain.rdk.util.Bytes;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import network.qorechain.pqc.Pqc;
 
 /**
@@ -45,6 +46,9 @@ public final class Receipts {
      */
     public static final int RECEIPT_VERSION = 2;
 
+    /** The receipt schema versions this release can verify. */
+    public static final List<Integer> SUPPORTED_RECEIPT_VERSIONS = List.of(1, 2);
+
     /** Domain tag of the v2 anchor sign bytes (chain v3.2.2 and above). */
     public static final String ANCHOR_SIGN_DOMAIN_V2 = "qorechain-multilayer-anchor-v2";
 
@@ -78,8 +82,7 @@ public final class Receipts {
         public String pqcSignature = "";
         /**
          * The state root read from the settlement batch (hex) when the receipt was built.
-         * Informational only — verification compares the receipt against the chain's batch, never
-         * against this copy of it.
+         * Verification requires it to equal the chain's batch root.
          */
         public String batchStateRoot = "";
         /**
@@ -88,9 +91,16 @@ public final class Receipts {
          * version-1 receipts.
          */
         public String chainId;
-        /** The anchor's transaction count, covered by the v2 signature (the chain's copy is used). */
+        /**
+         * The anchor's transaction count, covered by the v2 signature. Verification requires it to
+         * equal the chain's anchor on a version-2 receipt, and on a version-1 receipt whenever it
+         * is non-zero.
+         */
         public long transactionCount;
-        /** The anchor's compressed state proof (hex), covered by v2. Empty for a settlement batch. */
+        /**
+         * The anchor's compressed state proof (hex), covered by v2. Empty for a settlement batch.
+         * Compared like {@link #transactionCount}.
+         */
         public String compressedStateProof = "";
     }
 
@@ -98,7 +108,7 @@ public final class Receipts {
      * How a receipt was checked.
      *
      * <ul>
-     *   <li>{@link #CHAIN} — every field was reproduced from live chain state. Only this mode can
+     *   <li>{@link #CHAIN} — every receipt field was checked against live chain state. Only this mode can
      *       yield {@code valid = true}.
      *   <li>{@link #SIGNATURE_ONLY} — the ML-DSA-87 signature was checked against a key the caller
      *       supplied. That proves whoever holds that key signed these bytes; it does <b>not</b>
@@ -132,7 +142,11 @@ public final class Receipts {
         public boolean rollupLayerBinding;
         /** The chain's batch carries the receipt's state root. */
         public boolean batchStateRoot;
-        /** An anchor with this state root, height, validator-set hash and signature exists on chain. */
+        /**
+         * An anchor exists on chain that matches every anchor field of the receipt: state root,
+         * layer height, validator-set hash, signature, Main Chain height, anchor time, transaction
+         * count and compressed state proof.
+         */
         public boolean anchorOnChain;
         /** The signing key was resolved from chain, not taken from the receipt. */
         public boolean creatorAuthority;
@@ -155,6 +169,72 @@ public final class Receipts {
         /** Which anchor message the signature was checked against ({@code v2} from the switch). */
         public AnchorSignBytesVersion signBytesVersion;
         public String reason;
+        /**
+         * The chain's own anchor the receipt was matched to, once one was found. Read facts from
+         * this, not from the receipt you were handed.
+         */
+        public AnchorView anchor;
+        /** The receipt rebuilt from chain state, set only when {@code valid} is true. */
+        public SettlementReceipt verifiedReceipt;
+    }
+
+    /**
+     * Why {@code receipt} cannot be verified at all, or {@code null} when its version, algorithm
+     * and required fields are acceptable. Checked before anything is read from chain: an unknown
+     * version or algorithm is refused, never guessed.
+     */
+    public static String receiptSchemaError(SettlementReceipt receipt) {
+        if (!SUPPORTED_RECEIPT_VERSIONS.contains(receipt.version)) {
+            return "unsupported receipt version "
+                    + receipt.version
+                    + " (this release verifies versions 1 and 2)";
+        }
+        if (!RECEIPT_ALGORITHM.equals(receipt.algorithm)) {
+            return "unsupported algorithm \""
+                    + receipt.algorithm
+                    + "\": QoreChain anchors are signed with "
+                    + RECEIPT_ALGORITHM;
+        }
+        if (receipt.version == 2 && (receipt.chainId == null || receipt.chainId.isEmpty())) {
+            return "a version-2 receipt must name its chain (chainId)";
+        }
+        return null;
+    }
+
+    /**
+     * The first anchor field on which {@code receipt} and the chain's {@code anchor} differ, or
+     * {@code null}. A version-1 receipt may predate the transaction count and proof, so those are
+     * compared on it only when set.
+     */
+    private static String anchorFieldMismatch(SettlementReceipt receipt, AnchorView anchor) {
+        if (!java.util.Objects.equals(receipt.validatorSetHash, anchor.validatorSetHash)) {
+            return mismatch("validatorSetHash", "\"" + receipt.validatorSetHash + "\"",
+                    "\"" + anchor.validatorSetHash + "\"");
+        }
+        if (receipt.mainChainHeight != anchor.mainChainHeight) {
+            return mismatch("mainChainHeight", receipt.mainChainHeight, anchor.mainChainHeight);
+        }
+        if (receipt.anchoredAt != anchor.anchoredAt) {
+            return mismatch("anchoredAt", receipt.anchoredAt, anchor.anchoredAt);
+        }
+        boolean v2 = receipt.version == 2;
+        if ((v2 || receipt.transactionCount != 0) && receipt.transactionCount != anchor.transactionCount) {
+            return mismatch("transactionCount", receipt.transactionCount, anchor.transactionCount);
+        }
+        String claimed = lower(receipt.compressedStateProof);
+        String onChain = lower(anchor.compressedStateProof);
+        if ((v2 || !claimed.isEmpty()) && !claimed.equals(onChain)) {
+            return mismatch("compressedStateProof", "\"" + claimed + "\"", "\"" + onChain + "\"");
+        }
+        return null;
+    }
+
+    private static String mismatch(String field, Object claimed, Object onChain) {
+        return "receipt's " + field + " " + claimed + " does not match the chain's anchor (" + onChain + ")";
+    }
+
+    private static String lower(String s) {
+        return s == null ? "" : s.toLowerCase(Locale.ROOT);
     }
 
     /** Encode a uint64 as 8 big-endian bytes. */
@@ -474,6 +554,12 @@ public final class Receipts {
         ReceiptVerification v = new ReceiptVerification();
         VerifyReceiptOptions opts = options == null ? new VerifyReceiptOptions() : options;
 
+        String schemaError = receiptSchemaError(receipt);
+        if (schemaError != null) {
+            v.mode = opts.rest == null ? ReceiptVerificationMode.SIGNATURE_ONLY : ReceiptVerificationMode.CHAIN;
+            return fail(v, schemaError);
+        }
+
         if (opts.rest == null) {
             v.mode = ReceiptVerificationMode.SIGNATURE_ONLY;
             if (opts.creatorPublicKeyHex == null || opts.creatorPublicKeyHex.isEmpty()) {
@@ -548,27 +634,32 @@ public final class Receipts {
                     (batch.stateRoot == null || batch.stateRoot.isEmpty())
                             ? ""
                             : Bytes.bytesToHex(Bytes.decodeWireBytes(batch.stateRoot));
-            v.checks.batchStateRoot = !onChainRoot.isEmpty() && onChainRoot.equals(receipt.stateRoot);
+            v.checks.batchStateRoot =
+                    !onChainRoot.isEmpty()
+                            && onChainRoot.equals(receipt.stateRoot)
+                            && onChainRoot.equals(receipt.batchStateRoot);
         } catch (RuntimeException err) {
             return fail(
                     v,
                     "batch " + receipt.batchIndex + " not found on chain: " + err.getMessage());
         }
         if (!v.checks.batchStateRoot) {
-            return fail(v, "the chain's batch does not carry the receipt's state root");
+            return fail(
+                    v,
+                    "the chain's batch does not carry the receipt's state root (stateRoot and"
+                            + " batchStateRoot)");
         }
 
-        // 3. An anchor matching this receipt must actually exist on chain.
-        // The matched anchor is kept: it, not the receipt, is what step 6 verifies.
+        // 3. An anchor matching this receipt must actually exist on chain, and agree with it on
+        // every anchor field the receipt states. The matched anchor is kept: it, not the receipt,
+        // is what step 6 verifies and what is returned.
         AnchorView matched = null;
         try {
             List<AnchorView> anchors = rest.getAnchors(receipt.layerId);
             for (AnchorView a : anchors) {
                 if (eq(a.stateRoot, receipt.stateRoot)
                         && a.layerHeight == receipt.layerHeight
-                        && eq(a.validatorSetHash, receipt.validatorSetHash)
                         && eq(a.pqcSignature, receipt.pqcSignature)) {
-                    v.checks.anchorOnChain = true;
                     matched = a;
                     break;
                 }
@@ -581,9 +672,15 @@ public final class Receipts {
                             + "\": "
                             + err.getMessage());
         }
-        if (!v.checks.anchorOnChain) {
+        if (matched == null) {
             return fail(v, "no anchor on chain matches this receipt — it is fabricated or superseded");
         }
+        v.anchor = matched;
+        String mismatch = anchorFieldMismatch(receipt, matched);
+        if (mismatch != null) {
+            return fail(v, mismatch);
+        }
+        v.checks.anchorOnChain = true;
 
         // 4. The signing key is resolved from the chain, never taken from the receipt.
         String publicKeyHex;
@@ -640,6 +737,15 @@ public final class Receipts {
         }
         v.valid = true;
         v.reason = null;
+        v.verifiedReceipt =
+                receiptFromParts(
+                        receipt.rollupId,
+                        rollup.layerId,
+                        receipt.batchIndex,
+                        rollup.creator,
+                        matched,
+                        receipt.batchStateRoot,
+                        chainId);
         return v;
     }
 

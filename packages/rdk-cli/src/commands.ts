@@ -462,8 +462,9 @@ function readReceiptFile(path: string): SettlementReceipt {
 const CHECK_LABELS: ReadonlyArray<readonly [keyof ReceiptVerification["checks"], string]> = [
   ["rollupLayerBinding", "rollup belongs to the receipt's layer"],
   ["batchStateRoot", "chain's batch carries the receipt's state root"],
-  ["anchorOnChain", "a matching anchor exists on chain"],
+  ["anchorOnChain", "a matching anchor exists on chain (heights, time, validator set, tx count, proof)"],
   ["creatorAuthority", "creator matches the chain and has a registered key"],
+  ["chainBinding", "receipt names the network that was queried"],
   ["pqcSignature", "quantum-safe anchor signature verifies"],
 ];
 
@@ -493,7 +494,9 @@ async function cmdReceiptVerify(ctx: CliContext, parsed: ParsedCli): Promise<num
   const verification = await verifySettlementReceipt(receipt, { client: ctx.client });
 
   if (ctx.json) {
-    ctx.out.json({ receipt, verification });
+    // Only chain-read data is returned as `receipt`: the file is a claim, so
+    // echoing it here would present unverified fields next to a verdict.
+    ctx.out.json({ valid: verification.valid, receipt: verification.verifiedReceipt ?? null, verification });
     return verification.valid ? 0 : 1;
   }
 
@@ -510,8 +513,11 @@ async function cmdReceiptVerify(ctx: CliContext, parsed: ParsedCli): Promise<num
 
   if (verification.valid) {
     ctx.out.success(
-      "Receipt is genuine — every field was reproduced from live chain state on " +
-        `${ctx.network}. Your trust anchor is the node you queried.`,
+      `Receipt is genuine on ${ctx.network}: the rollup and its layer, the batch's state root, ` +
+        "the anchor (state root, layer and Main Chain heights, anchor time, validator set, " +
+        "transaction count, proof, signature), the creator and the network all match live chain " +
+        "state, and the signature verifies under the creator's registered key. " +
+        "Your trust anchor is the node you queried.",
     );
     return 0;
   }

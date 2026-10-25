@@ -128,4 +128,25 @@ public final class Rules {
             }
         }
     }
+
+    /**
+     * Why a batch with {@code dataHash} would be refused for a rollup on {@code daBackend}, or
+     * {@code null} if the chain accepts it.
+     *
+     * <p>On a {@code native} or {@code both} rollup the chain accepts a non-empty {@code data_hash}
+     * only when a matching blob is stored on chain, and no transaction stores one: the batch is
+     * refused as data unavailable. Leave it empty there; the batch's state roots and proof still
+     * bind it. ({@code celestia} is not checked by the chain, and is not active on the network.)
+     */
+    public static String dataHashError(String daBackend, byte[] dataHash) {
+        if (dataHash == null
+                || dataHash.length == 0
+                || !("native".equals(daBackend) || "both".equals(daBackend))) {
+            return null;
+        }
+        return "data_hash must be empty on a rollup with "
+                + daBackend
+                + " data availability: no transaction stores a data-availability blob on chain, so"
+                + " the chain refuses a batch that claims one";
+    }
 }

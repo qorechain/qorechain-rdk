@@ -6,40 +6,44 @@ sidebar_position: 4
 
 # Data availability
 
-A settlement batch commits to its data through the batch's `dataHash`. The
-**data-availability (DA) backend** decides where that data is actually made
-available so anyone can reconstruct and check the rollup's state. The RDK
-supports three settings.
+A settlement batch can commit to its data through the batch's `dataHash`. The
+**data-availability (DA) backend** decides where that data is made available so
+anyone can reconstruct and check the rollup's state. The RDK supports three
+settings.
 
 | Backend | Status | Notes |
 | --- | --- | --- |
-| `native` | Active | On-chain blob storage, auto-pruned |
+| `native` | The default for every profile | No blob can be posted yet: leave `dataHash` empty |
 | `celestia` | **Planned (not yet active)** | Selectable in configs; not served by the network yet |
 | `both` | **Planned** (depends on Celestia) | Redundant: native + Celestia |
 
-## `native` (active)
+## `native`
 
-The native backend stores the batch's blob **on-chain**. It is the only backend
-serving today.
+Every rollup profile creates a `native` rollup. The chain has on-chain blob
+storage, but **no transaction posts a blob to it yet**. Because of that:
 
-- **Maximum blob size:** up to 2 MiB (`maxDaBlobSize`, default `2097152` bytes).
-- **Retention:** blobs are retained for roughly 30 days, then **auto-pruned**
-  (`blobRetentionBlocks`, default `432000`).
-
-Always read the live limits from `rdk.params()` rather than relying on the
-documented defaults.
+- **Leave `dataHash` empty.** On a `native` (or `both`) rollup the chain accepts
+  a non-empty `data_hash` only when a matching blob is stored, so a batch that
+  claims one is refused as data unavailable, and the fee is spent. The batch's
+  state roots, proof and anchor still bind it.
+- `RdkTxClient.submitBatch` refuses such a batch before broadcasting when it can
+  read the rollup (a hybrid client with a REST endpoint), and `dataHashError`
+  applies the same rule anywhere.
+- Keep your batch data available off chain yourself, for example next to your
+  sequencer, so others can reconstruct your state.
 
 ```ts
-import { buildDaBlob } from "@qorechain/rdk";
+import { dataHashError } from "@qorechain/rdk";
 
-// buildDaBlob enforces the maximum blob size and computes the SHA-256 dataHash.
-const blob = buildDaBlob({ data: new TextEncoder().encode("batch data") });
-console.log(blob.size);     // bytes
-console.log(blob.dataHash); // place this in the settlement batch
-
-// Read a stored blob back over REST:
-// const stored = await rdk.rest.getBlob("my-rollup", blobIndex);
+await tx.submitBatch({ rollupId, batchIndex, stateRoot, prevStateRoot, txCount });
+// no dataHash: dataHashError("native", "0xab...") explains why
 ```
+
+`buildDaBlob` still computes a size-checked SHA-256 commitment for your own
+records; it just must not go into a batch on a `native` rollup until blob
+posting exists. The limits it checks, `maxDaBlobSize` (default `2097152` bytes)
+and `blobRetentionBlocks` (default `432000`), are the chain's parameters for
+that future storage; read them live from `rdk.params()`.
 
 ## `celestia` (planned, not yet active)
 

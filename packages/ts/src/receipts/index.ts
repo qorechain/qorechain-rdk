@@ -32,6 +32,9 @@ export const RECEIPT_ALGORITHM = "ML-DSA-87";
  */
 export const RECEIPT_VERSION = 2 as const;
 
+/** The receipt schema versions this release can verify. */
+export const SUPPORTED_RECEIPT_VERSIONS: readonly number[] = [1, 2];
+
 /** A portable settlement receipt. Verify it with {@link verifySettlementReceipt}. */
 export interface SettlementReceipt {
   /** Schema version: 2 carries `chainId`, 1 does not. */
@@ -59,18 +62,18 @@ export interface SettlementReceipt {
   pqcSignature: string;
   /**
    * The state root read from the settlement batch (hex) when the receipt was
-   * built. Informational only — verification compares the receipt against the
-   * chain's batch, never against this copy of it.
+   * built. Verification requires it to equal the chain's batch root.
    */
   batchStateRoot: string;
   /**
-   * The anchor's transaction count, covered by the v2 signature. Carried so a
-   * receipt remains self-describing; verification uses the chain's copy.
+   * The anchor's transaction count, covered by the v2 signature. Required on a
+   * version-2 receipt; verification requires it to equal the chain's anchor.
    */
   transactionCount?: number;
   /**
    * The anchor's compressed state proof (hex), covered by the v2 signature.
-   * Empty for a settlement batch. Verification uses the chain's copy.
+   * Empty for a settlement batch. Required on a version-2 receipt;
+   * verification requires it to equal the chain's anchor.
    */
   compressedStateProof?: string;
 }
@@ -78,7 +81,7 @@ export interface SettlementReceipt {
 /**
  * How a receipt was checked.
  *
- * - `chain` — every field was reproduced from live chain state. Only this mode
+ * - `chain` — every receipt field was checked against live chain state. Only this mode
  *   can yield `valid: true`.
  * - `signature-only` — the ML-DSA-87 signature was checked against a key the
  *   caller supplied. This proves that whoever holds that key signed these bytes;
@@ -97,7 +100,12 @@ export interface ReceiptVerification {
     rollupLayerBinding: boolean;
     /** The chain's batch carries the receipt's state root. */
     batchStateRoot: boolean;
-    /** An anchor with this state root, height and signature exists on chain. */
+    /**
+     * An anchor exists on chain that matches every anchor field of the
+     * receipt: state root, layer height, validator-set hash, signature, Main
+     * Chain height, anchor time, and (when present) transaction count and
+     * compressed state proof.
+     */
     anchorOnChain: boolean;
     /** The signing key was resolved from chain, not taken from the receipt. */
     creatorAuthority: boolean;
@@ -115,6 +123,16 @@ export interface ReceiptVerification {
    * from the chain's `rdk-integrity` height, `v1` below it.
    */
   signBytesVersion?: AnchorSignBytesVersion;
+  /**
+   * The chain's own anchor that the receipt was matched to, once one was
+   * found. Read facts from this, not from the receipt you were handed.
+   */
+  anchor?: AnchorView;
+  /**
+   * The receipt rebuilt from chain state, present only when `valid` is true.
+   * Every field of it was read from the node you queried.
+   */
+  verifiedReceipt?: SettlementReceipt;
   reason?: string;
 }
 
@@ -353,6 +371,55 @@ export interface VerifyReceiptOptions {
 }
 
 /**
+ * Why `receipt` cannot be verified at all, or `undefined` when its version,
+ * algorithm and required fields are acceptable. Checked before anything is
+ * read from chain: an unknown version or algorithm is refused, never guessed.
+ */
+export function receiptSchemaError(receipt: SettlementReceipt): string | undefined {
+  if (!Number.isInteger(receipt.version) || !SUPPORTED_RECEIPT_VERSIONS.includes(receipt.version)) {
+    return `unsupported receipt version ${JSON.stringify(receipt.version)} (this release verifies versions ${SUPPORTED_RECEIPT_VERSIONS.join(" and ")})`;
+  }
+  if (receipt.algorithm !== RECEIPT_ALGORITHM) {
+    return `unsupported algorithm ${JSON.stringify(receipt.algorithm)}: QoreChain anchors are signed with ${RECEIPT_ALGORITHM}`;
+  }
+  if (receipt.version === 2) {
+    if (!receipt.chainId) return "a version-2 receipt must name its chain (chainId)";
+    if (receipt.transactionCount === undefined) return "a version-2 receipt must carry transactionCount";
+    if (receipt.compressedStateProof === undefined) return "a version-2 receipt must carry compressedStateProof";
+  }
+  return undefined;
+}
+
+/**
+ * The first anchor field on which `receipt` and the chain's `anchor` differ, or
+ * `undefined` when they agree on all of them. Fields a version-1 receipt may
+ * omit are compared whenever the receipt carries them.
+ */
+function anchorFieldMismatch(receipt: SettlementReceipt, anchor: AnchorView): string | undefined {
+  const fields: Array<[string, unknown, unknown]> = [
+    ["validatorSetHash", receipt.validatorSetHash, anchor.validatorSetHash],
+    ["mainChainHeight", receipt.mainChainHeight, anchor.mainChainHeight],
+    ["anchoredAt", receipt.anchoredAt, anchor.anchoredAt],
+  ];
+  if (receipt.transactionCount !== undefined) {
+    fields.push(["transactionCount", receipt.transactionCount, anchor.transactionCount]);
+  }
+  if (receipt.compressedStateProof !== undefined) {
+    fields.push([
+      "compressedStateProof",
+      receipt.compressedStateProof.toLowerCase(),
+      anchor.compressedStateProof.toLowerCase(),
+    ]);
+  }
+  for (const [name, claimed, onChain] of fields) {
+    if (claimed !== onChain) {
+      return `receipt's ${name} ${JSON.stringify(claimed)} does not match the chain's anchor (${JSON.stringify(onChain)})`;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Which anchor message a given anchor was signed over: the form in force at
  * the Main Chain height the anchor was recorded at.
  *
@@ -424,6 +491,16 @@ export async function verifySettlementReceipt(
 ): Promise<ReceiptVerification> {
   const checks = { ...NO_CHECKS };
 
+  const schemaError = receiptSchemaError(receipt);
+  if (schemaError) {
+    return {
+      valid: false,
+      mode: options.client ? "chain" : "signature-only",
+      checks,
+      reason: schemaError,
+    };
+  }
+
   if (!options.client) {
     if (!options.creatorPublicKey) {
       return {
@@ -489,16 +566,18 @@ export async function verifySettlementReceipt(
   try {
     const batch = await rest.getBatch(receipt.rollupId, receipt.batchIndex);
     const onChainRoot = batch.stateRoot ? bytesToHex(decodeWireBytes(batch.stateRoot)) : "";
-    checks.batchStateRoot = onChainRoot !== "" && onChainRoot === receipt.stateRoot;
+    checks.batchStateRoot =
+      onChainRoot !== "" && onChainRoot === receipt.stateRoot && onChainRoot === receipt.batchStateRoot;
   } catch (err) {
     return fail(`batch ${receipt.batchIndex} not found on chain: ${(err as Error).message}`);
   }
   if (!checks.batchStateRoot) {
-    return fail("the chain's batch does not carry the receipt's state root");
+    return fail("the chain's batch does not carry the receipt's state root (stateRoot and batchStateRoot)");
   }
 
-  // 3. An anchor matching this receipt must actually exist on chain. The
-  // matched anchor is kept: it, not the receipt, is what step 5 verifies.
+  // 3. An anchor matching this receipt must actually exist on chain, and agree
+  // with it on every anchor field the receipt states. The matched anchor is
+  // kept: it, not the receipt, is what step 6 verifies and what is returned.
   let matched: AnchorView | undefined;
   try {
     const anchors = await rest.getAnchors(receipt.layerId);
@@ -506,16 +585,20 @@ export async function verifySettlementReceipt(
       (a) =>
         a.stateRoot === receipt.stateRoot &&
         a.layerHeight === receipt.layerHeight &&
-        a.validatorSetHash === receipt.validatorSetHash &&
         a.pqcSignature === receipt.pqcSignature,
     );
   } catch (err) {
     return fail(`could not read anchors for layer "${receipt.layerId}": ${(err as Error).message}`);
   }
-  checks.anchorOnChain = matched !== undefined;
   if (!matched) {
     return fail("no anchor on chain matches this receipt — it is fabricated or superseded");
   }
+  const mismatch = anchorFieldMismatch(receipt, matched);
+  if (mismatch) {
+    return { ...fail(mismatch), anchor: matched };
+  }
+  checks.anchorOnChain = true;
+  const failAt = (reason: string): ReceiptVerification => ({ ...fail(reason), anchor: matched });
 
   // 4. The signing key is resolved from the chain, never taken from the receipt.
   let publicKeyHex = "";
@@ -523,16 +606,16 @@ export async function verifySettlementReceipt(
     const account = await rest.getPqcAccount(rollup.creator);
     publicKeyHex = account.publicKey;
   } catch (err) {
-    return fail(`could not resolve the creator's post-quantum key: ${(err as Error).message}`);
+    return failAt(`could not resolve the creator's post-quantum key: ${(err as Error).message}`);
   }
   if (receipt.creator !== rollup.creator) {
-    return fail(
+    return failAt(
       `receipt names creator "${receipt.creator}" but the chain says the rollup's creator is "${rollup.creator}"`,
     );
   }
   checks.creatorAuthority = publicKeyHex !== "";
   if (!checks.creatorAuthority) {
-    return fail(`no post-quantum key is registered for creator ${rollup.creator}`);
+    return failAt(`no post-quantum key is registered for creator ${rollup.creator}`);
   }
 
   // 5. The receipt must name the chain we actually queried. A version-1 receipt
@@ -541,7 +624,7 @@ export async function verifySettlementReceipt(
   // than the receipt's own word.
   const chainId = options.client.network.chainId;
   if (receipt.chainId && receipt.chainId !== chainId) {
-    return fail(
+    return failAt(
       `receipt is for chain "${receipt.chainId}" but this client is connected to "${chainId}" — ` +
         "verify it against a node for its own network",
     );
@@ -556,12 +639,28 @@ export async function verifySettlementReceipt(
   );
   checks.pqcSignature = signatureOver(matched, publicKeyHex, chainId, version);
   return checks.pqcSignature
-    ? { valid: true, mode: "chain", checks, signBytesVersion: version }
+    ? {
+        valid: true,
+        mode: "chain",
+        checks,
+        signBytesVersion: version,
+        anchor: matched,
+        verifiedReceipt: receiptFromParts(
+          receipt.rollupId,
+          rollup.layerId,
+          receipt.batchIndex,
+          rollup.creator,
+          matched,
+          receipt.batchStateRoot,
+          chainId,
+        ),
+      }
     : {
         valid: false,
         mode: "chain",
         checks,
         signBytesVersion: version,
+        anchor: matched,
         reason:
           `Dilithium-5 anchor signature did not verify against the creator's registered key ` +
           `(checked as ${version}, for an anchor at height ${matched.mainChainHeight})`,

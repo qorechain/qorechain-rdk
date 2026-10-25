@@ -115,3 +115,24 @@ export function withdrawalErrors(w: WithdrawalForValidation): string[] {
   });
   return errors;
 }
+
+/**
+ * Why a batch with `dataHash` would be refused for a rollup on `daBackend`, or
+ * `undefined` if the chain accepts it.
+ *
+ * On a `native` or `both` rollup the chain accepts a non-empty `data_hash` only
+ * when a matching blob is stored on chain, and no transaction stores one: the
+ * batch is refused as data unavailable. Leave `dataHash` empty there; the
+ * batch's state roots and proof still bind it. (`celestia` is not checked by
+ * the chain, and is not active on the network.)
+ */
+export function dataHashError(daBackend: string, dataHash: Uint8Array | string | undefined): string | undefined {
+  const empty =
+    dataHash === undefined ||
+    (typeof dataHash === "string" ? dataHash.replace(/^0x/i, "") === "" : dataHash.length === 0);
+  if (empty || (daBackend !== "native" && daBackend !== "both")) return undefined;
+  return (
+    `dataHash must be empty on a rollup with ${daBackend} data availability: no transaction stores ` +
+    "a data-availability blob on chain, so the chain refuses a batch that claims one"
+  );
+}

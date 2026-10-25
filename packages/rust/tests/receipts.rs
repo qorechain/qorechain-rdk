@@ -511,3 +511,107 @@ fn sign_bytes_version_is_selected_by_height() {
         AnchorSignBytesVersion::V2
     );
 }
+
+#[test]
+fn a_valid_result_carries_the_chain_anchor_and_the_rebuilt_receipt() {
+    let f = chain_fixture(false);
+    let receipt = build_settlement_receipt(&f.client, "my-rollup", 0).unwrap();
+    let v = verify_settlement_receipt(&receipt, None, Some(&f.client));
+    assert!(v.valid, "{:?}", v.reason);
+    assert_eq!(v.anchor.as_ref().map(|a| a.main_chain_height), Some(1000));
+    assert_eq!(v.verified_receipt.as_ref(), Some(&receipt));
+}
+
+/// A named change applied to a copy of a genuine receipt.
+type Forge = (&'static str, Box<dyn Fn(&mut SettlementReceipt)>);
+
+/// Every anchor field the receipt states is bound to the chain, not only the
+/// four the anchor lookup uses. Each forged copy keeps a genuine signature, so
+/// only the field comparison can catch it.
+#[test]
+fn forged_receipt_metadata_is_refused() {
+    let f = chain_fixture(false);
+    let genuine = build_settlement_receipt(&f.client, "my-rollup", 0).unwrap();
+    let cases: Vec<Forge> = vec![
+        (
+            "main_chain_height",
+            Box::new(|r| r.main_chain_height = 999_999),
+        ),
+        ("anchored_at", Box::new(|r| r.anchored_at = 9_999_999_999)),
+        (
+            "validator_set_hash",
+            Box::new(|r| r.validator_set_hash = "00".repeat(32)),
+        ),
+        ("transaction_count", Box::new(|r| r.transaction_count = 4)),
+        (
+            "compressed_state_proof",
+            Box::new(|r| r.compressed_state_proof = "deadbeef".into()),
+        ),
+        (
+            "batch_state_root",
+            Box::new(|r| r.batch_state_root = "11".repeat(32)),
+        ),
+    ];
+    for (field, forge) in cases {
+        let mut forged = genuine.clone();
+        forge(&mut forged);
+        let v = verify_settlement_receipt(&forged, None, Some(&f.client));
+        assert!(
+            !v.valid && !v.checks.anchor_on_chain,
+            "forged {field} accepted"
+        );
+        assert!(v.verified_receipt.is_none());
+        let reason = v.reason.unwrap_or_default();
+        assert!(
+            reason.contains(field),
+            "reason {reason:?} does not name {field}"
+        );
+    }
+}
+
+#[test]
+fn an_unknown_receipt_schema_is_refused_before_reading_the_chain() {
+    let f = chain_fixture(false);
+    let genuine = build_settlement_receipt(&f.client, "my-rollup", 0).unwrap();
+    let transport = RoutingTransport::new(vec![]);
+    let counting = RdkClient::new(RdkClientOptions {
+        transport: Some(transport.clone()),
+        ..Default::default()
+    });
+    let cases: Vec<Forge> = vec![
+        (
+            "unsupported receipt version 99",
+            Box::new(|r| r.version = 99),
+        ),
+        ("unsupported receipt version 0", Box::new(|r| r.version = 0)),
+        (
+            "unsupported algorithm \"ML-DSA-44\"",
+            Box::new(|r| r.algorithm = "ML-DSA-44".into()),
+        ),
+        ("chain_id", Box::new(|r| r.chain_id = None)),
+    ];
+    for (want, forge) in cases {
+        let mut forged = genuine.clone();
+        forge(&mut forged);
+        let v = verify_settlement_receipt(&forged, None, Some(&counting));
+        assert!(!v.valid);
+        let reason = v.reason.unwrap_or_default();
+        assert!(reason.contains(want), "reason {reason:?} lacks {want:?}");
+    }
+    assert!(
+        transport.requests.lock().unwrap().is_empty(),
+        "the schema check read the chain"
+    );
+}
+
+#[test]
+fn a_version_1_receipt_without_v2_fields_still_verifies() {
+    let f = chain_fixture(false);
+    let mut receipt = build_settlement_receipt(&f.client, "my-rollup", 0).unwrap();
+    receipt.version = 1;
+    receipt.chain_id = None;
+    receipt.transaction_count = 0;
+    receipt.compressed_state_proof = String::new();
+    let v = verify_settlement_receipt(&receipt, None, Some(&f.client));
+    assert!(v.valid, "{:?}", v.reason);
+}

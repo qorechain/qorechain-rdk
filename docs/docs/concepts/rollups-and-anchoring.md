@@ -27,17 +27,10 @@ QoreChain. A batch commits two things:
 
 - A **state root** — a cryptographic commitment to the rollup's new state after
   the batch, along with the previous state root it builds on.
-- A **data commitment** — the `dataHash` of the batch's data, so the underlying
-  transactions can be made available and checked (see
-  [Data availability](../guides/data-availability.md)).
-
-```ts
-import { buildDaBlob } from "@qorechain/rdk";
-
-// A batch commits to its data through a dataHash.
-const blob = buildDaBlob({ data: new TextEncoder().encode("batch data") });
-console.log(blob.dataHash); // place this in the settlement batch
-```
+- Optionally, a **data commitment** — a `dataHash` of the batch's data. On
+  QoreChain's native data availability no transaction posts that data to the
+  chain yet, so the chain refuses a batch whose `dataHash` claims a blob: leave
+  it empty (see [Data availability](../guides/data-availability.md)).
 
 Once anchored, the rollup's progress is recorded on the Main Chain. The chain
 links each batch to its predecessor by state root, forming a verifiable history.

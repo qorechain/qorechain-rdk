@@ -60,8 +60,8 @@ pub use da::{
 pub use monitor::{events_from_tx_hash, watch_rollup, Watcher};
 pub use presets::{preset, preset_defaults};
 pub use receipts::{
-    anchor_sign_bytes, build_settlement_receipt, verify_settlement_receipt, ReceiptChecks,
-    ReceiptError, ReceiptVerification, ReceiptVerificationMode, SettlementReceipt,
-    RECEIPT_ALGORITHM, RECEIPT_VERSION,
+    anchor_sign_bytes, build_settlement_receipt, receipt_schema_error, verify_settlement_receipt,
+    ReceiptChecks, ReceiptError, ReceiptVerification, ReceiptVerificationMode, SettlementReceipt,
+    RECEIPT_ALGORITHM, RECEIPT_VERSION, SUPPORTED_RECEIPT_VERSIONS,
 };
 pub use tx::{MockTxClient, RdkTxClient, TxOptions};

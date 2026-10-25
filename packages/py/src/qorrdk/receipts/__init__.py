@@ -42,10 +42,13 @@ and a receipt shown to a third party should say which network it is for rather
 than leave them to assume. Version-1 receipts still verify.
 """
 
+#: The receipt schema versions this release can verify.
+SUPPORTED_RECEIPT_VERSIONS = (1, 2)
+
 ANCHOR_SIGN_DOMAIN_V2 = "qorechain-multilayer-anchor-v2"
 """Domain tag of the v2 anchor sign bytes (chain v3.2.2 and above)."""
 
-#: Every field was reproduced from live chain state. Only this mode can be valid.
+#: Every receipt field was checked against live chain state. Only this mode can be valid.
 MODE_CHAIN = "chain"
 
 #: Only the signature was checked, against a caller-supplied key. Never valid.
@@ -78,18 +81,18 @@ class SettlementReceipt:
     #: The Dilithium-5 anchor signature (hex).
     pqc_signature: str
     #: The state root read from the settlement batch (hex) when the receipt was
-    #: built. **Informational only** -- verification compares the receipt
-    #: against the chain's batch, never against this copy of it.
+    #: built. Verification requires it to equal the chain's batch root.
     batch_state_root: str
     #: The chain the receipt was built on (e.g. ``"qorechain-vladi"``). Bound
     #: into the v2 anchor signature, and cross-checked against the node being
     #: queried. ``None`` on version-1 receipts.
     chain_id: Optional[str] = None
-    #: The anchor's transaction count, covered by the v2 signature. Carried so
-    #: a receipt stays self-describing; verification uses the chain's copy.
+    #: The anchor's transaction count, covered by the v2 signature. Required on
+    #: a version-2 receipt; verification requires it to equal the chain's anchor.
     transaction_count: Optional[int] = None
     #: The anchor's compressed state proof (hex), covered by the v2 signature.
-    #: Empty for a settlement batch. Verification uses the chain's copy.
+    #: Empty for a settlement batch. Required on a version-2 receipt;
+    #: verification requires it to equal the chain's anchor.
     compressed_state_proof: Optional[str] = None
 
 
@@ -101,7 +104,10 @@ class ReceiptChecks:
     rollup_layer_binding: bool = False
     #: The chain's batch carries the receipt's state root.
     batch_state_root: bool = False
-    #: An anchor with this state root, height and signature exists on chain.
+    #: An anchor exists on chain that matches every anchor field of the
+    #: receipt: state root, layer height, validator-set hash, signature, Main
+    #: Chain height, anchor time, and (when present) transaction count and
+    #: compressed state proof.
     anchor_on_chain: bool = False
     #: The signing key was resolved from chain, not taken from the receipt.
     creator_authority: bool = False
@@ -126,6 +132,11 @@ class ReceiptVerification:
     #: ``"v2"`` from the chain's ``rdk-integrity`` height, ``"v1"`` below it.
     sign_bytes_version: Optional[str] = None
     reason: Optional[str] = None
+    #: The chain's own anchor the receipt was matched to, once one was found.
+    #: Read facts from this, not from the receipt you were handed.
+    anchor: Optional[AnchorView] = None
+    #: The receipt rebuilt from chain state, set only when ``valid`` is true.
+    verified_receipt: Optional[SettlementReceipt] = None
 
 
 def anchor_sign_bytes_v1(
@@ -368,6 +379,60 @@ def _receipt_as_anchor(receipt: SettlementReceipt) -> AnchorView:
     )
 
 
+def receipt_schema_error(receipt: SettlementReceipt) -> Optional[str]:
+    """Why ``receipt`` cannot be verified at all, or ``None`` when its version,
+    algorithm and required fields are acceptable.
+
+    Checked before anything is read from chain: an unknown version or algorithm
+    is refused, never guessed.
+    """
+    version = receipt.version
+    if isinstance(version, bool) or not isinstance(version, int) or version not in SUPPORTED_RECEIPT_VERSIONS:
+        return (
+            f"unsupported receipt version {version!r} (this release verifies "
+            f"versions {' and '.join(str(v) for v in SUPPORTED_RECEIPT_VERSIONS)})"
+        )
+    if receipt.algorithm != RECEIPT_ALGORITHM:
+        return (
+            f"unsupported algorithm {receipt.algorithm!r}: QoreChain anchors are "
+            f"signed with {RECEIPT_ALGORITHM}"
+        )
+    if version == 2:
+        if not receipt.chain_id:
+            return "a version-2 receipt must name its chain (chain_id)"
+        if receipt.transaction_count is None:
+            return "a version-2 receipt must carry transaction_count"
+        if receipt.compressed_state_proof is None:
+            return "a version-2 receipt must carry compressed_state_proof"
+    return None
+
+
+def _anchor_field_mismatch(receipt: SettlementReceipt, anchor: AnchorView) -> Optional[str]:
+    """The first anchor field on which ``receipt`` and the chain's ``anchor``
+    differ, or ``None``. Fields a version-1 receipt may omit are compared
+    whenever the receipt carries them."""
+    fields = [
+        ("validator_set_hash", receipt.validator_set_hash, anchor.validator_set_hash),
+        ("main_chain_height", receipt.main_chain_height, anchor.main_chain_height),
+        ("anchored_at", receipt.anchored_at, anchor.anchored_at),
+    ]
+    if receipt.transaction_count is not None:
+        fields.append(("transaction_count", receipt.transaction_count, anchor.transaction_count))
+    if receipt.compressed_state_proof is not None:
+        fields.append((
+            "compressed_state_proof",
+            receipt.compressed_state_proof.lower(),
+            (anchor.compressed_state_proof or "").lower(),
+        ))
+    for name, claimed, on_chain in fields:
+        if claimed != on_chain:
+            return (
+                f"receipt's {name} {claimed!r} does not match the chain's anchor "
+                f"({on_chain!r})"
+            )
+    return None
+
+
 def verify_settlement_receipt(
     receipt: SettlementReceipt,
     creator_public_key: Optional[str] = None,
@@ -387,6 +452,15 @@ def verify_settlement_receipt(
     exists on QoreChain.
     """
     checks = ReceiptChecks()
+
+    schema_error = receipt_schema_error(receipt)
+    if schema_error:
+        return ReceiptVerification(
+            valid=False,
+            mode=MODE_CHAIN if client is not None else MODE_SIGNATURE_ONLY,
+            checks=checks,
+            reason=schema_error,
+        )
 
     if client is None:
         if not creator_public_key:
@@ -452,11 +526,20 @@ def verify_settlement_receipt(
     on_chain_root = (
         bytes_to_hex(decode_wire_bytes(batch.state_root)) if batch.state_root else ""
     )
-    checks.batch_state_root = on_chain_root != "" and on_chain_root == receipt.state_root
+    checks.batch_state_root = (
+        on_chain_root != ""
+        and on_chain_root == receipt.state_root
+        and on_chain_root == receipt.batch_state_root
+    )
     if not checks.batch_state_root:
-        return fail("the chain's batch does not carry the receipt's state root")
+        return fail(
+            "the chain's batch does not carry the receipt's state root "
+            "(state_root and batch_state_root)"
+        )
 
-    # 3. An anchor matching this receipt must actually exist on chain.
+    # 3. An anchor matching this receipt must actually exist on chain, and agree
+    # with it on every anchor field the receipt states. The matched anchor, not
+    # the receipt, is what step 6 verifies and what is returned.
     try:
         anchors = rest.get_anchors(receipt.layer_id)
     except Exception as err:  # noqa: BLE001
@@ -467,31 +550,40 @@ def verify_settlement_receipt(
             for a in anchors
             if a.state_root == receipt.state_root
             and a.layer_height == receipt.layer_height
-            and a.validator_set_hash == receipt.validator_set_hash
             and a.pqc_signature == receipt.pqc_signature
         ),
         None,
     )
-    checks.anchor_on_chain = matched is not None
     if matched is None:
         return fail(
             "no anchor on chain matches this receipt -- it is fabricated or superseded"
         )
+    found = matched
+
+    def fail_at(reason: str) -> ReceiptVerification:
+        return ReceiptVerification(
+            valid=False, mode=MODE_CHAIN, checks=checks, reason=reason, anchor=found
+        )
+
+    mismatch = _anchor_field_mismatch(receipt, matched)
+    if mismatch:
+        return fail_at(mismatch)
+    checks.anchor_on_chain = True
 
     # 4. The signing key is resolved from the chain, never taken from the receipt.
     if receipt.creator != rollup.creator:
-        return fail(
+        return fail_at(
             f'receipt names creator "{receipt.creator}" but the chain says the '
             f'rollup\'s creator is "{rollup.creator}"'
         )
     try:
         account = rest.get_pqc_account(rollup.creator)
     except Exception as err:  # noqa: BLE001
-        return fail(f"could not resolve the creator's post-quantum key: {err}")
+        return fail_at(f"could not resolve the creator's post-quantum key: {err}")
     public_key_hex = account.public_key
     checks.creator_authority = bool(public_key_hex)
     if not checks.creator_authority:
-        return fail(
+        return fail_at(
             f"no post-quantum key is registered for creator {rollup.creator}"
         )
 
@@ -501,7 +593,7 @@ def verify_settlement_receipt(
     # read rather than the receipt's own word.
     chain_id = client.network.chain_id
     if receipt.chain_id and receipt.chain_id != chain_id:
-        return fail(
+        return fail_at(
             f'receipt is for chain "{receipt.chain_id}" but this client is '
             f'connected to "{chain_id}" -- verify it against a node for its '
             "own network"
@@ -520,6 +612,7 @@ def verify_settlement_receipt(
             mode=MODE_CHAIN,
             checks=checks,
             sign_bytes_version=version,
+            anchor=matched,
             reason=(
                 "Dilithium-5 anchor signature did not verify against the "
                 f"creator's registered key (checked as {version}, for an anchor "
@@ -527,13 +620,28 @@ def verify_settlement_receipt(
             ),
         )
     return ReceiptVerification(
-        valid=True, mode=MODE_CHAIN, checks=checks, sign_bytes_version=version
+        valid=True,
+        mode=MODE_CHAIN,
+        checks=checks,
+        sign_bytes_version=version,
+        anchor=matched,
+        verified_receipt=_receipt_from_parts(
+            receipt.rollup_id,
+            rollup.layer_id,
+            receipt.batch_index,
+            rollup.creator,
+            matched,
+            receipt.batch_state_root,
+            chain_id,
+        ),
     )
 
 
 __all__ = [
     "RECEIPT_ALGORITHM",
     "RECEIPT_VERSION",
+    "SUPPORTED_RECEIPT_VERSIONS",
+    "receipt_schema_error",
     "ANCHOR_SIGN_DOMAIN_V2",
     "anchor_sign_bytes_v1",
     "anchor_sign_bytes_v2",

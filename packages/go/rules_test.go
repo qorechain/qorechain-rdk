@@ -110,3 +110,15 @@ func TestBroadcastRefusesBeforeSigning(t *testing.T) {
 		t.Fatalf("valid message reached signing %d time(s), want 1", backend.calls)
 	}
 }
+
+func TestDataHashMustBeEmptyOnNativeDA(t *testing.T) {
+	if DataHashError("native", []byte{0xbb}) == "" || DataHashError("both", []byte{1}) == "" {
+		t.Fatal("a data hash on native or both DA must be refused")
+	}
+	if DataHashError("native", nil) != "" || DataHashError("native", []byte{}) != "" {
+		t.Fatal("an empty data hash must be accepted")
+	}
+	if DataHashError("celestia", []byte{0xbb}) != "" {
+		t.Fatal("celestia is left to the chain")
+	}
+}

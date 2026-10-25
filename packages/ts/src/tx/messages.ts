@@ -31,7 +31,12 @@ export interface SubmitBatchInput {
   stateRoot: Bytes;
   prevStateRoot?: Bytes;
   txCount: Numeric;
-  dataHash: Bytes;
+  /**
+   * Commitment to the batch's off-chain data. Leave it empty on a `native` or
+   * `both` DA rollup: no transaction stores a DA blob on chain, so the chain
+   * refuses a batch whose `data_hash` claims one (see `dataHashError`).
+   */
+  dataHash?: Bytes;
   proof?: Bytes;
   withdrawalsRoot?: Bytes;
   /**
@@ -106,7 +111,7 @@ export function submitBatchMsg(input: SubmitBatchInput): EncodeObject {
       stateRoot: toBytes(input.stateRoot),
       prevStateRoot: input.prevStateRoot ? toBytes(input.prevStateRoot) : EMPTY,
       txCount: big(input.txCount),
-      dataHash: toBytes(input.dataHash),
+      dataHash: input.dataHash ? toBytes(input.dataHash) : EMPTY,
       proof: input.proof ? toBytes(input.proof) : EMPTY,
       withdrawalsRoot: input.withdrawalsRoot ? toBytes(input.withdrawalsRoot) : EMPTY,
       anchorSignature: input.anchorSignature ? toBytes(input.anchorSignature) : EMPTY,

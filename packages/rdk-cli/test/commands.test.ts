@@ -260,12 +260,13 @@ describe("qorollup receipt verify (a receipt someone handed you)", () => {
     return file;
   }
 
-  async function run(fileArg: string | undefined, handler = chain()) {
+  async function run(fileArg: string | undefined, handler = chain(), json = false) {
     const { ctx, out } = makeCtx(handler);
+    ctx.json = json;
     const argv = fileArg === undefined ? ["receipt", "verify"] : ["receipt", "verify", fileArg];
     const code = await cmd.cmdReceipt(ctx, parseCli(argv));
     // CaptureOutput keeps error() separate from line(); assertions want both.
-    return { code, text: [...out.lines, ...out.errors].join("\n") };
+    return { code, text: [...out.lines, ...out.errors].join("\n"), json: out.jsonValue };
   }
 
   it("verifies a genuine receipt read from a file", async () => {
@@ -298,6 +299,40 @@ describe("qorollup receipt verify (a receipt someone handed you)", () => {
     expect(code).toBe(1);
     expect(text).toContain("NOT verified");
     expect(text).toContain("FAIL  chain's batch carries the receipt's state root");
+  });
+
+  it("rejects a genuine receipt whose metadata was forged, and names the field", async () => {
+    // The anchor signature does not cover these fields, so only comparing them
+    // with the chain's anchor catches the forgery.
+    const forged = { ...genuine, mainChainHeight: 999999, anchoredAt: 9999999999 };
+    const { code, text } = await run(writeReceipt(forged));
+    expect(code).toBe(1);
+    expect(text).toContain("NOT verified");
+    expect(text).toContain("mainChainHeight");
+    expect(text).not.toContain("genuine");
+  });
+
+  it("refuses an unknown version or algorithm instead of guessing", async () => {
+    for (const forged of [{ ...genuine, version: 99 }, { ...genuine, algorithm: "ML-DSA-44" }]) {
+      const { code, text } = await run(writeReceipt(forged));
+      expect(code).toBe(1);
+      expect(text).toMatch(/unsupported (receipt version 99|algorithm "ML-DSA-44")/);
+    }
+  });
+
+  it("--json returns the receipt as read from chain, never the file's copy", async () => {
+    const ok = await run(writeReceipt(genuine), chain(), true);
+    expect(ok.code).toBe(0);
+    const okOut = ok.json as { valid: boolean; receipt: SettlementReceipt };
+    expect(okOut.valid).toBe(true);
+    expect(okOut.receipt.mainChainHeight).toBe(100);
+    expect(okOut.receipt.chainId).toBe("qorechain-diana");
+
+    const bad = await run(writeReceipt({ ...genuine, anchoredAt: 9999999999 }), chain(), true);
+    expect(bad.code).toBe(1);
+    const badOut = bad.json as { valid: boolean; receipt: SettlementReceipt | null };
+    expect(badOut.valid).toBe(false);
+    expect(badOut.receipt).toBeNull();
   });
 
   it("reports a clear error for a malformed file instead of a verification failure", async () => {

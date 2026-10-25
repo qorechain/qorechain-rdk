@@ -1,9 +1,11 @@
 //! Native data-availability helpers.
 //!
-//! On QoreChain, a settlement batch commits to its data via the batch's
-//! `data_hash`; the native DA backend stores the corresponding blob on-chain.
-//! This module assembles a blob (enforcing the size limit) and computes the
-//! `data_hash` to put in the batch. Read the live `max_da_blob_size` from
+//! A settlement batch can commit to its data via the batch's `data_hash`. On
+//! QoreChain no transaction posts a blob to the native DA store yet, so on a
+//! `native` or `both` rollup the chain refuses a batch whose `data_hash` claims
+//! one: leave it empty there (see `rules::data_hash_error`). This module
+//! assembles a blob (enforcing the size limit) and computes its SHA-256
+//! commitment for your own records. Read the live `max_da_blob_size` from
 //! `rdk.params()`; the default here is reference only.
 
 use sha2::{Digest, Sha256};
@@ -34,12 +36,12 @@ pub enum DaError {
     BackendUnavailable(String),
 }
 
-/// A prepared native DA blob and the commitment to place in a batch.
+/// A prepared DA blob and its SHA-256 commitment (not for a native batch's `data_hash`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DaBlob {
     /// The blob bytes.
     pub data: Vec<u8>,
-    /// SHA-256 of the blob, `0x`-prefixed, for the batch `data_hash`.
+    /// SHA-256 of the blob, `0x`-prefixed.
     pub data_hash: String,
     /// Blob size in bytes.
     pub size: usize,

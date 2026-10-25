@@ -27,6 +27,9 @@ pub const RECEIPT_ALGORITHM: &str = "ML-DSA-87";
 /// Current receipt schema version.
 pub const RECEIPT_VERSION: u32 = 2;
 
+/// The receipt schema versions this release can verify.
+pub const SUPPORTED_RECEIPT_VERSIONS: &[u32] = &[1, 2];
+
 /// Domain tag of the v2 anchor sign bytes (chain v3.2.2 and above).
 pub const ANCHOR_SIGN_DOMAIN_V2: &str = "qorechain-multilayer-anchor-v2";
 
@@ -84,28 +87,28 @@ pub struct SettlementReceipt {
     /// The Dilithium-5 anchor signature (hex).
     pub pqc_signature: String,
     /// The state root read from the settlement batch (hex) when the receipt was
-    /// built. **Informational only** — verification compares the receipt against
-    /// the chain's batch, never against this copy of it.
+    /// built. Verification requires it to equal the chain's batch root.
     pub batch_state_root: String,
     /// The chain the receipt was built on (e.g. `qorechain-vladi`). Bound into
     /// the v2 anchor signature and cross-checked against the node being
     /// queried. Absent on version-1 receipts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chain_id: Option<String>,
-    /// The anchor's transaction count, covered by the v2 signature. Carried so
-    /// a receipt stays self-describing; verification uses the chain's copy.
+    /// The anchor's transaction count, covered by the v2 signature.
+    /// Verification requires it to equal the chain's anchor on a version-2
+    /// receipt, and on a version-1 receipt whenever it is non-zero.
     #[serde(default)]
     pub transaction_count: u64,
     /// The anchor's compressed state proof (hex), covered by the v2 signature.
-    /// Empty for a settlement batch. Verification uses the chain's copy.
+    /// Empty for a settlement batch. Compared like `transaction_count`.
     #[serde(default)]
     pub compressed_state_proof: String,
 }
 
 /// How a receipt was checked.
 ///
-/// - [`ReceiptVerificationMode::Chain`] — every field was reproduced from live
-///   chain state. Only this mode can yield `valid: true`.
+/// - [`ReceiptVerificationMode::Chain`] — every receipt field was checked
+///   against live chain state. Only this mode can yield `valid: true`.
 /// - [`ReceiptVerificationMode::SignatureOnly`] — the ML-DSA-87 signature was
 ///   checked against a key the caller supplied. That proves whoever holds that
 ///   key signed these bytes; it does **not** prove the anchor exists on
@@ -126,7 +129,9 @@ pub struct ReceiptChecks {
     pub rollup_layer_binding: bool,
     /// The chain's batch carries the receipt's state root.
     pub batch_state_root: bool,
-    /// An anchor with this state root, height and signature exists on chain.
+    /// An anchor exists on chain that matches every anchor field of the
+    /// receipt: state root, layer height, validator-set hash, signature, Main
+    /// Chain height, anchor time, transaction count and compressed state proof.
     pub anchor_on_chain: bool,
     /// The signing key was resolved from chain, not taken from the receipt.
     pub creator_authority: bool,
@@ -152,6 +157,86 @@ pub struct ReceiptVerification {
     pub sign_bytes_version: Option<AnchorSignBytesVersion>,
     /// A human-readable reason when invalid.
     pub reason: Option<String>,
+    /// The chain's own anchor the receipt was matched to, once one was found.
+    /// Read facts from this, not from the receipt you were handed.
+    #[serde(skip)]
+    pub anchor: Option<AnchorView>,
+    /// The receipt rebuilt from chain state, set only when `valid` is true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_receipt: Option<SettlementReceipt>,
+}
+
+/// Why `receipt` cannot be verified at all, or `None` when its version,
+/// algorithm and required fields are acceptable. Checked before anything is
+/// read from chain: an unknown version or algorithm is refused, never guessed.
+pub fn receipt_schema_error(receipt: &SettlementReceipt) -> Option<String> {
+    if !SUPPORTED_RECEIPT_VERSIONS.contains(&receipt.version) {
+        return Some(format!(
+            "unsupported receipt version {} (this release verifies versions 1 and 2)",
+            receipt.version
+        ));
+    }
+    if receipt.algorithm != RECEIPT_ALGORITHM {
+        return Some(format!(
+            "unsupported algorithm \"{}\": QoreChain anchors are signed with {RECEIPT_ALGORITHM}",
+            receipt.algorithm
+        ));
+    }
+    if receipt.version == 2 && receipt.chain_id.as_deref().unwrap_or("").is_empty() {
+        return Some("a version-2 receipt must name its chain (chain_id)".to_string());
+    }
+    None
+}
+
+/// The first anchor field on which `receipt` and the chain's `anchor` differ,
+/// or `None`. A version-1 receipt may predate the transaction count and proof,
+/// so those are compared on it only when set.
+fn anchor_field_mismatch(receipt: &SettlementReceipt, anchor: &AnchorView) -> Option<String> {
+    let differs = |name: &str, claimed: String, on_chain: String| {
+        Some(format!(
+            "receipt's {name} {claimed} does not match the chain's anchor ({on_chain})"
+        ))
+    };
+    if receipt.validator_set_hash != anchor.validator_set_hash {
+        return differs(
+            "validator_set_hash",
+            format!("{:?}", receipt.validator_set_hash),
+            format!("{:?}", anchor.validator_set_hash),
+        );
+    }
+    if receipt.main_chain_height != anchor.main_chain_height {
+        return differs(
+            "main_chain_height",
+            receipt.main_chain_height.to_string(),
+            anchor.main_chain_height.to_string(),
+        );
+    }
+    if receipt.anchored_at != anchor.anchored_at {
+        return differs(
+            "anchored_at",
+            receipt.anchored_at.to_string(),
+            anchor.anchored_at.to_string(),
+        );
+    }
+    let v2 = receipt.version == 2;
+    let chain_count = anchor.transaction_count.max(0) as u64;
+    if (v2 || receipt.transaction_count != 0) && receipt.transaction_count != chain_count {
+        return differs(
+            "transaction_count",
+            receipt.transaction_count.to_string(),
+            chain_count.to_string(),
+        );
+    }
+    let claimed = receipt.compressed_state_proof.to_lowercase();
+    let on_chain = anchor.compressed_state_proof.to_lowercase();
+    if (v2 || !claimed.is_empty()) && claimed != on_chain {
+        return differs(
+            "compressed_state_proof",
+            format!("{claimed:?}"),
+            format!("{on_chain:?}"),
+        );
+    }
+    None
 }
 
 /// Which canonical anchor message a signature covers.
@@ -417,6 +502,22 @@ pub fn verify_settlement_receipt(
 ) -> ReceiptVerification {
     let mut checks = ReceiptChecks::default();
 
+    if let Some(reason) = receipt_schema_error(receipt) {
+        return ReceiptVerification {
+            valid: false,
+            mode: if client.is_some() {
+                ReceiptVerificationMode::Chain
+            } else {
+                ReceiptVerificationMode::SignatureOnly
+            },
+            checks,
+            sign_bytes_version: None,
+            reason: Some(reason),
+            anchor: None,
+            verified_receipt: None,
+        };
+    }
+
     let Some(client) = client else {
         let Some(public_key_hex) = creator_public_key_hex else {
             return ReceiptVerification {
@@ -428,6 +529,8 @@ pub fn verify_settlement_receipt(
                     "no client supplied — pass a client to verify against chain state; a receipt on its own proves nothing"
                         .to_string(),
                 ),
+                anchor: None,
+                verified_receipt: None,
             };
         };
         // Without a client there is no chain to read, so the receipt's own
@@ -463,6 +566,8 @@ pub fn verify_settlement_receipt(
             checks,
             sign_bytes_version: version,
             reason: Some(reason.to_string()),
+            anchor: None,
+            verified_receipt: None,
         };
     };
 
@@ -472,6 +577,8 @@ pub fn verify_settlement_receipt(
         checks,
         sign_bytes_version: None,
         reason: Some(reason),
+        anchor: None,
+        verified_receipt: None,
     };
 
     // 1. The rollup must exist on chain and belong to the layer the receipt names.
@@ -519,15 +626,19 @@ pub fn verify_settlement_receipt(
     } else {
         bytes_to_hex(&decode_wire_bytes(&batch.state_root))
     };
-    checks.batch_state_root = !on_chain_root.is_empty() && on_chain_root == receipt.state_root;
+    checks.batch_state_root = !on_chain_root.is_empty()
+        && on_chain_root == receipt.state_root
+        && on_chain_root == receipt.batch_state_root;
     if !checks.batch_state_root {
         return fail(
             checks,
-            "the chain's batch does not carry the receipt's state root".to_string(),
+            "the chain's batch does not carry the receipt's state root (state_root and batch_state_root)"
+                .to_string(),
         );
     }
 
-    // 3. An anchor matching this receipt must actually exist on chain.
+    // 3. An anchor matching this receipt must actually exist on chain, and
+    // agree with it on every anchor field the receipt states.
     let anchors = match client.rest.get_anchors(&receipt.layer_id) {
         Ok(a) => a,
         Err(e) => {
@@ -540,20 +651,27 @@ pub fn verify_settlement_receipt(
             );
         }
     };
-    // The matched anchor is kept: it, not the receipt, is what step 6 verifies.
+    // The matched anchor is kept: it, not the receipt, is what step 6 verifies
+    // and what is returned.
     let matched = anchors.iter().find(|a| {
         a.state_root == receipt.state_root
             && a.layer_height == receipt.layer_height
-            && a.validator_set_hash == receipt.validator_set_hash
             && a.pqc_signature == receipt.pqc_signature
     });
-    checks.anchor_on_chain = matched.is_some();
     let Some(matched) = matched else {
         return fail(
             checks,
             "no anchor on chain matches this receipt — it is fabricated or superseded".to_string(),
         );
     };
+    let fail = |checks: ReceiptChecks, reason: String| ReceiptVerification {
+        anchor: Some(matched.clone()),
+        ..fail(checks, reason)
+    };
+    if let Some(mismatch) = anchor_field_mismatch(receipt, matched) {
+        return fail(checks, mismatch);
+    }
+    checks.anchor_on_chain = true;
 
     // 4. The signing key is resolved from the chain, never taken from the receipt.
     let public_key_hex = match client.rest.get_pqc_account(&rollup.creator) {
@@ -623,6 +741,8 @@ pub fn verify_settlement_receipt(
                 "Dilithium-5 anchor signature did not verify against the creator's registered key (checked as {label}, for an anchor at height {})",
                 matched.main_chain_height
             )),
+            anchor: Some(matched.clone()),
+            verified_receipt: None,
         };
     }
 
@@ -632,5 +752,15 @@ pub fn verify_settlement_receipt(
         checks,
         sign_bytes_version: Some(version),
         reason: None,
+        anchor: Some(matched.clone()),
+        verified_receipt: Some(receipt_from_parts(
+            &receipt.rollup_id,
+            &rollup.layer_id,
+            receipt.batch_index,
+            &rollup.creator,
+            matched,
+            &receipt.batch_state_root,
+            chain_id,
+        )),
     }
 }

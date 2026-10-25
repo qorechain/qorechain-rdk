@@ -39,7 +39,6 @@ const input: SubmitBatchInput = {
   stateRoot: "0x...",
   prevStateRoot: "0x...",
   txCount: 1,
-  dataHash: "0x...",
   proof: "0x...", // the snark/stark validity proof bytes
 };
 ```

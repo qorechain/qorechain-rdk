@@ -224,8 +224,9 @@ func TestFabricatedReceiptQSR20260055(t *testing.T) {
 		t.Fatalf("keygen: %v", err)
 	}
 	fabricatedRoot := strings.Repeat("de", 32)
+	// A version-1 receipt: it carries no ChainID and is signed over v1 bytes.
 	fake := SettlementReceipt{
-		Version:          ReceiptVersion,
+		Version:          1,
 		RollupID:         "victim-rollup",
 		LayerID:          "layer-victim",
 		BatchIndex:       999,

@@ -105,6 +105,32 @@ def withdrawal_errors(
     return errors
 
 
+def data_hash_error(da_backend: str, data_hash: Union[bytes, str, None]) -> Optional[str]:
+    """Why a batch with ``data_hash`` would be refused for a rollup on
+    ``da_backend``, or ``None`` if the chain accepts it.
+
+    On a ``native`` or ``both`` rollup the chain accepts a non-empty
+    ``data_hash`` only when a matching blob is stored on chain, and no
+    transaction stores one: the batch is refused as data unavailable. Leave it
+    empty there; the batch's state roots and proof still bind it.
+    (``celestia`` is not checked by the chain, and is not active on the network.)
+    """
+    if data_hash is None:
+        return None
+    empty = (
+        data_hash.lower().removeprefix("0x") == ""
+        if isinstance(data_hash, str)
+        else len(data_hash) == 0
+    )
+    if empty or da_backend not in ("native", "both"):
+        return None
+    return (
+        f"data_hash must be empty on a rollup with {da_backend} data availability: no "
+        "transaction stores a data-availability blob on chain, so the chain refuses a "
+        "batch that claims one"
+    )
+
+
 __all__ = [
     "ID_MIN_LENGTH",
     "ID_MAX_LENGTH",
@@ -113,4 +139,5 @@ __all__ = [
     "rollup_id_error",
     "is_valid_rollup_id",
     "withdrawal_errors",
+    "data_hash_error",
 ]

@@ -30,7 +30,7 @@ Edit `.env`: set `QORE_NETWORK`, the `QORE_*_URL` endpoints, and your operator k
 ```sh
 pnpm create          # validate the config, show the cost, and create the rollup
 pnpm query-status    # read the rollup config and its latest settlement batch
-pnpm submit-batch    # assemble a DA blob and submit an optimistic batch
+pnpm submit-batch    # submit an optimistic batch
 pnpm challenge       # raise a fraud-proof challenge against a batch
 ```
 
@@ -52,11 +52,12 @@ is **planned / not yet available on the network**: it is selectable in the
 configuration, but the network does not yet serve it. Until it ships, post batch
 data with the **native** DA backend.
 
-`src/submit-batch.ts` builds the DA blob with `buildDaBlob` for native DA and
-guards the choice with `isDaBackendAvailable` / `assertDaBackendAvailable` —
-`assertDaBackendAvailable("celestia")` throws a clear "planned / not yet
-available" error today, while `"native"` passes. When Celestia is enabled, switch
-the blob path over.
+`src/submit-batch.ts` guards the choice with `isDaBackendAvailable` /
+`assertDaBackendAvailable`: `assertDaBackendAvailable("celestia")` throws a
+clear "planned / not yet available" error today, while `"native"` passes. It
+leaves the batch's `dataHash` empty, because no transaction posts a
+data-availability blob to the chain yet and the chain refuses a native batch
+that claims one.
 
 ## Optimistic challenge flow
 

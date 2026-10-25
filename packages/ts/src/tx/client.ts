@@ -37,7 +37,7 @@ import {
   type SignBytesVersionOption,
 } from "@qorechain/sdk";
 import { RestClient } from "../client/rest";
-import { rollupIdError, withdrawalErrors } from "../rules";
+import { dataHashError, rollupIdError, withdrawalErrors } from "../rules";
 import { anchorSignBytesV2 } from "../receipts";
 import { bytesToHex, toBytes } from "../utils/bytes";
 import type { RollupStatus } from "../config/enums";
@@ -408,6 +408,13 @@ export class RdkTxClient {
     opts: TxOptions & { anchor?: "auto" | "require" | "off" } = {},
   ): Promise<DeliverTxResponse> {
     const mode = opts.anchor ?? "auto";
+    // A non-empty data hash on a native-DA rollup is always refused by the
+    // chain; catch it before the fee is paid when the rollup can be read.
+    if (input.dataHash && toBytes(input.dataHash).length > 0 && this.hybrid?.rest) {
+      const rollup = await new RestClient(this.hybrid.rest).getRollup(input.rollupId);
+      const err = dataHashError(rollup.daBackend, input.dataHash);
+      if (err) throw new Error(`cannot submit batch ${String(input.batchIndex)}: ${err}`);
+    }
     let anchored = input;
     if (!input.anchorSignature && mode !== "off") {
       const sig = await this.tryAnchorSignature(input);

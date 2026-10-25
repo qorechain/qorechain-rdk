@@ -63,3 +63,13 @@ def test_max_depth_accepted():
 
 def test_old_id_not_held_to_new_grammar():
     assert withdrawal_errors(**_good(rollup_id="Legacy/ID")) == []
+
+
+def test_data_hash_must_be_empty_on_native_and_both_da():
+    from qorrdk import data_hash_error
+
+    assert "must be empty" in data_hash_error("native", "bb")
+    assert "must be empty" in data_hash_error("both", b"\x01")
+    for empty in (None, "", "0x", b""):
+        assert data_hash_error("native", empty) is None
+    assert data_hash_error("celestia", "bb") is None

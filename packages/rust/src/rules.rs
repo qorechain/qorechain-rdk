@@ -93,3 +93,21 @@ pub fn withdrawal_errors(
     }
     errors
 }
+
+/// Why a batch with `data_hash` would be refused for a rollup on `da_backend`,
+/// or `None` if the chain accepts it.
+///
+/// On a `native` or `both` rollup the chain accepts a non-empty `data_hash`
+/// only when a matching blob is stored on chain, and no transaction stores one:
+/// the batch is refused as data unavailable. Leave it empty there; the batch's
+/// state roots and proof still bind it. (`celestia` is not checked by the
+/// chain, and is not active on the network.)
+pub fn data_hash_error(da_backend: &str, data_hash: &[u8]) -> Option<String> {
+    if data_hash.is_empty() || (da_backend != "native" && da_backend != "both") {
+        return None;
+    }
+    Some(format!(
+        "data_hash must be empty on a rollup with {da_backend} data availability: no transaction \
+         stores a data-availability blob on chain, so the chain refuses a batch that claims one"
+    ))
+}

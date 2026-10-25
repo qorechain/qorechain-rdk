@@ -1,7 +1,6 @@
 import "dotenv/config";
 import {
   assertDaBackendAvailable,
-  buildDaBlob,
   isDaBackendAvailable,
 } from "@qorechain/rdk";
 import { getClient, ROLLUP_ID } from "./client.js";
@@ -9,7 +8,6 @@ import { connectOperator } from "./signer.js";
 
 async function main(): Promise<void> {
   const client = getClient();
-  const params = await client.params();
   // Signs hybrid: both networks refuse a classical-only native-lane transaction.
   const tx = await connectOperator(client);
 
@@ -30,11 +28,9 @@ async function main(): Promise<void> {
   }
   assertDaBackendAvailable("native"); // native is active; passes.
 
-  // Assemble the native DA blob and its commitment for the batch.
-  const blob = buildDaBlob({
-    data: new TextEncoder().encode("example batch data"),
-    maxBlobSize: params.maxDaBlobSize,
-  });
+  // No data hash: on QoreChain's native data availability no transaction
+  // stores the blob on chain, so the chain refuses a batch whose data_hash
+  // claims one. The state roots and proof bind the batch.
 
   // Optimistic settlement carries a `fraud` proof system: the batch is posted
   // optimistically and only disputed via a fraud proof during the challenge
@@ -46,7 +42,6 @@ async function main(): Promise<void> {
     stateRoot,
     prevStateRoot,
     txCount: 1,
-    dataHash: blob.dataHash,
   });
   console.log(`Batch submitted: ${res.transactionHash} (code ${res.code})`);
 }
