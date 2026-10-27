@@ -7,6 +7,7 @@
  * creation burn so the cost is clear before the developer creates a rollup.
  */
 import { existsSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { basename, resolve } from "node:path";
 
 import { cancel, intro, isCancel, log, note, outro, select, text } from "@clack/prompts";
@@ -17,7 +18,8 @@ import { ArgError, helpText, parseArgs } from "./args.js";
 import { scaffold, type Network, type PackageManager } from "./scaffold.js";
 import { findTemplate, TEMPLATES, templateIdList } from "./templates.js";
 
-const VERSION = "0.2.0";
+/** The package version, read from its own package.json so it cannot drift. */
+const VERSION: string = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 
 function isEmptyOrMissing(dir: string): boolean {
   if (!existsSync(dir)) return true;

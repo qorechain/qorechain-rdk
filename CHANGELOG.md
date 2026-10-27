@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.6.2
+
+### Fixed
+
+- **`qorollup` installed from npm did nothing.** The CLI ran only when
+  `process.argv[1]` equalled its own file path, but npm starts a package's bin
+  through a symlink in `node_modules/.bin`, so a local, global or `npx` install
+  exited 0 without output; only `node .../dist/index.js` worked. It now compares
+  real paths.
+- **`qorollup --version` printed `0.4.1` and `create-qorechain-rollup
+  --version` printed `0.2.0`.** Both now read their version from their own
+  `package.json`.
+
+No library changes: the other packages are released as 0.6.2 so every
+registry stays on one version.
+
 ## 0.6.1
 
 ### Security

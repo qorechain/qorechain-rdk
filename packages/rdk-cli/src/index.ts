@@ -2,13 +2,16 @@
  * `qorollup` entry point: parse args, build the runtime context, dispatch to a
  * command handler, and return its exit code.
  */
+import { realpathSync } from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { flagBool, parseCli } from "./args";
 import { ConsoleOutput } from "./output";
 import { buildContext } from "./context";
 import * as cmd from "./commands";
 
-export const VERSION = "0.4.1";
+/** The package version, read from its own package.json so it cannot drift. */
+export const VERSION: string = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 
 export const HELP = `qorollup — operate QoreChain rollups.
 
@@ -99,11 +102,23 @@ export async function run(argv: readonly string[]): Promise<number> {
   }
 }
 
-// Entry point when executed directly as the bin (not when imported by tests).
-const isMain =
-  typeof process !== "undefined" &&
-  process.argv[1] !== undefined &&
-  process.argv[1] === fileURLToPath(import.meta.url);
+/**
+ * Whether the module at `moduleUrl` is the script node was started with.
+ * npm runs a package's bin through a symlink in `node_modules/.bin`, so
+ * `process.argv[1]` is the link, not the file: compare real paths. Comparing
+ * the paths as given made every npm-installed `qorollup` exit silently.
+ */
+export function isEntryPoint(argv1: string | undefined, moduleUrl: string): boolean {
+  if (!argv1) return false;
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
+// Entry point when executed as the bin (not when imported by tests).
+const isMain = typeof process !== "undefined" && isEntryPoint(process.argv[1], import.meta.url);
 if (isMain) {
   run(process.argv.slice(2)).then(
     (code) => process.exit(code),
