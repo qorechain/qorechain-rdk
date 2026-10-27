@@ -37,6 +37,7 @@ Global flags:
   --network testnet|mainnet      default testnet
   --rest/--rpc/--evm-rpc <url>   endpoint overrides (or QORE_*_URL)
   --mnemonic/--key <value>       signer (or QORE_MNEMONIC / QORE_OPERATOR_PRIVATE_KEY_HEX)
+  --pqc-seed <hex>               ML-DSA-87 seed for --key (or QORE_PQC_SEED_HEX); every tx signs hybrid
   --profile <name>               defi|gaming|nft|enterprise|custom
   --json                         machine-readable output
   -y, --yes                      skip confirmations

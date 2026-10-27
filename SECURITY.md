@@ -9,7 +9,7 @@ discussions, or pull requests.
 
 Instead, report them privately by email to:
 
-**security@qorechain.io**
+**security@qore.network**
 
 Please include as much of the following as you can:
 

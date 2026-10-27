@@ -25,6 +25,9 @@ FEATURE_RDK_CHALLENGE_SETTLEMENT = "rdk-challenge-settlement"
 #: The protocol feature that switches batches to the v2 binding.
 FEATURE_RDK_WITHDRAWALS_BINDING = "rdk-withdrawals-binding"
 
+#: The chain upgrade that turns on :data:`FEATURE_RDK_WITHDRAWALS_BINDING`.
+WITHDRAWALS_BINDING_UPGRADE = "v3.2.5"
+
 BytesLike = Union[str, bytes, bytearray]
 
 
@@ -103,6 +106,22 @@ def transition_root_version_for(rest) -> str:
     return "v2" if rest.is_protocol_feature_enabled(FEATURE_RDK_WITHDRAWALS_BINDING) else "v1"
 
 
+def transition_root_version_for_batch(rest, batch) -> str:
+    """Which binding the chain judges an existing batch by.
+
+    The chain decides once, at submission: a batch is bound to v2 exactly when
+    it was included at or above the height where
+    :data:`WITHDRAWALS_BINDING_UPGRADE` was applied (the upgrade block itself
+    included). The batch's own ``withdrawals_bound`` is used when the node
+    serves it. Challenge only with the root under this version: a fraud proof
+    built on the other binding is dismissed and its bond forfeited.
+    """
+    if getattr(batch, "withdrawals_bound", False):
+        return "v2"
+    applied = rest.get_applied_plan_height(WITHDRAWALS_BINDING_UPGRADE)
+    return "v2" if applied > 0 and batch.submitted_at >= applied else "v1"
+
+
 def fraud_proof(prev_state_root: BytesLike, correct_state_root: BytesLike) -> bytes:
     """The fraud proof the chain's optimistic verifier reads:
     ``prev_state_root(32) || correct_state_root(32)``."""
@@ -119,5 +138,7 @@ __all__ = [
     "batch_transition_root_v1",
     "batch_transition_root_v2",
     "transition_root_version_for",
+    "transition_root_version_for_batch",
+    "WITHDRAWALS_BINDING_UPGRADE",
     "fraud_proof",
 ]

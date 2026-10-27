@@ -147,6 +147,16 @@ class RestClient:
                 return False
             raise
 
+    def get_applied_plan_height(self, name: str) -> int:
+        """The height at which upgrade plan ``name`` was applied on this chain
+        (``/cosmos/upgrade/v1beta1/applied_plan/{name}``), or 0 if it has not been."""
+        body = self._get(f"/cosmos/upgrade/v1beta1/applied_plan/{quote(name, safe='')}")
+        try:
+            height = int(body.get("height") or 0)
+        except (TypeError, ValueError):
+            return 0
+        return max(height, 0)
+
     def get_blob(self, rollup_id: str, blob_index: Union[int, str]) -> RawRecord:
         """Raw data-availability blob details (status, size, expiry)."""
         return self._get(

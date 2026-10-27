@@ -62,7 +62,14 @@ const tx = await rdk.connectTx(signer, { gasPrice: "0.15uqor" });
 > at the mempool; `0.15uqor` is a comfortable default.
 
 The `qorollup` CLI uses the same precedence and also accepts `--key` and
-`--mnemonic` flags, which override the environment.
+`--mnemonic` flags, which override the environment. From 0.7.1 its
+transaction commands sign **hybrid**: with `--mnemonic` the post-quantum key is
+derived and matched against the chain (the canonical or the legacy derivation,
+whichever your account registered; a new account registers the canonical one on
+its first transaction); with `--key`, pass your 32-byte ML-DSA-87 seed with
+`--pqc-seed` or `QORE_PQC_SEED_HEX`. Without a post-quantum key the CLI refuses
+to send, since both networks would refuse the transaction. Releases before
+0.7.1 signed classical-only, so every `qorollup` transaction was refused.
 
 ## Build a signer directly
 
@@ -157,8 +164,8 @@ A few things to know:
   priced with it, and `"auto"` simulates first). Without either, the client
   throws instead of guessing.
 
-> **Only the TypeScript client signs hybrid.** The Python, Go, Rust, and Java
-> clients sign classical-only and are unsuitable for native-lane transactions on
+> **Only the TypeScript client (and the CLI and templates built on it) signs
+> hybrid.** The Python, Go, Rust, and Java clients sign classical-only and are unsuitable for native-lane transactions on
 > mainnet or `qorechain-diana`; use them on permissive networks, or pair them
 > with the [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc) bindings.
 

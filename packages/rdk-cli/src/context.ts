@@ -5,7 +5,7 @@
  * mock tx connector.
  */
 import { createRdkClient, type CreateRdkClientOptions, type FetchLike, type NetworkName, type RdkClient, type RdkTxClient } from "@qorechain/rdk";
-import { signerFromEnv } from "@qorechain/rdk";
+import { pqcKeypairFromEnv, signerFromEnv } from "@qorechain/rdk";
 import { flagBool, flagStr } from "./args";
 import type { Output } from "./output";
 
@@ -36,6 +36,8 @@ export interface BuildContextOptions {
   flags: Record<string, string | boolean>;
   env?: CliEnv;
   out: Output;
+  /** Override the HTTP client (tests). */
+  fetch?: FetchLike;
 }
 
 export function buildContext(options: BuildContextOptions): CliContext {
@@ -51,11 +53,12 @@ export function buildContext(options: BuildContextOptions): CliContext {
   if (rpc) endpoints.rpc = rpc;
   if (evmRpc) endpoints.evmRpc = evmRpc;
 
-  const client = createRdkClient({ network, endpoints });
+  const client = createRdkClient({ network, endpoints, ...(options.fetch ? { fetch: options.fetch } : {}) });
 
   const signerEnv: CliEnv = {
     QORE_OPERATOR_PRIVATE_KEY_HEX: flagStr(flags, "key") ?? env.QORE_OPERATOR_PRIVATE_KEY_HEX,
     QORE_MNEMONIC: flagStr(flags, "mnemonic") ?? env.QORE_MNEMONIC,
+    QORE_PQC_SEED_HEX: flagStr(flags, "pqc-seed") ?? env.QORE_PQC_SEED_HEX,
   };
   const gasPrice = flagStr(flags, "gas-price") ?? env.QORE_GAS_PRICE ?? "0.15uqor";
   const faucetUrl = flagStr(flags, "faucet-url") ?? env.QORE_FAUCET_URL;
@@ -76,7 +79,27 @@ export function buildContext(options: BuildContextOptions): CliContext {
           "No signing key. Set QORE_OPERATOR_PRIVATE_KEY_HEX or QORE_MNEMONIC (or pass --key/--mnemonic).",
         );
       }
-      return client.connectTx(signer, { gasPrice });
+      // Both networks refuse a classical-only native-lane transaction, so the
+      // CLI signs hybrid, with the post-quantum key resolved against the chain
+      // exactly as the templates do. Releases before 0.7.1 signed
+      // classical-only, and every transaction command was refused.
+      const [account] = await signer.getAccounts();
+      const pqc = await pqcKeypairFromEnv(client, account.address, signerEnv);
+      if (!pqc) {
+        throw new Error(
+          "No post-quantum key: mainnet and testnet refuse a classical-only transaction. Use " +
+            "QORE_MNEMONIC (or --mnemonic), or set QORE_PQC_SEED_HEX (or --pqc-seed) to your " +
+            "32-byte ML-DSA-87 seed alongside QORE_OPERATOR_PRIVATE_KEY_HEX.",
+        );
+      }
+      if (!pqc.registered) {
+        out.line(`Registering your post-quantum key (${pqc.derivation}) with this transaction.`);
+      }
+      return client.connectTx(signer, {
+        gasPrice,
+        pqcKeypair: pqc.keypair,
+        includePqcPublicKey: pqc.includePqcPublicKey,
+      });
     },
   };
 }

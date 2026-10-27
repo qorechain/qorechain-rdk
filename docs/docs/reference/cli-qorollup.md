@@ -62,6 +62,8 @@ Read commands (`status`, `watch`, `params`, `suggest`, `advise`, `receipt`,
 `watchtower`, `doctor`) need only a REST endpoint (the `advise` and `watchtower`
 commands also use the EVM / `qor_` JSON-RPC endpoint for their reads). Anything
 that broadcasts a transaction (`create`, `pause`, `resume`, `stop`, `withdraw`)
+signs hybrid (ML-DSA-87 + secp256k1) from 0.7.1, with the post-quantum key from
+`--mnemonic` / `QORE_MNEMONIC` or `--pqc-seed` / `QORE_PQC_SEED_HEX`, and
 also needs a signer and an RPC endpoint.
 
 ## Commands

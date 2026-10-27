@@ -13,7 +13,7 @@ account derivation) works fully offline.
 
 from __future__ import annotations
 
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 
 # Constants.
 from .constants import (  # noqa: E402
@@ -276,6 +276,8 @@ from .transition import (
     batch_transition_root_v2,
     fraud_proof,
     transition_root_version_for,
+    transition_root_version_for_batch,
+    WITHDRAWALS_BINDING_UPGRADE,
 )
 
 __all__ = [
@@ -286,6 +288,8 @@ __all__ = [
     "batch_transition_root_v2",
     "fraud_proof",
     "transition_root_version_for",
+    "transition_root_version_for_batch",
+    "WITHDRAWALS_BINDING_UPGRADE",
     "data_hash_error",
     "withdrawals_root_error",
     "MAX_PENDING_OPTIMISTIC_BATCHES",

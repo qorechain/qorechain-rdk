@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.7.1
+
+### Fixed
+
+- **Every `qorollup` transaction command was refused.** `create`, `pause`,
+  `resume`, `stop` and `withdraw` signed classical-only, and both networks
+  require a hybrid (ML-DSA-87 + secp256k1) signature on native-lane
+  transactions. The CLI now signs hybrid, resolving the post-quantum key as the
+  templates do: derived from `--mnemonic` / `QORE_MNEMONIC` and matched against
+  the chain, or `--pqc-seed` / `QORE_PQC_SEED_HEX` alongside `--key`. Without one
+  it refuses to send instead of paying for a refused transaction.
+- **Python lacked `transition_root_version_for_batch`** (and
+  `RestClient.get_applied_plan_height` and `BatchView.withdrawals_bound`). The
+  0.6.1 notes said the per-batch helper was in all five languages; it was in
+  four. It is now in Python too.
+- The README and the install page listed 0.4.4 as the current version.
+- `SECURITY.md` gave the wrong reporting address; it is
+  **security@qore.network**.
+
 ## 0.7.0
 
 Ready for QoreChain v3.2.5, which the testnet runs since block 8,890,800. New

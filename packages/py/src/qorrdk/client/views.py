@@ -123,6 +123,11 @@ class BatchView:
     #: time-based challenge window (v3.2.4). ``0`` for every earlier batch,
     #: which keeps the block-count window.
     submitted_time: int = 0
+    #: Whether the chain judges this batch by the v2 transition binding (chain
+    #: v3.2.5, ``rdk-withdrawals-binding``). ``True`` only when the node serves
+    #: the field as true; :func:`transition_root_version_for_batch` otherwise
+    #: decides by height.
+    withdrawals_bound: bool = False
 
 
 @dataclass
@@ -239,6 +244,7 @@ def map_batch_view(raw: RawRecord) -> BatchView:
         finalized_at=_num(_pick(raw, "finalized_at", "finalizedAt")),
         withdrawals_root=_str(_pick(raw, "withdrawals_root", "withdrawalsRoot")),
         submitted_time=_num(_pick(raw, "submitted_time", "submittedTime")),
+        withdrawals_bound=_pick(raw, "withdrawals_bound", "withdrawalsBound") is True,
     )
 
 

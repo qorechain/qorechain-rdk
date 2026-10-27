@@ -59,3 +59,25 @@ def test_fraud_proof_layout():
     assert fraud_proof("11" * 32, "22" * 32).hex() == "11" * 32 + "22" * 32
     with pytest.raises(ValueError):
         fraud_proof("11", "22" * 32)
+
+
+def _applied(height):
+    def transport(method, url, headers=None, body_=None):
+        if url.endswith("/applied_plan/v3.2.5"):
+            return HttpResponse(200, "OK", json.dumps({"height": str(height)}))
+        return HttpResponse(404, "Not Found", "{}")
+    return create_rdk_client(transport=transport).rest
+
+
+def test_version_for_an_existing_batch_follows_the_applied_height():
+    from qorrdk import transition_root_version_for_batch
+    from qorrdk.client.views import map_batch_view
+
+    rest = _applied(8_890_800)
+    assert transition_root_version_for_batch(rest, map_batch_view({"submitted_at": 8_890_800})) == "v2"
+    assert transition_root_version_for_batch(rest, map_batch_view({"submitted_at": 8_890_799})) == "v1"
+    assert transition_root_version_for_batch(_applied(0), map_batch_view({"submitted_at": 9_000_000})) == "v1"
+    flagged = map_batch_view({"submitted_at": 1, "withdrawals_bound": True})
+    assert flagged.withdrawals_bound is True
+    assert transition_root_version_for_batch(_applied(0), flagged) == "v2"
+    assert rest.get_applied_plan_height("v3.2.5") == 8_890_800
