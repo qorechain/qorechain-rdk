@@ -9,7 +9,7 @@ public RPC / REST / gRPC / JSON-RPC. It depends on
 [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk) for accounts,
 quantum-safe signing, and transport.
 
-> Published at v0.4.0 — `npm i @qorechain/rdk`.
+> Published at v0.8.0 — `npm i @qorechain/rdk`.
 
 ## What's new in 0.4.0
 
@@ -75,9 +75,8 @@ supplies `rest` from the network preset, which the default
 sign-bytes shipped under, so `"v1"` / `"v2"` are needed only for a custom
 network.
 
-> The Python, Go, Rust, and Java RDK clients sign **classical-only** and are
-> unsuitable for native-lane transactions on mainnet or `qorechain-diana`. Only
-> this TypeScript package signs hybrid.
+> From 0.8.0 the Python, Go, Rust and Java RDK clients sign hybrid too, and
+> produce the same bytes as this package for the same input.
 
 ## Network reference
 

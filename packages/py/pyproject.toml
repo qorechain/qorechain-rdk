@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qorechain-rdk"
-version = "0.7.1"
+version = "0.8.0"
 description = "Python Rollup Development Kit for the QoreChain network."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,6 +29,8 @@ dependencies = [
     "mnemonic>=0.20",
     "ecdsa>=0.18",
     "qorechain-pqc>=0.2.1,<0.3",
+    "qorechain-sdk>=0.10.0,<0.11",
+    "dilithium-py>=1.1",
 ]
 
 [project.optional-dependencies]

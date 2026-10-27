@@ -164,10 +164,14 @@ A few things to know:
   priced with it, and `"auto"` simulates first). Without either, the client
   throws instead of guessing.
 
-> **Only the TypeScript client (and the CLI and templates built on it) signs
-> hybrid.** The Python, Go, Rust, and Java clients sign classical-only and are unsuitable for native-lane transactions on
-> mainnet or `qorechain-diana`; use them on permissive networks, or pair them
-> with the [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc) bindings.
+> **Every client signs hybrid from 0.8.0.** Python, Go, Rust and Java sign
+> through their QoreChain SDK when given a post-quantum keypair, with the same
+> key resolution (`resolve_pqc_keypair` / `ResolvePqcKeypair` /
+> `resolve_pqc_keypair` / `Accounts.resolvePqcKeypair`, and the
+> `QORE_PQC_SEED_HEX` / `QORE_MNEMONIC` environment form), and produce the same
+> bytes as TypeScript for the same input. Releases before 0.8.0 signed those
+> four classical-only, so only their reads worked on mainnet and testnet. The
+> Java package needs Java 21 from 0.8.0.
 
 The kit also re-exports `HybridSigner`, `PqcSigner`, `generatePqcKeypair`,
 `pqcSign`, and `pqcVerify` for lower-level post-quantum use. The kit exposes

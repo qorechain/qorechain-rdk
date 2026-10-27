@@ -1,6 +1,6 @@
 [package]
 name = "qorechain-rdk"
-version = "0.7.1"
+version = "0.8.0"
 edition = "2021"
 license = "Apache-2.0"
 readme = "README.md"
@@ -15,7 +15,7 @@ name = "qorechain_rdk"
 path = "src/lib.rs"
 
 [dependencies]
-cosmrs = { version = "0.21", features = ["bip32"] }
+cosmrs = { version = "0.22", features = ["bip32"] }
 bip32 = { version = "0.5", default-features = false, features = ["bip39", "secp256k1", "alloc", "std"] }
 prost = "0.13"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
@@ -29,6 +29,7 @@ hex = "0.4"
 base64 = "0.22"
 thiserror = "2"
 qorechain-pqc = "0.2.1"
+qorechain-sdk = "0.10"
 
 [dev-dependencies]
 k256 = { version = "0.13", features = ["ecdsa"] }

@@ -24,6 +24,19 @@ public final class RestClient {
         this.transport = transport == null ? new HttpTransport() : transport;
     }
 
+    /** The REST (LCD) base URL this client reads from, without a trailing slash. */
+    public String baseUrl() {
+        return base;
+    }
+
+    /**
+     * GET an arbitrary REST path (relative to the base URL, starting with {@code /}) and return the
+     * parsed JSON object. Throws on a non-2xx status, like every typed read.
+     */
+    public Map<String, Object> getJson(String path) {
+        return get(path);
+    }
+
     private static String pathEscape(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
     }

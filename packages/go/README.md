@@ -19,19 +19,55 @@ Surface (mirrors the TypeScript RDK modules):
   with an injectable HTTP client for testing, plus preflight, health, and
   faucet helpers.
 - HD account derivation (BIP-44 `m/44'/118'/0'/0/0` secp256k1 -> bech32 `qor`),
-  hand-rolled Cosmos transaction encoding, signing, and broadcast via an
-  `RdkTxClient` with lifecycle guards.
+  transaction signing and broadcast via an `RdkTxClient` with lifecycle guards:
+  hybrid (post-quantum) through the QoreChain SDK when given a post-quantum
+  keypair, classical otherwise.
 
-> **Mainnet PQC signing requirement.** QoreChain mainnet requires the hybrid
-> post-quantum signature extension (ML-DSA-87 + secp256k1) on native-lane
-> transactions. The Go transaction path currently signs classical-only
-> (SIGN_MODE_DIRECT, secp256k1), so native-lane broadcasts to mainnet will be
-> rejected — use it on permissive networks (testnet, local devnets) or pair it
-> with the [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc)
-> bindings in a custom backend. The TypeScript RDK supports hybrid signing via
-> [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk). Read paths and
-> offline signing are unaffected; settlement-receipt verification needs a
-> reachable node, because it checks the receipt against live chain state.
+## Hybrid (post-quantum) signing
+
+Both QoreChain networks require the hybrid post-quantum signature (ML-DSA-87 +
+secp256k1) on native-lane transactions and refuse a classical-only one. Give the
+tx client a post-quantum keypair and every transaction it signs is built by the
+[QoreChain SDK](https://github.com/qorechain/qorechain-sdk)'s hybrid builder,
+which attaches the ML-DSA-87 signature as a tx-body extension alongside the
+classical signature:
+
+```go
+client := rdk.NewRdkClient(rdk.RdkClientOptions{Network: "testnet"})
+acc, _ := rdk.DeriveNativeAccount(mnemonic, 0)
+
+// Find the post-quantum key the account actually uses, by asking the chain.
+resolved, err := rdk.ResolvePqcKeypair(ctx, client, acc.Address, mnemonic)
+if err != nil {
+	panic(err)
+}
+opts := resolved.HybridOptions()
+tx := client.ConnectTx(acc, &opts) // or rdk.NewRdkTxClient(...).WithHybrid(opts)
+```
+
+`ResolvePqcKeypair` derives both keys a mnemonic can yield (the canonical,
+address-bound one and the legacy one) and returns whichever the chain has
+registered. An account with no key yet gets the canonical key with
+`IncludePqcPublicKey` set, so its first transaction registers it; a key that
+neither derivation produces is an error. From the environment:
+
+```go
+resolved, ok, err := rdk.PqcKeypairFromEnv(ctx, client, acc.Address, env)
+```
+
+reads `QORE_PQC_SEED_HEX` (a 32-byte ML-DSA-87 seed, checked against the
+registered key) or else `QORE_MNEMONIC`; `ok` is false when neither is set.
+
+The sign-bytes form (v1 or v2, by the chain's applied upgrade) is chosen
+automatically over the client's REST endpoint; set
+`HybridOptions.SignBytesVersion` to `rdk.SignBytesV1` / `rdk.SignBytesV2` to
+force one. `BuildTx` builds and signs without broadcasting.
+
+Without a post-quantum keypair the client signs classical-only
+(SIGN_MODE_DIRECT, secp256k1), and the networks refuse the transaction. That
+path stays for offline use and local chains. Read paths are unaffected;
+settlement-receipt verification needs a reachable node, because it checks the
+receipt against live chain state.
 
 ## What's new in 0.5.0
 
@@ -95,17 +131,32 @@ func main() {
 	}
 
 	// Derive a native account and connect a client.
+	ctx := context.Background()
 	acc, _ := rdk.DeriveNativeAccount(mnemonic, 0)
 	client := rdk.NewRdkClient(rdk.RdkClientOptions{Network: "testnet"})
-	params, _ := client.Params(context.Background())
+	params, _ := client.Params(ctx)
 	fmt.Println(params.MinStakeForRollup)
 
-	// Sign a create-rollup transaction (broadcast needs a live node).
-	tx := rdk.NewRdkTxClient(acc, client.Network.ChainID, client.Rest)
+	// Connect a hybrid (post-quantum) signing client.
+	resolved, err := rdk.ResolvePqcKeypair(ctx, client, acc.Address, mnemonic)
+	if err != nil {
+		panic(err)
+	}
+	opts := resolved.HybridOptions()
+	tx := client.ConnectTx(acc, &opts)
+
+	// Build a create-rollup message and sign it (broadcast needs a live node
+	// and the account's number and sequence).
 	msg := tx.CreateRollup(rdk.CreateRollupInput{
 		RollupID: cfg.RollupID, Profile: string(cfg.Profile),
 		VmType: string(cfg.VmType), StakeAmount: 10000000000,
 	})
-	_ = msg
+	fee := rdk.Fee{Amount: []rdk.Coin{{Denom: "uqor", Amount: "30000"}}, GasLimit: 200000}
+	txParams := rdk.TxParams{Fee: fee, AccountNumber: 7, Sequence: 0}
+	built, err := tx.BuildTx(ctx, []rdk.Msg{msg}, txParams)
+	if err != nil {
+		panic(err)
+	}
+	_ = built.TxRaw // or tx.Broadcast(ctx, []rdk.Msg{msg}, txParams)
 }
 ```

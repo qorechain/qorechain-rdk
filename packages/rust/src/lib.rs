@@ -5,7 +5,8 @@
 //! preset profiles, denom and economics helpers, binary Merkle withdrawal
 //! proofs, a portable rollup manifest, read clients over REST and the `qor_`
 //! JSON-RPC namespace, preflight/health/event helpers, account derivation, and
-//! a signing transaction client that builds and broadcasts `rdk` messages.
+//! a signing transaction client that builds and broadcasts `rdk` messages,
+//! signed hybrid (post-quantum) when given an ML-DSA-87 keypair.
 //!
 //! The enum and constant values mirror the on-chain `rdk` module exactly. The
 //! string values are the wire values the chain expects -- do not localize or
@@ -45,7 +46,10 @@ pub mod transition;
 pub mod tx;
 pub mod utils;
 
-pub use accounts::{signer_from_env, NativeAccount, Signer};
+pub use accounts::{
+    pqc_keypair_from_env, resolve_pqc_keypair, signer_from_env, NativeAccount, PqcDerivation,
+    ResolvedPqcKeypair, Signer,
+};
 pub use client::{AnchorView, PqcAccountView, RdkClient, RdkClientOptions};
 pub use config::{
     is_vm_type, vm_type_label, vm_type_wire_value, BatchStatus, DaBackend, GasModel, Profile,
@@ -65,5 +69,5 @@ pub use receipts::{
     ReceiptChecks, ReceiptError, ReceiptVerification, ReceiptVerificationMode, SettlementReceipt,
     RECEIPT_ALGORITHM, RECEIPT_VERSION, SUPPORTED_RECEIPT_VERSIONS,
 };
-pub use tx::{MockTxClient, RdkTxClient, TxOptions};
+pub use tx::{HybridSigningOptions, MockTxClient, RdkTxClient, SignBytesMode, TxOptions};
 pub use utils::qorehash::qorehash;

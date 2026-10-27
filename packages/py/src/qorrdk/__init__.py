@@ -13,7 +13,7 @@ account derivation) works fully offline.
 
 from __future__ import annotations
 
-__version__ = "0.7.1"
+__version__ = "0.8.0"
 
 # Constants.
 from .constants import (  # noqa: E402
@@ -186,9 +186,17 @@ from .tx import (  # noqa: E402
 # Accounts & signing.
 from .accounts import (  # noqa: E402
     NativeAccount,
+    PqcDerivation,
+    PqcKeypair,
+    ResolvedPqcKeypair,
     Signer,
     derive_native_account,
+    derive_pqc_canonical,
+    derive_pqc_legacy,
     generate_mnemonic,
+    pqc_keypair_from_env,
+    pqc_keypair_from_seed,
+    resolve_pqc_keypair,
     signer_from_env,
     signer_from_private_key,
     validate_mnemonic,
@@ -451,6 +459,14 @@ __all__ = [
     "validate_mnemonic",
     "signer_from_private_key",
     "signer_from_env",
+    "PqcKeypair",
+    "PqcDerivation",
+    "ResolvedPqcKeypair",
+    "derive_pqc_canonical",
+    "derive_pqc_legacy",
+    "pqc_keypair_from_seed",
+    "resolve_pqc_keypair",
+    "pqc_keypair_from_env",
     # clients
     "Transport",
     "HttpResponse",

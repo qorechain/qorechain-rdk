@@ -9,7 +9,8 @@ native account derivation, and full transaction signing and broadcast for the `r
 
 ## Requirements
 
-- Java 17 or newer.
+- Java 21 or newer (the QoreChain Java SDK this client builds hybrid transactions with targets
+  Java 21).
 
 ## Maven coordinates
 
@@ -17,14 +18,14 @@ native account derivation, and full transaction signing and broadcast for the `r
 <dependency>
   <groupId>io.github.qorechain</groupId>
   <artifactId>qorechain-rdk</artifactId>
-  <version>0.5.0</version>
+  <version>0.8.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```groovy
-implementation 'io.github.qorechain:qorechain-rdk:0.5.0'
+implementation 'io.github.qorechain:qorechain-rdk:0.8.0'
 ```
 
 ## What's new in 0.5.0
@@ -77,9 +78,11 @@ implementation 'io.github.qorechain:qorechain-rdk:0.5.0'
 - `manifest` — portable JSON snapshots of a resolved configuration.
 - `client` — `RestClient`, `QorClient`, the high-level `RdkClient`, plus preflight, health,
   monitoring, faucet, and event helpers. HTTP runs behind an injectable `Transport` interface.
-- `accounts` — mnemonic → BIP-44 (`m/44'/118'/0'/0/0`) → secp256k1 → bech32 `qor` address derivation.
-- `tx` — hand-encoded `rdk` messages and the Cosmos transaction envelope, SIGN_MODE_DIRECT signing,
-  `RdkTxClient` (with lifecycle guards), `MockTxClient`, and gas simulation.
+- `accounts` — mnemonic → BIP-44 (`m/44'/118'/0'/0/0`) → secp256k1 → bech32 `qor` address derivation,
+  and post-quantum key resolution (`resolvePqcKeypair`, `pqcKeypairFromEnv`).
+- `tx` — hand-encoded `rdk` messages and the Cosmos transaction envelope, hybrid (post-quantum)
+  signing through the QoreChain Java SDK, `RdkTxClient` (with lifecycle guards), `MockTxClient`, and
+  gas simulation.
 
 ## Broadcasting
 
@@ -88,15 +91,53 @@ Offline signing works without a node. Read paths and settlement-receipt verifica
 node's REST (LCD) endpoint, supply the signer sequence and account number from the chain's auth
 query, and call `RdkTxClient.broadcast`.
 
-> **Mainnet PQC signing requirement.** QoreChain mainnet requires the hybrid
-> post-quantum signature extension (ML-DSA-87 + secp256k1) on native-lane
-> transactions. The Java transaction path currently signs classical-only
-> (SIGN_MODE_DIRECT, secp256k1), so native-lane broadcasts to mainnet will be
-> rejected — use it on permissive networks (testnet, local devnets) or pair it
-> with the [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc)
-> bindings in a custom backend. The TypeScript RDK supports hybrid signing via
-> [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk). Read paths,
-> offline signing, and settlement-receipt verification are unaffected.
+## Hybrid (post-quantum) signing
+
+Both QoreChain networks require the hybrid signature (ML-DSA-87 + secp256k1) on native-lane
+transactions. `RdkTxClient` signs hybrid whenever it is given a PQC keypair: every transaction is
+built by the QoreChain Java SDK's `HybridTx.buildHybridTx` (`io.github.qorechain:qorechain-sdk`),
+with the same messages, fee, memo, chain id, account number and sequence as before, and the
+ML-DSA-87 half attached as a tx-body extension. **Without a PQC keypair the client signs
+classical-only (SIGN_MODE_DIRECT, secp256k1), and the networks refuse the transaction**; that path
+remains for local devnets and offline use.
+
+```java
+RdkClient rdk = new RdkClient(options);
+Account account = Accounts.deriveNativeAccount(mnemonic);
+
+// The post-quantum key this account uses, checked against the chain: the canonical
+// (address-bound) or the legacy derivation of the mnemonic, whichever is registered.
+// With no key registered yet it is the canonical one, embedded so the first
+// transaction registers it.
+Accounts.ResolvedPqcKeypair pqc = Accounts.resolvePqcKeypair(rdk, account.address, mnemonic);
+
+RdkTxClient tx =
+        new RdkTxClient(account, "qorechain-vladi", rdk.rest, HybridSigningOptions.from(pqc));
+tx.broadcast(List.<Msg>of(tx.pauseRollup("my-rollup", "maintenance", null)), params);
+```
+
+From the environment (the signer from `QORE_OPERATOR_PRIVATE_KEY_HEX` or `QORE_MNEMONIC`, the PQC
+key from `QORE_PQC_SEED_HEX`, a 32-byte ML-DSA-87 seed, or else `QORE_MNEMONIC`):
+
+```java
+Account account = Accounts.signerFromEnv(System.getenv(), "").account;
+Accounts.ResolvedPqcKeypair pqc = Accounts.pqcKeypairFromEnv(rdk, account.address);
+if (pqc == null) {
+    throw new IllegalStateException("set QORE_PQC_SEED_HEX or QORE_MNEMONIC to sign hybrid");
+}
+RdkTxClient tx =
+        new RdkTxClient(account, "qorechain-vladi", rdk.rest, HybridSigningOptions.from(pqc));
+```
+
+Resolution refuses, rather than guesses, when the account's registered key is neither derivation
+of the mnemonic, or does not match `QORE_PQC_SEED_HEX`: a hybrid signature from the wrong key is
+always rejected.
+
+The hybrid sign-bytes form (v1 or v2) is chosen automatically by the SDK's resolver, which asks the
+network over the client's REST endpoint which upgrade it has applied. To force one, use
+`HybridSigningOptions.from(pqc).signBytesVersion(SignBytes.Mode.V2)` (or `V1`). `tx.signHybrid(...)`
+builds and signs without broadcasting and returns the SDK's result, including the exact bytes the
+ML-DSA-87 signature covers.
 
 ## Verifying a settlement receipt
 

@@ -16,15 +16,19 @@ developer-facing front door for launching rollups on the network.
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | Available (v0.7.1) |
-| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.7.1) |
-| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.7.1) |
-| `qorechain-rdk` (Python) | Python | Available on PyPI (v0.7.1) |
-| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.7.1) |
-| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.7.1) |
-| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.7.1) |
+| `@qorechain/rdk` | TypeScript | Available (v0.8.0) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.8.0) |
+| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.8.0) |
+| `qorechain-rdk` (Python) | Python | Available on PyPI (v0.8.0) |
+| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.8.0) |
+| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.8.0) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.8.0) |
 
 ## What's new
+
+**0.8.0** — the Python, Go, Rust and Java clients sign hybrid, as both networks
+require, through each language's QoreChain SDK; before, only their reads worked
+on mainnet and testnet. Java 21 is required.
 
 **0.7.1** — the `qorollup` transaction commands (`create`, `pause`, `resume`,
 `stop`, `withdraw`) sign hybrid, as both networks require; earlier releases
@@ -77,10 +81,13 @@ golden vectors. (Live broadcast requires a node endpoint.)
 > **TypeScript signs hybrid when you pass `pqcKeypair`** to `connectTx` /
 > `RdkTxClient.connect`, and so do the templates and the `qorollup` CLI (see
 > [Keys & funding](https://qorechain.github.io/qorechain-rdk/guides/keys-and-funding)).
-> **Python, Go, Rust, and Java remain classical-only** (SIGN_MODE_DIRECT) and are
-> therefore unsuitable for native-lane transactions on mainnet or
-> `qorechain-diana`: use them on permissive networks (local devnets) or pair them
-> with the [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc) bindings.
+> **From 0.8.0 the Python, Go, Rust and Java clients sign hybrid too**, through
+> each language's QoreChain SDK, when given a post-quantum keypair; each resolves
+> it the same way (`QORE_MNEMONIC`, matched against the key the chain has
+> registered, or `QORE_PQC_SEED_HEX`). All five produce byte-identical hybrid
+> transactions for the same input. Earlier releases signed those four
+> classical-only, so only their reads worked on the live networks. The Java
+> package needs Java 21 from 0.8.0.
 
 The TypeScript package is built first and at the highest polish; the other
 language packages mirror the same conceptual surface. The TypeScript RDK depends on
@@ -140,7 +147,7 @@ advisory service is unavailable.
 
 ## Quickstart (TypeScript)
 
-> The TypeScript package is published at v0.7.1 (`npm i @qorechain/rdk`).
+> The TypeScript package is published at v0.8.0 (`npm i @qorechain/rdk`).
 
 ```sh
 npm install @qorechain/rdk

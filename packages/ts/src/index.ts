@@ -11,7 +11,7 @@
  */
 
 /** RDK package version. */
-export const VERSION = "0.7.1";
+export const VERSION = "0.8.0";
 
 // Network and module constants (documented defaults; read live values from the chain).
 export * from "./constants";

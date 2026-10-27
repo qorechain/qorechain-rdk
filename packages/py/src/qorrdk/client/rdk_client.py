@@ -80,8 +80,24 @@ class RdkClient:
 
         return suggest_profile(use_case, self.qor, fallback)
 
-    def connect_tx(self, signer) -> "RdkTxClient":
-        """Connect a signing tx client bound to this network's REST + chain id."""
+    def connect_tx(
+        self,
+        signer,
+        *,
+        pqc_keypair=None,
+        include_pqc_public_key: bool = False,
+        sign_bytes_version: str = "auto",
+    ) -> "RdkTxClient":
+        """Connect a signing tx client bound to this network's REST + chain id.
+
+        Pass ``pqc_keypair`` (an ML-DSA-87 keypair, e.g. ``.keypair`` of
+        :func:`~qorrdk.accounts.pqc_keypair_from_env`) to sign every transaction
+        hybrid (post-quantum); without one the client signs classical-only,
+        which both public networks refuse on the native lane.
+        ``include_pqc_public_key`` embeds the key so the first transaction
+        registers it; ``sign_bytes_version`` is ``"auto"`` (asked of this
+        network's REST endpoint), ``"v1"`` or ``"v2"``.
+        """
         from ..tx.client import RdkTxClient
 
         return RdkTxClient(
@@ -89,6 +105,9 @@ class RdkClient:
             chain_id=self.network.chain_id,
             signer=signer,
             transport=self._transport,
+            pqc_keypair=pqc_keypair,
+            include_pqc_public_key=include_pqc_public_key,
+            sign_bytes_version=sign_bytes_version,
         )
 
 

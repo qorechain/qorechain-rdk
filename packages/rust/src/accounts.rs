@@ -3,16 +3,24 @@
 //! Derives a native account from a BIP-39 mnemonic along the Cosmos BIP-44 path
 //! `m/44'/118'/0'/0/0`, exposes a [`Signer`] abstraction over a secp256k1
 //! signing key, and re-derives the bech32 `qor` address from the public key.
+//!
+//! For hybrid (post-quantum) signing it also finds the ML-DSA-87 keypair an
+//! account actually uses ([`resolve_pqc_keypair`], [`pqc_keypair_from_env`]),
+//! with the QoreChain SDK's canonical and legacy derivations.
 
-use bip32::DerivationPath;
+use bip32::{DerivationPath, XPrv};
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::crypto::PublicKey;
 use hmac::Hmac;
 use sha2::Sha512;
 use thiserror::Error;
 
+use crate::client::RdkClient;
 use crate::constants::ACCOUNT_PREFIX;
-use crate::utils::bytes::hex_to_bytes;
+use crate::utils::bytes::{bytes_to_hex, hex_to_bytes};
+
+pub use qorechain::authenticator::{derive_pqc_canonical, derive_pqc_legacy};
+pub use qorechain::pqc::{pqc_keypair_from_seed, PqcKeypair};
 
 /// The Cosmos BIP-44 derivation path (`m/44'/118'/0'/0/0`).
 pub const COSMOS_DERIVATION_PATH: &str = "m/44'/118'/0'/0/0";
@@ -22,6 +30,11 @@ pub const ENV_OPERATOR_PRIVATE_KEY_HEX: &str = "QORE_OPERATOR_PRIVATE_KEY_HEX";
 
 /// Environment variable holding an operator's BIP-39 mnemonic.
 pub const ENV_MNEMONIC: &str = "QORE_MNEMONIC";
+
+/// Environment variable holding an operator's hex-encoded 32-byte ML-DSA-87
+/// seed, for an operator who signs with a raw private key and so has no
+/// mnemonic to derive the post-quantum key from.
+pub const ENV_PQC_SEED_HEX: &str = "QORE_PQC_SEED_HEX";
 
 /// Derive the BIP-39 seed from a mnemonic and optional passphrase.
 ///
@@ -61,11 +74,15 @@ pub enum AccountError {
     /// Signing failed.
     #[error("signing failed: {0}")]
     Sign(String),
+    /// The post-quantum keypair could not be resolved.
+    #[error("{0}")]
+    Pqc(String),
 }
 
 /// A derived native account: its signing key and bech32 `qor` address.
 pub struct NativeAccount {
     signing_key: SigningKey,
+    private_key: [u8; 32],
     address: String,
 }
 
@@ -83,17 +100,9 @@ impl NativeAccount {
         let path: DerivationPath = COSMOS_DERIVATION_PATH
             .parse()
             .map_err(|e: bip32::Error| AccountError::Derivation(e.to_string()))?;
-        let signing_key = SigningKey::derive_from_path(seed, &path)
+        let xprv = XPrv::derive_from_path(seed, &path)
             .map_err(|e| AccountError::Derivation(e.to_string()))?;
-        let address = signing_key
-            .public_key()
-            .account_id(prefix)
-            .map_err(|e| AccountError::Address(e.to_string()))?
-            .to_string();
-        Ok(NativeAccount {
-            signing_key,
-            address,
-        })
+        Self::from_private_key(&xprv.to_bytes(), prefix)
     }
 
     /// Derive a native account using the default `qor` prefix.
@@ -105,6 +114,10 @@ impl NativeAccount {
     pub fn from_private_key(bytes: &[u8], prefix: &str) -> Result<Self, AccountError> {
         let signing_key =
             SigningKey::from_slice(bytes).map_err(|e| AccountError::Derivation(e.to_string()))?;
+        // `from_slice` accepted the key, so it is at most 32 bytes; a shorter
+        // one is left-padded, as the scalar it denotes.
+        let mut private_key = [0u8; 32];
+        private_key[32 - bytes.len()..].copy_from_slice(bytes);
         let address = signing_key
             .public_key()
             .account_id(prefix)
@@ -112,6 +125,7 @@ impl NativeAccount {
             .to_string();
         Ok(NativeAccount {
             signing_key,
+            private_key,
             address,
         })
     }
@@ -155,6 +169,12 @@ pub trait Signer {
     fn public_key(&self) -> PublicKey {
         self.signing_key().public_key()
     }
+    /// The raw 32-byte secp256k1 private key, which hybrid (post-quantum)
+    /// signing needs to sign the classical half. `None` (the default) means the
+    /// signer cannot sign hybrid; it can still sign classical-only.
+    fn private_key_bytes(&self) -> Option<[u8; 32]> {
+        None
+    }
 }
 
 impl Signer for NativeAccount {
@@ -163,6 +183,9 @@ impl Signer for NativeAccount {
     }
     fn signing_key(&self) -> &SigningKey {
         &self.signing_key
+    }
+    fn private_key_bytes(&self) -> Option<[u8; 32]> {
+        Some(self.private_key)
     }
 }
 
@@ -197,6 +220,168 @@ pub fn signer_from_env_with(
         }
     }
     Ok(None)
+}
+
+/// Which derivation produced an operator's post-quantum key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PqcDerivation {
+    /// The address-bound derivation:
+    /// `shake256("qorechain:pqc:v1|" + account + "|" + mnemonic)`.
+    Canonical,
+    /// The older chain-bridge derivation: `shake256(mnemonic)`.
+    Legacy,
+    /// An explicit 32-byte seed (`QORE_PQC_SEED_HEX`).
+    Seed,
+}
+
+/// The outcome of [`resolve_pqc_keypair`] / [`pqc_keypair_from_env`].
+#[derive(Clone)]
+pub struct ResolvedPqcKeypair {
+    /// The ML-DSA-87 keypair to sign with.
+    pub keypair: PqcKeypair,
+    /// Which derivation produced it.
+    pub derivation: PqcDerivation,
+    /// The chain already holds this key for the account.
+    pub registered: bool,
+    /// Pass this as `include_pqc_public_key` to the tx client: true when the
+    /// account has no key on chain yet, so the first hybrid transaction
+    /// registers it.
+    pub include_pqc_public_key: bool,
+}
+
+impl std::fmt::Debug for ResolvedPqcKeypair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Never print the secret key.
+        f.debug_struct("ResolvedPqcKeypair")
+            .field("public_key", &bytes_to_hex(&self.keypair.public_key))
+            .field("derivation", &self.derivation)
+            .field("registered", &self.registered)
+            .field("include_pqc_public_key", &self.include_pqc_public_key)
+            .finish()
+    }
+}
+
+/// Find the ML-DSA-87 keypair an account actually uses, by asking the chain.
+///
+/// A mnemonic can yield two post-quantum keys, and a wallet may have registered
+/// either: the **canonical** one (address-bound --
+/// `shake256("qorechain:pqc:v1|" + account + "|" + mnemonic)`, what unified
+/// accounts use) or the **legacy** one (the older chain-bridge scheme). Signing
+/// with the wrong one is not a soft failure: the hybrid signature would not
+/// match the registered key and every transaction would be refused. So this
+/// derives both and returns whichever the chain has registered.
+///
+/// - If the account has **no** key registered, it returns the canonical key
+///   with `include_pqc_public_key: true`, so the first transaction registers it.
+/// - If the account has a key that **neither** derivation produces, it fails:
+///   the key was registered from another secret, and guessing would only cost a
+///   refused transaction. Supply that keypair explicitly instead.
+pub fn resolve_pqc_keypair(
+    client: &RdkClient,
+    address: &str,
+    mnemonic: &str,
+) -> Result<ResolvedPqcKeypair, AccountError> {
+    let canonical = derive_pqc_canonical(address, mnemonic);
+    let legacy = derive_pqc_legacy(mnemonic);
+    let registered_key = registered_pqc_key(client, address);
+
+    if registered_key.is_empty() {
+        return Ok(resolved(canonical, PqcDerivation::Canonical, false));
+    }
+    if registered_key == bytes_to_hex(&canonical.public_key) {
+        return Ok(resolved(canonical, PqcDerivation::Canonical, true));
+    }
+    if registered_key == bytes_to_hex(&legacy.public_key) {
+        return Ok(resolved(legacy, PqcDerivation::Legacy, true));
+    }
+    Err(AccountError::Pqc(format!(
+        "account {address} has a post-quantum key on chain that neither the canonical nor the legacy \
+         derivation of this mnemonic produces, so it was registered from another secret. Supply that \
+         keypair explicitly (QORE_PQC_SEED_HEX), or check that the mnemonic belongs to this account."
+    )))
+}
+
+/// The operator's ML-DSA-87 keypair from the process environment, checked
+/// against the chain, or `Ok(None)` when no source is configured (the caller
+/// then signs classical-only, which both public networks refuse on the native
+/// lane).
+///
+/// - `QORE_PQC_SEED_HEX` -- a 32-byte ML-DSA-87 seed, for an operator who signs
+///   with a raw private key (`QORE_OPERATOR_PRIVATE_KEY_HEX`) and so has no
+///   mnemonic to derive from. Takes precedence when set. Still checked against
+///   the chain, and refused if the account holds a different key.
+/// - `QORE_MNEMONIC` -- resolved with [`resolve_pqc_keypair`]: whichever of the
+///   canonical and legacy derivations the chain has registered.
+pub fn pqc_keypair_from_env(
+    client: &RdkClient,
+    address: &str,
+) -> Result<Option<ResolvedPqcKeypair>, AccountError> {
+    pqc_keypair_from_env_with(client, address, |key| std::env::var(key).ok())
+}
+
+/// Like [`pqc_keypair_from_env`] but with an injectable env lookup, for testing
+/// and non-`std::env` environments. The lookup returns the value for a variable
+/// name, or `None` if unset.
+pub fn pqc_keypair_from_env_with(
+    client: &RdkClient,
+    address: &str,
+    lookup: impl Fn(&str) -> Option<String>,
+) -> Result<Option<ResolvedPqcKeypair>, AccountError> {
+    if let Some(seed_hex) = lookup(ENV_PQC_SEED_HEX) {
+        let seed_hex = seed_hex.trim();
+        if !seed_hex.is_empty() {
+            let seed = hex_to_bytes(seed_hex).map_err(|e| AccountError::Pqc(e.to_string()))?;
+            let seed: [u8; 32] = seed.as_slice().try_into().map_err(|_| {
+                AccountError::Pqc(format!(
+                    "QORE_PQC_SEED_HEX must be 32 bytes, got {}",
+                    seed.len()
+                ))
+            })?;
+            let keypair = pqc_keypair_from_seed(&seed);
+            let registered_key = registered_pqc_key(client, address);
+            if registered_key.is_empty() {
+                return Ok(Some(resolved(keypair, PqcDerivation::Seed, false)));
+            }
+            if registered_key == bytes_to_hex(&keypair.public_key) {
+                return Ok(Some(resolved(keypair, PqcDerivation::Seed, true)));
+            }
+            return Err(AccountError::Pqc(format!(
+                "QORE_PQC_SEED_HEX does not produce the post-quantum key registered for {address}; \
+                 every hybrid transaction signed with it would be refused"
+            )));
+        }
+    }
+    if let Some(mnemonic) = lookup(ENV_MNEMONIC) {
+        let mnemonic = mnemonic.trim();
+        if !mnemonic.is_empty() {
+            return resolve_pqc_keypair(client, address, mnemonic).map(Some);
+        }
+    }
+    Ok(None)
+}
+
+fn resolved(
+    keypair: PqcKeypair,
+    derivation: PqcDerivation,
+    registered: bool,
+) -> ResolvedPqcKeypair {
+    ResolvedPqcKeypair {
+        keypair,
+        derivation,
+        registered,
+        include_pqc_public_key: !registered,
+    }
+}
+
+/// The account's registered ML-DSA-87 public key as lowercase hex, or `""`
+/// when it has none.
+fn registered_pqc_key(client: &RdkClient, address: &str) -> String {
+    // An account with no record reads as "not registered".
+    client
+        .rest
+        .get_pqc_account(address)
+        .map(|view| view.public_key.to_lowercase())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

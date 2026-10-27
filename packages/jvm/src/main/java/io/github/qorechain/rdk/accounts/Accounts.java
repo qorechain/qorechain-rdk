@@ -1,8 +1,12 @@
 package io.github.qorechain.rdk.accounts;
 
+import io.github.qorechain.pqc.Pqc;
+import io.github.qorechain.pqc.PqcKeypair;
+import io.github.qorechain.rdk.client.RdkClient;
 import io.github.qorechain.rdk.config.Constants;
 import io.github.qorechain.rdk.util.Bech32;
 import io.github.qorechain.rdk.util.Bytes;
+import io.github.qorechain.tx.Authenticator;
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -17,6 +21,9 @@ import org.web3j.crypto.Sign;
  * <p>A native QoreChain account is derived from a BIP-39 mnemonic: BIP-39 seed → BIP-44 path
  * {@code m/44'/118'/0'/0/index} → compressed secp256k1 public key → {@code ripemd160(sha256(pubkey))}
  * → bech32 ({@code qor}) address.
+ *
+ * <p>The post-quantum (ML-DSA-87) key that pairs with an account for hybrid signing is found with
+ * {@link #resolvePqcKeypair} or {@link #pqcKeypairFromEnv}, using the QoreChain SDK's derivations.
  */
 public final class Accounts {
     private Accounts() {}
@@ -157,5 +164,135 @@ public final class Accounts {
 
     private static String trim(String s) {
         return s == null ? "" : s.trim();
+    }
+
+    // --- post-quantum key resolution ---
+
+    /** Which derivation produced an operator's post-quantum key. */
+    public enum PqcDerivation {
+        /** {@code shake256("qorechain:pqc:v1|" + account + "|" + mnemonic)}: address-bound. */
+        CANONICAL,
+        /** The older chain-bridge scheme: {@code shake256(mnemonic)}, the same key for every account. */
+        LEGACY,
+        /** A raw 32-byte seed ({@code QORE_PQC_SEED_HEX}). */
+        SEED
+    }
+
+    /** The outcome of {@link #resolvePqcKeypair} / {@link #pqcKeypairFromEnv}. */
+    public static final class ResolvedPqcKeypair {
+        /** The ML-DSA-87 keypair to sign with. Its secret key is never logged. */
+        public final PqcKeypair keypair;
+        public final PqcDerivation derivation;
+        /** The chain already holds this key for the account. */
+        public final boolean registered;
+        /**
+         * Pass this as {@code includePqcPublicKey} to the tx client: true when the account has no
+         * key on chain yet, so the first hybrid transaction registers it.
+         */
+        public final boolean includePqcPublicKey;
+
+        ResolvedPqcKeypair(
+                PqcKeypair keypair, PqcDerivation derivation, boolean registered, boolean includePqcPublicKey) {
+            this.keypair = keypair;
+            this.derivation = derivation;
+            this.registered = registered;
+            this.includePqcPublicKey = includePqcPublicKey;
+        }
+    }
+
+    /**
+     * Find the ML-DSA-87 keypair an account actually uses, by asking the chain.
+     *
+     * <p>A mnemonic can yield two post-quantum keys, and a wallet may have registered either: the
+     * <b>canonical</b> one (address-bound, {@code shake256("qorechain:pqc:v1|" + account + "|" +
+     * mnemonic)}, what unified accounts use) or the <b>legacy</b> one (the older chain-bridge
+     * scheme). Signing with the wrong one is not a soft failure: the hybrid signature would not
+     * match the registered key and every transaction would be refused. So this derives both and
+     * returns whichever the chain has registered.
+     *
+     * <ul>
+     *   <li>If the account has <b>no</b> key registered, it returns the canonical key with {@code
+     *       includePqcPublicKey = true}, so the first transaction registers it.
+     *   <li>If the account has a key that <b>neither</b> derivation produces, it throws: the key was
+     *       registered from another secret, and guessing would only cost a refused transaction.
+     *       Supply that keypair explicitly instead.
+     * </ul>
+     */
+    public static ResolvedPqcKeypair resolvePqcKeypair(RdkClient client, String address, String mnemonic) {
+        PqcKeypair canonical = Authenticator.derivePqcCanonical(address, mnemonic);
+        PqcKeypair legacy = Authenticator.derivePqcLegacy(mnemonic);
+        String registeredKey = registeredPqcKey(client, address);
+
+        if (registeredKey.isEmpty()) {
+            return new ResolvedPqcKeypair(canonical, PqcDerivation.CANONICAL, false, true);
+        }
+        if (registeredKey.equals(Bytes.bytesToHex(canonical.publicKey).toLowerCase())) {
+            return new ResolvedPqcKeypair(canonical, PqcDerivation.CANONICAL, true, false);
+        }
+        if (registeredKey.equals(Bytes.bytesToHex(legacy.publicKey).toLowerCase())) {
+            return new ResolvedPqcKeypair(legacy, PqcDerivation.LEGACY, true, false);
+        }
+        throw new IllegalStateException(
+                "account "
+                        + address
+                        + " has a post-quantum key on chain that neither the canonical nor the legacy "
+                        + "derivation of this mnemonic produces, so it was registered from another secret. Supply that "
+                        + "keypair explicitly (QORE_PQC_SEED_HEX), or check that the mnemonic belongs to this account.");
+    }
+
+    private static String registeredPqcKey(RdkClient client, String address) {
+        try {
+            return client.rest.getPqcAccount(address).publicKey.toLowerCase();
+        } catch (RuntimeException e) {
+            // An account with no record reads as "not registered".
+            return "";
+        }
+    }
+
+    /**
+     * The operator's ML-DSA-87 keypair from the environment, checked against the chain, or {@code
+     * null} when no source is configured (the caller then signs classical-only, which both public
+     * networks refuse on the native lane).
+     *
+     * <ul>
+     *   <li>{@code QORE_MNEMONIC}: resolved with {@link #resolvePqcKeypair}, whichever of the
+     *       canonical and legacy derivations the chain has registered.
+     *   <li>{@code QORE_PQC_SEED_HEX}: a 32-byte ML-DSA-87 seed, for an operator who signs with a raw
+     *       private key ({@code QORE_OPERATOR_PRIVATE_KEY_HEX}) and so has no mnemonic to derive
+     *       from. Takes precedence when set. Still checked against the chain, and refused if the
+     *       account holds a different key.
+     * </ul>
+     */
+    public static ResolvedPqcKeypair pqcKeypairFromEnv(
+            RdkClient client, String address, java.util.Map<String, String> env) {
+        String seedHex = trim(env.get("QORE_PQC_SEED_HEX"));
+        if (!seedHex.isEmpty()) {
+            byte[] seed = Bytes.hexToBytes(seedHex);
+            if (seed.length != 32) {
+                throw new IllegalArgumentException("QORE_PQC_SEED_HEX must be 32 bytes, got " + seed.length);
+            }
+            PqcKeypair keypair = Pqc.generatePqcKeypair(seed);
+            String registeredKey = registeredPqcKey(client, address);
+            if (registeredKey.isEmpty()) {
+                return new ResolvedPqcKeypair(keypair, PqcDerivation.SEED, false, true);
+            }
+            if (registeredKey.equals(Bytes.bytesToHex(keypair.publicKey).toLowerCase())) {
+                return new ResolvedPqcKeypair(keypair, PqcDerivation.SEED, true, false);
+            }
+            throw new IllegalStateException(
+                    "QORE_PQC_SEED_HEX does not produce the post-quantum key registered for "
+                            + address
+                            + "; every hybrid transaction signed with it would be refused");
+        }
+        String mnemonic = trim(env.get("QORE_MNEMONIC"));
+        if (!mnemonic.isEmpty()) {
+            return resolvePqcKeypair(client, address, mnemonic);
+        }
+        return null;
+    }
+
+    /** {@link #pqcKeypairFromEnv(RdkClient, String, java.util.Map)} over the process environment. */
+    public static ResolvedPqcKeypair pqcKeypairFromEnv(RdkClient client, String address) {
+        return pqcKeypairFromEnv(client, address, System.getenv());
     }
 }

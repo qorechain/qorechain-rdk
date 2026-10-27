@@ -50,7 +50,8 @@ creating a rollup, submitting a batch, managing lifecycle — are signed with an
 [`@cosmjs`](https://www.npmjs.com/package/@cosmjs/proto-signing) `OfflineSigner`,
 and with a `pqcKeypair` on connect the TypeScript client signs them **hybrid**
 (ML-DSA-87 + secp256k1), which is what the native lane requires on mainnet and on
-`qorechain-diana`. The Python, Go, Rust, and Java clients sign classical-only. No
+`qorechain-diana`. From 0.8.0 the Python, Go, Rust, and Java clients sign hybrid
+too, given a post-quantum keypair (earlier releases signed them classical-only). No
 marketing claims here — the kit exposes exactly the primitives the chain
 implements.
 
@@ -63,13 +64,13 @@ against shared cross-language golden vectors.
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | Available (v0.7.1) |
-| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.7.1) |
-| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.7.1) |
-| `qorechain-rdk` | Go | Available (v0.7.1, `go get`) |
-| `qorechain-rdk` | Python | Available on PyPI (v0.7.1, imports as `qorrdk`) |
-| `qorechain-rdk` | Rust | Available on crates.io (v0.7.1) |
-| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.7.1) |
+| `@qorechain/rdk` | TypeScript | Available (v0.8.0) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.8.0) |
+| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.8.0) |
+| `qorechain-rdk` | Go | Available (v0.8.0, `go get`) |
+| `qorechain-rdk` | Python | Available on PyPI (v0.8.0, imports as `qorrdk`) |
+| `qorechain-rdk` | Rust | Available on crates.io (v0.8.0) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.8.0) |
 
 The TypeScript core (`@qorechain/rdk`) is the basis for the examples in this
 documentation.

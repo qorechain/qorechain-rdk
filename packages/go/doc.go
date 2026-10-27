@@ -19,7 +19,9 @@
 //   - HD account derivation (BIP-44 m/44'/118'/0'/0/0 secp256k1 -> bech32 qor),
 //     hand-rolled Cosmos transaction encoding, signing, and broadcast, and an
 //     RdkTxClient with lifecycle guards (accounts.go, messages.go, tx.go,
-//     txclient.go).
+//     txclient.go). Given a post-quantum keypair the client signs hybrid
+//     (ML-DSA-87 + secp256k1) through the QoreChain SDK's hybrid builder, with
+//     the keypair resolved against the chain (hybrid.go).
 //
 // The constant and parameter values here are the network's documented defaults.
 // They are NOT a substitute for live chain state: read the authoritative values

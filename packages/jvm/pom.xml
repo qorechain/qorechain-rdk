@@ -6,7 +6,7 @@
 
   <groupId>io.github.qorechain</groupId>
   <artifactId>qorechain-rdk</artifactId>
-  <version>0.7.1</version>
+  <version>0.8.0</version>
   <packaging>jar</packaging>
 
   <name>QoreChain Rollup Development Kit (JVM)</name>
@@ -38,13 +38,15 @@
   </scm>
 
   <properties>
-    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <web3j.version>4.12.3</web3j.version>
     <gson.version>2.11.0</gson.version>
     <junit.version>5.10.2</junit.version>
     <qorechain-pqc.version>[0.2.1,0.3)</qorechain-pqc.version>
+    <qorechain-sdk.version>[0.10.0,0.11)</qorechain-sdk.version>
+    <jackson.version>2.17.2</jackson.version>
   </properties>
 
   <dependencies>
@@ -57,6 +59,20 @@
       <groupId>io.github.qorechain</groupId>
       <artifactId>qorechain-pqc</artifactId>
       <version>${qorechain-pqc.version}</version>
+    </dependency>
+    <dependency>
+      <!-- Hybrid (post-quantum) transaction builder, PQC key derivations, and the
+           sign-bytes resolver. Requires Java 21. -->
+      <groupId>io.github.qorechain</groupId>
+      <artifactId>qorechain-sdk</artifactId>
+      <version>${qorechain-sdk.version}</version>
+    </dependency>
+    <dependency>
+      <!-- The SDK's sign-bytes resolver takes its REST answers as Jackson trees; pinned to
+           the version the SDK is built against. -->
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
     </dependency>
     <dependency>
       <groupId>com.google.code.gson</groupId>

@@ -332,6 +332,11 @@ func NewRestClient(baseURL string, doer HTTPDoer) *RestClient {
 	return &RestClient{base: strings.TrimRight(baseURL, "/"), http: doer}
 }
 
+// BaseURL returns the REST (LCD) base URL, without a trailing slash.
+func (c *RestClient) BaseURL() string {
+	return c.base
+}
+
 // ProtocolFeature is one protocol switch as the chain reports it.
 type ProtocolFeature struct {
 	Name    string
@@ -907,6 +912,26 @@ func NewRdkClient(options RdkClientOptions) *RdkClient {
 		Qor:     NewQorClient(net.Endpoints.EvmRPC, options.HTTP),
 		http:    doer,
 	}
+}
+
+// ConnectTx returns a tx client that signs as account on this client's network
+// (its chain id) and broadcasts through this client's REST client. Pass hybrid
+// to sign every transaction hybrid (post-quantum), which both public networks
+// require; nil signs classical-only. PqcKeypairFromEnv or ResolvePqcKeypair
+// find the keypair:
+//
+//	resolved, err := rdk.ResolvePqcKeypair(ctx, client, account.Address, mnemonic)
+//	if err != nil {
+//		return err
+//	}
+//	opts := resolved.HybridOptions()
+//	tx := client.ConnectTx(account, &opts)
+func (c *RdkClient) ConnectTx(account Account, hybrid *HybridOptions) *RdkTxClient {
+	tx := NewRdkTxClient(account, c.Network.ChainID, c.Rest)
+	if hybrid != nil {
+		return tx.WithHybrid(*hybrid)
+	}
+	return tx
 }
 
 // GetChainTip reads the chain tip — latest height and its block time — from the

@@ -20,18 +20,66 @@ Surface (mirrors the TypeScript RDK modules):
 - Read clients for rollups, batches, and module parameters (REST + `qor_`
   JSON-RPC) over an injectable, mockable transport.
 - Account derivation (mnemonic → secp256k1 → bech32 `qor` address) and a signing
-  transaction client that builds SIGN_MODE_DIRECT transactions for the eight
-  `rdk` messages and broadcasts them over REST.
+  transaction client that builds transactions for the eight `rdk` messages and
+  broadcasts them over REST, signed hybrid (post-quantum) when given an
+  ML-DSA-87 keypair.
 
-> **Mainnet PQC signing requirement.** QoreChain mainnet requires the hybrid
-> post-quantum signature extension (ML-DSA-87 + secp256k1) on native-lane
-> transactions. The Rust transaction path currently signs classical-only
-> (SIGN_MODE_DIRECT, secp256k1), so native-lane broadcasts to mainnet will be
-> rejected — use it on permissive networks (testnet, local devnets) or pair it
-> with the [`qorechain-pqc`](https://github.com/qorechain/qorechain-pqc)
-> bindings in a custom backend. The TypeScript RDK supports hybrid signing via
-> [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk). Read paths,
-> local transaction signing, and settlement-receipt verification are unaffected.
+> **Post-quantum signing.** Both QoreChain networks require the hybrid
+> post-quantum signature (ML-DSA-87 + secp256k1) on native-lane transactions.
+> Give `RdkTxClient` a PQC keypair and every transaction it signs is built with
+> the [`qorechain-sdk`](https://crates.io/crates/qorechain-sdk) hybrid builder.
+> **Without one it signs classical-only (SIGN_MODE_DIRECT, secp256k1), and the
+> networks refuse the transaction.** Read paths and settlement-receipt
+> verification are unaffected.
+
+## Hybrid (post-quantum) signing
+
+Find the ML-DSA-87 keypair the account actually uses, then pass it to the tx
+client:
+
+```rust,no_run
+use qorechain_rdk::accounts::{pqc_keypair_from_env, resolve_pqc_keypair, NativeAccount};
+use qorechain_rdk::client::RdkClient;
+use qorechain_rdk::tx::{HybridSigningOptions, RdkTxClient, TxOptions};
+
+let mnemonic = std::env::var("QORE_MNEMONIC").unwrap();
+let account = NativeAccount::from_mnemonic_default(&mnemonic).unwrap();
+let client = RdkClient::testnet();
+
+// From a mnemonic: the canonical or legacy key, whichever the chain holds.
+let resolved = resolve_pqc_keypair(&client, account.address(), &mnemonic).unwrap();
+// Or from the environment: QORE_PQC_SEED_HEX (a 32-byte seed), else QORE_MNEMONIC.
+// let resolved = pqc_keypair_from_env(&client, account.address()).unwrap().expect("a PQC key");
+
+let tx = RdkTxClient::new_with_options(
+    account,
+    client.rest.clone(),
+    "qorechain-diana",
+    account_number, // read from /cosmos/auth/v1beta1/accounts/{address}
+    sequence,
+    HybridSigningOptions::from(resolved),
+)
+.unwrap();
+tx.pause_rollup("my-rollup", "maintenance", None, &TxOptions::default()).unwrap();
+```
+
+- `resolve_pqc_keypair(client, address, mnemonic)` reads the account's
+  registered key (`/qorechain/pqc/v1/account/{address}`). No key registered: the
+  canonical key (`shake256("qorechain:pqc:v1|" + address + "|" + mnemonic)`),
+  with `include_pqc_public_key: true` so the first transaction registers it.
+  Registered canonical or legacy key: that key, not embedded. Any other key is
+  an error: it was registered from another secret.
+- `pqc_keypair_from_env(client, address)` uses `QORE_PQC_SEED_HEX` (a 32-byte
+  ML-DSA-87 seed, for an operator who signs with
+  `QORE_OPERATOR_PRIVATE_KEY_HEX`; it must match the registered key, if any),
+  otherwise `QORE_MNEMONIC`, otherwise returns `None`.
+- `HybridSigningOptions` takes `pqc_keypair`, `include_pqc_public_key`, and
+  `sign_bytes_version`: `SignBytesMode::Auto` (the default) asks the node over
+  REST which hybrid sign-bytes form it verifies (v1 or v2, by the chain's
+  applied upgrade) and, if a broadcast is refused for the hybrid signature,
+  asks again and re-signs once; `SignBytesMode::V1` / `V2` force a form.
+- `build_hybrid_tx(msg, opts, version)` builds without broadcasting and returns
+  the `TxRaw` bytes plus the exact bytes the ML-DSA-87 signature covers.
 
 ## What's new in 0.5.0
 

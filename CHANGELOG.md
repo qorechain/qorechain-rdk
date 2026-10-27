@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.8.0
+
+### Fixed
+
+- **The Python, Go, Rust and Java clients could not send a transaction the
+  networks accept.** They signed classical-only (secp256k1), and both mainnet
+  and testnet require a hybrid ML-DSA-87 + secp256k1 signature on native-lane
+  transactions, so only their reads worked. Each now signs hybrid when given a
+  post-quantum keypair, through its own published QoreChain SDK (0.10.x), with
+  the sign-bytes form (v1/v2) resolved from the chain. Every client produces
+  byte-identical transactions to the TypeScript client for the same input: the
+  shared golden fixture holds four hybrid transactions (v1 and v2, with and
+  without the embedded public key) that each language reproduces exactly.
+
+### Added
+
+- Post-quantum key resolution in every language, matching TypeScript: from a
+  mnemonic, the canonical or the legacy derivation, whichever the chain has
+  registered (a new account embeds the canonical key on first use); or a
+  32-byte seed from `QORE_PQC_SEED_HEX`, checked against the registered key.
+  Python `resolve_pqc_keypair` / `pqc_keypair_from_env`, Go
+  `ResolvePqcKeypair` / `PqcKeypairFromEnv`, Rust `resolve_pqc_keypair` /
+  `pqc_keypair_from_env`, Java `Accounts.resolvePqcKeypair` /
+  `pqcKeypairFromEnv`.
+
+### Changed
+
+- **Java 21 is required** (was 17), as the QoreChain Java SDK it depends on is.
+- New dependencies: `qorechain-sdk` 0.10.x on PyPI, Go
+  `github.com/qorechain/qorechain-sdk/packages/go` v0.10.0, crates.io
+  `qorechain-sdk` 0.10, Maven `io.github.qorechain:qorechain-sdk` [0.10.0,0.11).
+  Rust moves to `cosmrs` 0.22 (shared with the SDK).
+- Go: `RdkTxClient.Sign` returns `([]byte, error)`, since hybrid signing can fail.
+- The templates pin `@qorechain/rdk ^0.8.0`.
+
 ## 0.7.1
 
 ### Fixed

@@ -24,6 +24,17 @@ type SimulateBackend interface {
 // settlement batches, withdrawals). It builds the Cosmos tx envelope, signs the
 // SignDoc, and broadcasts TxRaw via the REST txs endpoint.
 //
+// Two signing paths:
+//
+//   - Hybrid (post-quantum): set Hybrid (see WithHybrid and
+//     RdkClient.ConnectTx). Every transaction is then built and signed by the
+//     QoreChain SDK's hybrid builder, which attaches the ML-DSA-87 signature as
+//     a tx-body extension alongside the classical secp256k1 signature. Both
+//     public networks require it on native-lane transactions.
+//   - Classical: without Hybrid the client signs secp256k1-only
+//     (SIGN_MODE_DIRECT), which the public networks refuse. Useful offline and
+//     against a local chain that does not require the post-quantum signature.
+//
 // Account and chain context (sequence, account number, chain id) must be
 // supplied per call; read the sequence and account number from the chain's auth
 // query before submitting. Broadcasting is only performed when Broadcast is
@@ -38,10 +49,16 @@ type RdkTxClient struct {
 	// Backend, when set, replaces the default sign-and-broadcast path. Inject a
 	// MockTxClient here to exercise the flow offline.
 	Backend TxBackend
+	// Hybrid, when set, makes every transaction this client signs hybrid
+	// (post-quantum). Nil signs classical-only. Prefer WithHybrid, which also
+	// gives the client a caching sign-bytes resolver.
+	Hybrid *HybridOptions
 }
 
 // NewRdkTxClient creates a tx client for an account and chain id. The REST
-// client is used for broadcasting and may be nil for offline signing.
+// client is used for broadcasting and may be nil for offline signing. The
+// client signs classical-only until given a post-quantum keypair with
+// WithHybrid.
 func NewRdkTxClient(account Account, chainID string, rest *RestClient) *RdkTxClient {
 	return &RdkTxClient{Account: account, ChainID: chainID, Rest: rest}
 }
@@ -67,15 +84,21 @@ type TxParams struct {
 }
 
 // Sign builds and signs a transaction, returning the TxRaw bytes ready to
-// broadcast.
-func (c *RdkTxClient) Sign(messages []Msg, p TxParams) []byte {
-	return SignTx(c.Account, messages, p.Memo, p.Fee, p.Sequence, c.ChainID, p.AccountNumber)
+// broadcast: hybrid when the client has a Hybrid configuration, classical
+// otherwise. It is BuildTx with a background context.
+func (c *RdkTxClient) Sign(messages []Msg, p TxParams) ([]byte, error) {
+	built, err := c.BuildTx(context.Background(), messages, p)
+	if err != nil {
+		return nil, err
+	}
+	return built.TxRaw, nil
 }
 
 // Broadcast signs and broadcasts the messages and returns the raw response.
 // When a Backend is configured it is used; otherwise the messages are signed
-// locally and broadcast via the REST txs endpoint, which requires a non-nil REST
-// client.
+// locally (hybrid when the client has a Hybrid configuration) and broadcast via
+// the REST txs endpoint, which requires a non-nil REST client. The rule checks
+// run before anything is signed.
 func (c *RdkTxClient) Broadcast(ctx context.Context, messages []Msg, p TxParams) (map[string]any, error) {
 	if err := preflightMessages(messages); err != nil {
 		return nil, err
@@ -86,8 +109,14 @@ func (c *RdkTxClient) Broadcast(ctx context.Context, messages []Msg, p TxParams)
 	if c.Rest == nil {
 		return nil, &RollupConfigError{Errors: []string{"no REST client configured for broadcast"}}
 	}
-	txBytes := c.Sign(messages, p)
-	return c.Rest.BroadcastTxBytes(ctx, txBytes)
+	if c.Hybrid != nil {
+		return c.broadcastHybrid(ctx, messages, p)
+	}
+	built, err := c.BuildTx(ctx, messages, p)
+	if err != nil {
+		return nil, err
+	}
+	return c.Rest.BroadcastTxBytes(ctx, built.TxRaw)
 }
 
 // Simulate estimates gas for a set of messages without broadcasting — the basis
@@ -105,8 +134,11 @@ func (c *RdkTxClient) Simulate(ctx context.Context, messages []Msg, p TxParams) 
 	if c.Rest == nil {
 		return 0, &RollupConfigError{Errors: []string{"no REST client configured for simulation"}}
 	}
-	txBytes := c.Sign(messages, p)
-	return c.Rest.SimulateTxBytes(ctx, txBytes)
+	built, err := c.BuildTx(ctx, messages, p)
+	if err != nil {
+		return 0, err
+	}
+	return c.Rest.SimulateTxBytes(ctx, built.TxRaw)
 }
 
 // --- message builders that fill in the signer from the client's address ---

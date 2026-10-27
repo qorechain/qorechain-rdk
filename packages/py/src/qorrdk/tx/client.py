@@ -8,6 +8,18 @@ A transaction is assembled in Cosmos ``SIGN_MODE_DIRECT``: the hand-encoded
 ``/cosmos/tx/v1beta1/txs`` endpoint (``BROADCAST_MODE_SYNC``).
 
 Signing is delegated to a :class:`~qorrdk.accounts.Signer` (secp256k1).
+
+Two signing paths:
+
+- **Classical** (default): the ``SIGN_MODE_DIRECT`` transaction above, signed
+  with secp256k1 only. Both public networks refuse a classical-only native-lane
+  transaction.
+- **Hybrid (post-quantum)**: pass ``pqc_keypair``. Every transaction is then
+  built and signed by the QoreChain Python SDK's ``qorsdk.tx.build_hybrid_tx``,
+  which attaches the ML-DSA-87 half as a ``PQCHybridSignature`` tx-body
+  extension alongside the classical secp256k1 signature. The hybrid sign-bytes
+  form (``v1`` / ``v2``) is resolved from the network by the SDK's resolver
+  (``sign_bytes_version="auto"``), or forced with ``"v1"`` / ``"v2"``.
 """
 
 from __future__ import annotations
@@ -31,6 +43,14 @@ from cosmpy.protos.cosmos.tx.v1beta1.tx_pb2 import (
     TxBody,
     TxRaw,
 )
+
+from qorsdk.pqc import PqcKeypair
+from qorsdk.signbytes import (
+    SignBytesResolver,
+    default_sign_bytes_resolver,
+    is_hybrid_signature_rejection,
+)
+from qorsdk.tx import BuiltTx, build_hybrid_tx
 
 from ..rules import rollup_id_error, withdrawal_errors, withdrawals_root_error
 from ..accounts.wallet import Signer
@@ -69,6 +89,40 @@ def _to_any(encoded: EncodedMsg) -> PbAny:
     return PbAny(type_url=encoded.type_url, value=encoded.value)
 
 
+_SIGN_BYTES_OPTIONS = ("auto", "v1", "v2")
+
+
+class _TransportResponse:
+    """The slice of an ``httpx`` response the SDK's sign-bytes resolver reads."""
+
+    def __init__(self, url: str, resp) -> None:
+        self._url = url
+        self._resp = resp
+
+    def raise_for_status(self) -> None:
+        if not self._resp.ok:
+            raise RuntimeError(
+                f"GET {self._url} failed: {self._resp.status} {self._resp.status_text}"
+            )
+
+    def json(self) -> Any:
+        return self._resp.json()
+
+
+class _TransportHttpClient:
+    """Adapts the RDK :class:`~qorrdk.client.http.Transport` to the ``get`` the
+    SDK's resolver calls, so resolution goes through the same (injectable)
+    transport as every other request this client makes."""
+
+    def __init__(self, transport: Transport) -> None:
+        self._transport = transport
+
+    def get(self, url: str) -> _TransportResponse:
+        return _TransportResponse(
+            url, self._transport("GET", url, {"accept": "application/json"}, None)
+        )
+
+
 @runtime_checkable
 class SignAndBroadcastBackend(Protocol):
     """The sign-and-broadcast capability ``RdkTxClient`` can delegate to.
@@ -94,6 +148,20 @@ class RdkTxClient:
     :class:`SignAndBroadcastBackend`) -- or build one with :meth:`from_backend`
     -- to delegate signing and broadcast elsewhere, e.g. the offline
     :class:`~qorrdk.tx.mock.MockTxClient`.
+
+    Pass ``pqc_keypair`` to sign every transaction hybrid (post-quantum):
+
+    - ``pqc_keypair``: the ML-DSA-87 keypair providing the post-quantum half.
+      It must already be registered on chain unless ``include_pqc_public_key``
+      is set. :func:`~qorrdk.accounts.resolve_pqc_keypair` and
+      :func:`~qorrdk.accounts.pqc_keypair_from_env` find the right one.
+    - ``include_pqc_public_key``: embed the public key in the extension so the
+      chain registers it on first use. Defaults to ``False``.
+    - ``sign_bytes_version``: ``"auto"`` (the default) asks the network over
+      ``rest_url`` which hybrid sign-bytes form it verifies; ``"v1"`` / ``"v2"``
+      force a form.
+    - ``sign_bytes_resolver``: the SDK ``SignBytesResolver`` behind ``"auto"``;
+      defaults to the SDK's process-wide one (answers cached briefly).
     """
 
     def __init__(
@@ -104,7 +172,24 @@ class RdkTxClient:
         signer: Optional[Signer] = None,
         transport: Optional[Transport] = None,
         backend: Optional[SignAndBroadcastBackend] = None,
+        pqc_keypair: Optional[PqcKeypair] = None,
+        include_pqc_public_key: bool = False,
+        sign_bytes_version: str = "auto",
+        sign_bytes_resolver: Optional[SignBytesResolver] = None,
     ) -> None:
+        if sign_bytes_version not in _SIGN_BYTES_OPTIONS:
+            raise ValueError(
+                f'sign_bytes_version must be "auto", "v1" or "v2", got "{sign_bytes_version}"'
+            )
+        if pqc_keypair is not None and backend is not None:
+            raise ValueError(
+                "pqc_keypair applies to the client's own signing path; a backend signs "
+                "and broadcasts on its own"
+            )
+        self._pqc_keypair = pqc_keypair
+        self._include_pqc_public_key = bool(include_pqc_public_key)
+        self._sign_bytes_version = sign_bytes_version
+        self._resolver = sign_bytes_resolver or default_sign_bytes_resolver
         self._backend = backend
         if backend is None:
             if rest_url is None or chain_id is None or signer is None:
@@ -139,6 +224,11 @@ class RdkTxClient:
         if self._backend is not None:
             return self._backend.address
         return self._signer.address
+
+    @property
+    def is_hybrid(self) -> bool:
+        """Whether this client signs hybrid (post-quantum) transactions."""
+        return self._pqc_keypair is not None
 
     # ------------------------------------------------------------------ #
     # Transaction assembly (no network access -- testable offline).
@@ -192,8 +282,26 @@ class RdkTxClient:
         account_number: int,
         sequence: int,
         opts: Optional[TxOptions] = None,
+        sign_bytes_version: Optional[str] = None,
     ) -> bytes:
-        """Build and sign a transaction, returning the ``TxRaw`` bytes."""
+        """Build and sign a transaction, returning the ``TxRaw`` bytes.
+
+        A hybrid client signs with :meth:`sign_hybrid_tx`; its sign-bytes form
+        is ``sign_bytes_version`` if given, else the client's setting, and
+        ``"auto"`` asks the network (see :meth:`resolve_sign_bytes_version`).
+        Without a PQC keypair this is the classical ``SIGN_MODE_DIRECT`` tx.
+        """
+        if self._pqc_keypair is not None:
+            version = self.resolve_sign_bytes_version(
+                sign_bytes_version or self._sign_bytes_version
+            )
+            return self.sign_hybrid_tx(
+                encoded,
+                account_number=account_number,
+                sequence=sequence,
+                opts=opts,
+                sign_bytes_version=version,
+            ).tx_raw_bytes
         sign_doc, body_bytes, auth_info_bytes = self.build_sign_doc(
             encoded, account_number=account_number, sequence=sequence, opts=opts
         )
@@ -205,6 +313,66 @@ class RdkTxClient:
             signatures=[signature],
         )
         return tx_raw.SerializeToString()
+
+    def sign_hybrid_tx(
+        self,
+        encoded: list[EncodedMsg],
+        *,
+        account_number: int,
+        sequence: int,
+        sign_bytes_version: str,
+        opts: Optional[TxOptions] = None,
+    ) -> BuiltTx:
+        """Build and sign a hybrid (secp256k1 + ML-DSA-87) transaction offline.
+
+        The messages, fee, memo, chain id, account number and sequence are the
+        ones the classical path uses; the transaction is assembled by the SDK's
+        ``build_hybrid_tx``. ``sign_bytes_version`` must be ``"v1"`` or ``"v2"``
+        (resolve ``"auto"`` first with :meth:`resolve_sign_bytes_version`).
+        Returns the SDK's ``BuiltTx``: ``tx_raw_bytes`` to broadcast, plus the
+        exact ``pqc_signed_message`` and ``pqc_signature``.
+        """
+        if self._pqc_keypair is None:
+            raise RuntimeError("this client has no pqc_keypair, so it cannot sign hybrid")
+        if sign_bytes_version not in ("v1", "v2"):
+            raise ValueError(
+                f'sign_bytes_version must be "v1" or "v2" here, got "{sign_bytes_version}"'
+            )
+        opts = opts or TxOptions()
+        return build_hybrid_tx(
+            account=self._signer,
+            pqc_keypair=self._pqc_keypair,
+            messages=[{"type_url": m.type_url, "value": m.value} for m in encoded],
+            fee={
+                "amount": [{"denom": opts.fee_denom, "amount": opts.fee_amount}],
+                "gas": opts.gas_limit,
+            },
+            chain_id=self._chain_id,
+            account_number=account_number,
+            sequence=sequence,
+            memo=opts.memo,
+            include_pqc_public_key=self._include_pqc_public_key,
+            sign_bytes_version=sign_bytes_version,
+        )
+
+    def resolve_sign_bytes_version(
+        self, sign_bytes_version: Optional[str] = None, *, force_refresh: bool = False
+    ) -> str:
+        """Resolve the hybrid sign-bytes form (``"v1"`` / ``"v2"``) to sign.
+
+        Uses the SDK's resolver: an explicit ``"v1"`` / ``"v2"`` is returned
+        as-is; ``"auto"`` (the default setting) asks the network over the REST
+        URL whether the v2 upgrade has been applied, through this client's
+        transport, and caches the answer briefly.
+        """
+        option = sign_bytes_version or self._sign_bytes_version
+        return self._resolver.resolve(
+            self._chain_id,
+            rest_url=self._rest or None,
+            sign_bytes_version=option,
+            force_refresh=force_refresh,
+            client=_TransportHttpClient(self._transport or default_transport()),
+        )
 
     # ------------------------------------------------------------------ #
     # Network access.
@@ -270,9 +438,39 @@ class RdkTxClient:
         if self._backend is not None:
             return self._backend.sign_and_broadcast(encoded, opts)
         account_number, sequence = self.fetch_account(self.address)
-        tx_bytes = self.sign_tx(
-            encoded, account_number=account_number, sequence=sequence, opts=opts
-        )
+        if self._pqc_keypair is None:
+            tx_bytes = self.sign_tx(
+                encoded, account_number=account_number, sequence=sequence, opts=opts
+            )
+            return self._post_tx(tx_bytes)
+
+        # Hybrid: sign with the resolved form. With "auto", a refusal of the
+        # post-quantum signature means the cached answer went stale (the network
+        # upgraded): re-resolve, re-sign and broadcast once more, as the SDK's
+        # hybrid_sign_and_broadcast does. An explicit form is never retried.
+        def attempt(version: str) -> BroadcastResult:
+            built = self.sign_hybrid_tx(
+                encoded,
+                account_number=account_number,
+                sequence=sequence,
+                opts=opts,
+                sign_bytes_version=version,
+            )
+            return self._post_tx(built.tx_raw_bytes)
+
+        auto = self._sign_bytes_version == "auto"
+        try:
+            result = attempt(self.resolve_sign_bytes_version())
+        except RuntimeError as err:
+            if not (auto and is_hybrid_signature_rejection(err)):
+                raise
+        else:
+            if not (auto and is_hybrid_signature_rejection(result.raw)):
+                return result
+        return attempt(self.resolve_sign_bytes_version("auto", force_refresh=True))
+
+    def _post_tx(self, tx_bytes: bytes) -> BroadcastResult:
+        """POST signed ``TxRaw`` bytes to ``/cosmos/tx/v1beta1/txs`` (SYNC)."""
         payload = json.dumps(
             {
                 "tx_bytes": base64.b64encode(tx_bytes).decode("ascii"),

@@ -22,6 +22,7 @@ final class Golden {
     WithdrawalLeafSection withdrawalLeaf;
     WithdrawalTreeSection withdrawalTree;
     DaBlobSection daBlob;
+    HybridTxSection hybridTx;
 
     static final class MerkleSection {
         String hash;
@@ -101,6 +102,40 @@ final class Golden {
         String messageUtf8;
         String publicKeyHex;
         String signatureHex;
+    }
+
+    /**
+     * Hybrid transactions the TypeScript SDK built for one fixed input. ML-DSA-87 signing is
+     * deterministic, so every client must produce these exact bytes.
+     */
+    static final class HybridTxSection {
+        String chainId;
+        long accountNumber;
+        long sequence;
+        HybridFee fee;
+        String memo;
+        HybridMessage message;
+        HybridVector v1;
+        HybridVector v1WithKey;
+        HybridVector v2;
+        HybridVector v2WithKey;
+    }
+
+    static final class HybridFee {
+        List<Map<String, String>> amount;
+        String gas;
+    }
+
+    static final class HybridMessage {
+        String typeUrl;
+        String creator;
+        String rollupId;
+        String reason;
+    }
+
+    static final class HybridVector {
+        String txRawHex;
+        String pqcSignedMessageHex;
     }
 
     static Golden load() {
