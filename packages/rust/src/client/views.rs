@@ -101,6 +101,11 @@ pub struct RollupView {
     pub challenge_bond: Option<String>,
     /// The rollup's proof system, e.g. `fraud` (chain v3.2.4+).
     pub proof_system: Option<String>,
+    /// Whether the rollup has a ZK verification key registered. True only when
+    /// the node serves the field as true. No release before the planned chain
+    /// v3.2.7 can register one, so a node that does not serve it means none:
+    /// every zk batch is then refused.
+    pub has_verification_key: bool,
 }
 
 /// A settlement batch.
@@ -265,6 +270,8 @@ pub fn map_rollup_view(raw: &Value) -> RollupView {
             .map(|v| str_of(Some(v), "")),
         proof_system: present(pick(raw, &["proof_system", "proofSystem"]))
             .map(|v| str_of(Some(v), "")),
+        has_verification_key: pick(raw, &["has_verification_key", "hasVerificationKey"])
+            == Some(&Value::Bool(true)),
     }
 }
 

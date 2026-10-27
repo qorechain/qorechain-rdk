@@ -1,5 +1,6 @@
 package io.github.qorechain.rdk.bridge;
 
+import io.github.qorechain.rdk.util.Qorehash;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -14,17 +15,20 @@ import java.util.function.Function;
  * root ({@code withdrawals_root}), and {@code MsgExecuteWithdrawal} carries the sibling hashes from
  * a leaf to that root.
  *
- * <p>IMPORTANT: the leaf encoding, hash function, and odd-node handling MUST match the network's
- * {@code withdrawals_root} construction for the proof to verify on-chain. The defaults (SHA-256,
- * hash each leaf, duplicate the last node on odd levels, no domain separation) are a common
- * convention — override {@link MerkleOptions} to match the chain exactly.
+ * <p>The hash defaults to the chain's: SHAKE-256 with a 32-byte output. For a batch's withdrawals
+ * use {@link Withdrawal#withdrawalsTree}, which also builds the chain's leaves and places each at
+ * its withdrawal index; these generic helpers hash each input leaf by default, which the chain does
+ * not. Releases before 0.7.0 defaulted to SHA-256, which no chain construction uses.
  */
 public final class Merkle {
     private Merkle() {}
 
     /** Configures binary Merkle tree construction. Null fields use the documented defaults. */
     public static final class MerkleOptions {
-        /** Hash for internal nodes (and leaves when {@code hashLeaves}). Null → SHA-256. */
+        /**
+         * Hash for internal nodes (and leaves when {@code hashLeaves}). Null → SHAKE-256 (32
+         * bytes).
+         */
         public Function<byte[], byte[]> hash;
         /** Hash each input leaf before building the tree. Null → true. */
         public Boolean hashLeaves;
@@ -44,7 +48,15 @@ public final class Merkle {
         }
     }
 
-    /** The default SHA-256 hash. */
+    /** The default hash: SHAKE-256, 32 bytes (the chain's {@code qorehash.Sum256}). */
+    public static byte[] qorehash(byte[] data) {
+        return Qorehash.qorehash(data);
+    }
+
+    /**
+     * SHA-256, the default before 0.7.0. Pass it as {@link MerkleOptions#hash} to rebuild a tree
+     * made by an earlier release; no chain construction uses it.
+     */
     public static byte[] sha256(byte[] data) {
         try {
             return MessageDigest.getInstance("SHA-256").digest(data);
@@ -54,7 +66,7 @@ public final class Merkle {
     }
 
     private static Resolved resolve(MerkleOptions options) {
-        Function<byte[], byte[]> hash = Merkle::sha256;
+        Function<byte[], byte[]> hash = Merkle::qorehash;
         boolean hashLeaves = true;
         boolean duplicateOdd = true;
         if (options != null) {

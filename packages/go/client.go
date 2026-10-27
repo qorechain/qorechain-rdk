@@ -59,6 +59,11 @@ type RollupView struct {
 	ChallengeBond string
 	// ProofSystem is the rollup's proof system, e.g. "fraud" (chain v3.2.4+).
 	ProofSystem string
+	// HasVerificationKey reports whether the rollup has a ZK verification key
+	// registered. It is true only when the node serves the field as true. No
+	// release before the planned chain v3.2.7 can register one, so absent means
+	// none: every zk batch is then refused.
+	HasVerificationKey bool
 }
 
 // BatchView holds a settlement batch.
@@ -210,6 +215,7 @@ func MapRollupView(raw map[string]any) RollupView {
 		ChallengeWindowSec: optionalU64(pick(raw, "challenge_window_sec", "challengeWindowSec")),
 		ChallengeBond:      asStr(pick(raw, "challenge_bond", "challengeBond"), ""),
 		ProofSystem:        asStr(pick(raw, "proof_system", "proofSystem"), ""),
+		HasVerificationKey: pick(raw, "has_verification_key", "hasVerificationKey") == true,
 	}
 }
 

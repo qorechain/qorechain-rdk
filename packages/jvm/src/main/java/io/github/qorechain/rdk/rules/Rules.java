@@ -2,6 +2,7 @@ package io.github.qorechain.rdk.rules;
 
 import io.github.qorechain.rdk.tx.Messages.MsgCreateRollup;
 import io.github.qorechain.rdk.tx.Messages.MsgExecuteWithdrawal;
+import io.github.qorechain.rdk.tx.Messages.MsgSubmitBatch;
 import io.github.qorechain.rdk.tx.Msg;
 import io.github.qorechain.rdk.util.Bech32;
 import java.nio.charset.StandardCharsets;
@@ -119,6 +120,13 @@ public final class Rules {
                 if (e != null) {
                     throw new IllegalArgumentException("rollupId \"" + c.rollupId + "\" " + e);
                 }
+            } else if (msg instanceof MsgSubmitBatch) {
+                MsgSubmitBatch b = (MsgSubmitBatch) msg;
+                String e = withdrawalsRootError(b.withdrawalsRoot);
+                if (e != null) {
+                    throw new IllegalArgumentException(
+                            "cannot submit batch " + Long.toUnsignedString(b.batchIndex) + ": " + e);
+                }
             } else if (msg instanceof MsgExecuteWithdrawal) {
                 List<String> errs = withdrawalErrors((MsgExecuteWithdrawal) msg);
                 if (!errs.isEmpty()) {
@@ -148,5 +156,51 @@ public final class Rules {
                 + daBackend
                 + " data availability: no transaction stores a data-availability blob on chain, so"
                 + " the chain refuses a batch that claims one";
+    }
+
+    /**
+     * Why a batch's {@code withdrawalsRoot} would be refused, or {@code null} if it is acceptable.
+     * From chain v3.2.5 ({@code rdk-withdrawals-binding}) it must be empty or exactly 32 bytes, the
+     * root of the batch's withdrawals tree.
+     */
+    public static String withdrawalsRootError(byte[] withdrawalsRoot) {
+        int n = withdrawalsRoot == null ? 0 : withdrawalsRoot.length;
+        return n == 0 || n == 32 ? null : "withdrawalsRoot must be empty or 32 bytes, got " + n;
+    }
+
+    /** {@link #withdrawalsRootError(byte[])} for a hex root, with or without {@code 0x}. */
+    public static String withdrawalsRootError(String withdrawalsRootHex) {
+        if (withdrawalsRootHex == null) {
+            return null;
+        }
+        String h = withdrawalsRootHex;
+        if (h.startsWith("0x") || h.startsWith("0X")) {
+            h = h.substring(2);
+        }
+        if (h.length() % 2 != 0) {
+            return "withdrawalsRoot must be empty or 32 bytes, got an odd-length hex string";
+        }
+        int n = h.length() / 2;
+        return n == 0 || n == 32 ? null : "withdrawalsRoot must be empty or 32 bytes, got " + n;
+    }
+
+    /**
+     * From chain v3.2.5 ({@code rdk-challenge-settlement}) an optimistic rollup may have at most
+     * this many batches waiting for finality; the next one is refused.
+     */
+    public static final int MAX_PENDING_OPTIMISTIC_BATCHES = 4096;
+
+    /**
+     * Why stopping a rollup would be refused, given the status of its latest batch, or {@code
+     * null} if it would not be. From chain v3.2.5 ({@code rdk-challenge-settlement}) a rollup whose
+     * latest batch is still submitted or challenged cannot be stopped: stopping refunds the escrow
+     * that pays an upheld challenge.
+     */
+    public static String stopRollupError(String latestBatchStatus) {
+        return "submitted".equals(latestBatchStatus) || "challenged".equals(latestBatchStatus)
+                ? "the rollup's latest batch is "
+                        + latestBatchStatus
+                        + "; stop it once that batch is finalized or rejected"
+                : null;
     }
 }

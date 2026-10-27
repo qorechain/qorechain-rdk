@@ -122,7 +122,10 @@ See [Local & dry-run testing](../guides/local-and-dry-run.md).
 
 Show a rollup's status, profile, settlement mode, DA backend, VM, and a
 consolidated health read (latest batch, its age, and — for optimistic batches —
-the challenge window, measured the way the chain measures it).
+the challenge window, measured the way the chain measures it). From chain v3.2.5,
+when the latest batch's window has passed but an earlier batch is still
+submitted or challenged, it prints `finality held back`: batches finalize in
+order.
 
 ```bash
 qorollup status my-roll
@@ -276,11 +279,14 @@ These wrap `buildSettlementReceipt` and `verifySettlementReceipt`. See
 
 Run the auto-challenger framework for an optimistic rollup: follow its batches,
 print each new batch and its challenge-window deadline, until you press Ctrl-C.
-Wire up a validity predicate in code (`watchBatches`) to challenge invalid
-batches automatically.
+With `--canonical` it also checks each batch against the chain's own fraud rule
+(its state root must be the canonical transition root of its inputs) and reports
+any batch a challenge would win. It reports; to challenge automatically, wire
+`transitionRootValidator` and `fraudProofForBatch` into `watchBatches` in code.
 
 ```bash
 qorollup watchtower my-roll
+qorollup watchtower my-roll --canonical
 ```
 
 This is the `watchBatches` helper. See the [Watchtower guide](../guides/watchtower.md).
@@ -339,7 +345,7 @@ qorollup manifest import rollup.manifest.json
 
 ### `withdraw`
 
-Assemble a withdrawal proof from a batch's withdrawal leaves and submit
+Build a withdrawal proof exactly as the chain does and submit
 `MsgExecuteWithdrawal`. The withdrawal spec is a JSON file.
 
 ```bash
@@ -350,24 +356,27 @@ qorollup withdraw --file withdrawal.json --dry-run
 | Flag | Meaning |
 | --- | --- |
 | `--file <json>` | Required. The withdrawal spec (see below). |
-| `--dry-run` | Assemble the proof and report it without broadcasting. |
+| `--dry-run` | Build the proof and report it without broadcasting. |
 
-The spec file:
+The spec lists the batch's withdrawals in index order and the one to execute:
 
 ```json
 {
   "rollupId": "my-roll",
   "batchIndex": 7,
-  "recipient": "qor1recipient...",
-  "denom": "uqor",
-  "amount": "1000000",
-  "leaves": ["<hex leaf 0>", "<hex leaf 1>", "..."],
-  "index": 3
+  "index": 1,
+  "withdrawals": [
+    { "recipient": "qor1…", "denom": "uqor", "amount": "1500000" },
+    { "recipient": "qor1…", "denom": "uqor", "amount": "2000000" }
+  ]
 }
 ```
 
-> The leaf encoding and hash **must** match the network's `withdrawals_root`
-> construction. See [Withdrawals](../guides/withdrawals.md).
+It reads the batch to use the leaf encoding the chain judges it by (v2 for a
+batch from chain v3.2.5), and refuses, before paying any fee, a proof whose
+root is not the batch's `withdrawals_root`. A spec with `leaves` (hex leaf
+hashes in the chain's encoding) plus `recipient`, `denom` and `amount` is still
+accepted. See [Withdrawals](../guides/withdrawals.md).
 
 ### `faucet`
 

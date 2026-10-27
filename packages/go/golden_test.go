@@ -29,7 +29,26 @@ type golden struct {
 		LeavesHex           []string `json:"leavesHex"`
 		Root                string   `json:"root"`
 		ProofIndex1Siblings []string `json:"proofIndex1Siblings"`
+		Sha256Legacy        struct {
+			Root                string   `json:"root"`
+			ProofIndex1Siblings []string `json:"proofIndex1Siblings"`
+		} `json:"sha256Legacy"`
 	} `json:"merkle"`
+	WithdrawalTree struct {
+		ChainID     string `json:"chainId"`
+		RollupID    string `json:"rollupId"`
+		Denom       string `json:"denom"`
+		Withdrawals []struct {
+			Recipient string `json:"recipient"`
+			Amount    uint64 `json:"amount"`
+		} `json:"withdrawals"`
+		V1 goldenWithdrawalTree `json:"v1"`
+		V2 goldenWithdrawalTree `json:"v2"`
+	} `json:"withdrawalTree"`
+	DaBlob struct {
+		DataUtf8   string `json:"dataUtf8"`
+		Commitment string `json:"commitment"`
+	} `json:"daBlob"`
 	MsgProtoHex     map[string]string          `json:"msgProtoHex"`
 	PresetDefaults  map[string]json.RawMessage `json:"presetDefaults"`
 	AnchorSignBytes struct {
@@ -58,6 +77,12 @@ type golden struct {
 		PublicKeyHex string `json:"publicKeyHex"`
 		SignatureHex string `json:"signatureHex"`
 	} `json:"mldsaVector"`
+}
+
+type goldenWithdrawalTree struct {
+	Leaves []string   `json:"leaves"`
+	Root   string     `json:"root"`
+	Proofs [][]string `json:"proofs"`
 }
 
 func loadGolden(t *testing.T) golden {

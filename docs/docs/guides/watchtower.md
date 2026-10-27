@@ -72,54 +72,55 @@ auto-challenger; leave it unset to run in observe-only mode.
 
 The chain upholds a fraud challenge against an optimistic batch exactly when
 the batch's published state root differs from the **canonical transition root**
-of its inputs and the proof names that root. You can apply the same rule
-yourself, so a validity predicate needs no knowledge of the rollup's execution:
+of its inputs and the proof names that root. `transitionRootValidator` applies
+that rule, and `fraudProofForBatch` builds the proof that wins, so a watchtower
+needs no knowledge of the rollup's execution:
 
 ```ts
-import {
-  batchTransitionRoot,
-  bytesToHex,
-  decodeWireBytes,
-  fraudProof,
-  transitionRootVersionForBatch,
-  type BatchView,
-} from "@qorechain/rdk";
-
-async function canonicalRoot(batch: BatchView): Promise<Uint8Array> {
-  // The binding this batch is judged by: v2 for batches included at or above
-  // the height where chain v3.2.5 was applied, v1 before.
-  const version = await transitionRootVersionForBatch(rdk.rest, batch);
-  return batchTransitionRoot(
-    {
-      chainId: rdk.network.chainId,
-      rollupId: "my-roll",
-      prevStateRoot: decodeWireBytes(batch.prevStateRoot),
-      dataHash: decodeWireBytes(batch.dataHash),
-      txCount: batch.txCount,
-      withdrawalsRoot: decodeWireBytes(batch.withdrawalsRoot),
-    },
-    version,
-  );
-}
+import { fraudProofForBatch, transitionRootValidator, watchBatches } from "@qorechain/rdk";
 
 watchBatches(rdk, "my-roll", {
-  validate: async (batch) =>
-    bytesToHex(decodeWireBytes(batch.stateRoot)) === bytesToHex(await canonicalRoot(batch)),
+  validate: transitionRootValidator(rdk, "my-roll"),
   onInvalid: async ({ batch, window }) => {
-    if (window && !window.open) return;
-    await tx.challengeBatch({
-      rollupId: "my-roll",
-      batchIndex: batch.batchIndex,
-      proof: fraudProof(decodeWireBytes(batch.prevStateRoot), await canonicalRoot(batch)),
-    });
+    if (window && !window.open) return; // too late: the chain would refuse it
+    const proof = await fraudProofForBatch(rdk, "my-roll", batch);
+    if (!proof) return; // honest after all: a challenge would forfeit the bond
+    await tx.challengeBatch({ rollupId: "my-roll", batchIndex: batch.batchIndex, proof });
   },
 });
 ```
 
-Use the batch's own binding, not the current one: a proof built on the other
-binding is dismissed and the bond forfeited. The same functions exist in every
-language (`batch_transition_root`, `BatchTransitionRoot`,
-`Transition.root`).
+Both use the binding the chain judges **that batch** by (`v2` for a batch
+included at or above the height chain v3.2.5 was applied at, `v1` before); a
+proof built on the other binding is dismissed and its bond forfeited. From the
+CLI, `qorollup watchtower my-roll --canonical` reports such batches. The
+building blocks are `batchTransitionRoot`, `transitionRootVersionForBatch` and
+`fraudProof`, in every language.
+
+## Settlement from chain v3.2.5
+
+On a chain running v3.2.5 (`rdk-challenge-settlement`; the testnet since block
+8,890,800):
+
+- **Batches finalize in order.** A batch finalizes once its own window has
+  passed **and** the batch before it is final, so a challenged batch holds back
+  every batch after it. `getRollupHealth` reports this as `heldBackBy`, and
+  `qorollup status` prints it.
+- **Any account can resolve a challenge**, not only the rollup creator. The
+  outcome is computed on chain from the stored proof; an assertion that does not
+  match is refused.
+- **An upheld fraud rejects the batch and every later batch that is not final,**
+  refunds the bonds of open challenges on them, and the sequencer resubmits from
+  the last good root **under the same indexes**. The watchtower therefore tells
+  batches apart by index *and* state root, so a resubmitted index is judged
+  again, and it never validates a rejected batch.
+- **At most 4,096 optimistic batches can wait for finality** at once
+  (`MAX_PENDING_OPTIMISTIC_BATCHES`); the next is refused.
+- **A rollup cannot be stopped** while its latest batch is submitted or
+  challenged; `stopRollup` checks before paying the fee (`stopRollupError`).
+- **New optimistic rollups take their window from the module parameter
+  `default_challenge_window`** at creation, and keep it: 3,600 s on the testnet,
+  604,800 s on mainnet.
 
 ## How the challenge window is measured
 

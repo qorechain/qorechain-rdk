@@ -2,10 +2,10 @@ package io.github.qorechain.rdk.transition;
 
 import io.github.qorechain.rdk.client.RestClient;
 import io.github.qorechain.rdk.client.Views.BatchView;
+import io.github.qorechain.rdk.util.Qorehash;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import network.qorechain.pqc.Pqc;
 
 /**
  * The canonical batch transition root: the state root a protocol-following sequencer publishes
@@ -25,6 +25,13 @@ public final class Transition {
 
     /** The chain upgrade that turns it on. */
     public static final String WITHDRAWALS_BINDING_UPGRADE = "v3.2.5";
+
+    /**
+     * The chain v3.2.5 protocol feature for in-order settlement: batches finalize in order, any
+     * account may resolve a challenge, an upheld fraud rejects the later batches too, and a rollup
+     * with an unsettled batch cannot be stopped.
+     */
+    public static final String FEATURE_RDK_CHALLENGE_SETTLEMENT = "rdk-challenge-settlement";
 
     /** Which transition binding a batch is judged by. */
     public enum Version {
@@ -68,7 +75,7 @@ public final class Transition {
         msg.writeBytes(orEmpty(in.prevStateRoot));
         msg.writeBytes(orEmpty(in.dataHash));
         msg.writeBytes(u64(in.txCount));
-        return Pqc.shake256(msg.toByteArray(), 32);
+        return Qorehash.qorehash(msg.toByteArray());
     }
 
     /**
@@ -94,7 +101,7 @@ public final class Transition {
         field(msg, in.dataHash);
         msg.writeBytes(u64(in.txCount));
         field(msg, wr);
-        return Pqc.shake256(msg.toByteArray(), 32);
+        return Qorehash.qorehash(msg.toByteArray());
     }
 
     /** The transition root under {@code version}. */

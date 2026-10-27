@@ -4,6 +4,13 @@ A QoreChain DeFi rollup starter: **zk-SNARK settlement / dedicated sequencer /
 native DA / EIP-1559 gas / EVM**, built on [`@qorechain/rdk`](https://github.com/qorechain/qorechain-rdk).
 Includes a reference SNARK prover.
 
+> **ZK settlement cannot be used on QoreChain yet.** The chain checks a zk
+> batch's proof when the batch is submitted, against a verification key
+> registered on the rollup, and no chain release up to v3.2.5 has a way to
+> register one: every zk batch is refused (code 21) after its fee is paid. Key
+> registration is planned for chain v3.2.7. Until then `pnpm create` works, and
+> `pnpm submit-batch` stops before sending anything.
+
 ## Prerequisites
 
 - Node.js >= 20.
@@ -43,25 +50,22 @@ does the same checks plus `watch`, `pause`, `resume`, and `stop` for a live roll
 
 ## Reference SNARK prover
 
-`src/prover.ts` produces the proof bytes for a settlement batch. The reference
-Groth16 artifacts ship **checked in** under `circuits/artifacts/`, so out of the
-box `pnpm submit-batch` generates and locally verifies a **real** Groth16 proof
-with snarkjs before submitting it. (If the artifacts are ever missing it falls
-back to a clearly-labeled placeholder so the create → submit → query flow still
-runs.)
+`src/prover.ts` produces proof bytes from a tiny demo circuit
+(`circuits/multiplier.circom`, built with snarkjs; the artifacts are checked in
+under `circuits/artifacts/`, rebuild with `pnpm circuit:build` and the
+[`circom`](https://docs.circom.io/getting-started/installation/) compiler). It
+shows where a prover plugs in; it is not a proof the chain can accept. The
+chain verifies **Groth16 over BLS12-381** in gnark's binary encoding, against
+the rollup's registered key, with these public inputs, each a big-endian
+integer reduced into the scalar field:
 
-To rebuild the artifacts from the circuit (e.g. after editing
-`circuits/multiplier.circom`), use the
-[`circom`](https://docs.circom.io/getting-started/installation/) compiler:
+1. `prev_state_root`
+2. `state_root`
+3. `data_hash`
+4. `withdrawals_root` (for batches submitted from chain v3.2.5; earlier batches
+   have only the first three)
 
-```sh
-pnpm circuit:build   # recompiles the circuit and refreshes circuits/artifacts/
-```
-
-> On-chain verification is what gates finalization. The exact proof encoding the
-> network's SNARK verifier expects is defined by the chain — align `encodeProof`
-> in `src/prover.ts` (and your own circuit) with it. The bundled `multiplier`
-> circuit is an illustrative placeholder for your real state-transition circuit.
+A real circuit for your state transition must take exactly those inputs.
 
 ## Quantum-safe signing
 

@@ -49,10 +49,24 @@ critical.
 ## `zk`
 
 Each batch carries a validity proof — a `snark` or a `stark`. The proof is
-verified on-chain, and a **valid** proof gates finalization, so a verified batch
-finalizes immediately with no challenge window. The RDK does not implement or
-describe the verifier; your rollup produces proofs in the encoding the network's
-on-chain verifier expects.
+verified on-chain when the batch is submitted, and a **valid** proof finalizes
+the batch immediately, with no challenge window.
+
+:::caution ZK settlement cannot be used yet
+The chain verifies a zk batch against a verification key registered on the
+rollup, and no chain release up to v3.2.5 has a way to register one: creating a
+rollup carries no key and no message sets it. Every zk batch is therefore
+refused (code 21) after its fee is paid, on both networks. Key registration is
+planned for chain v3.2.7. Until then the `defi` profile, and any zk rollup, can
+be created but cannot settle; the `defi-rollup` template stops before
+submitting.
+:::
+
+What the chain verifies, for when it can: a SNARK is Groth16 over BLS12-381 in
+gnark's binary encoding, with public inputs `prev_state_root`, `state_root`,
+`data_hash` and (for batches from chain v3.2.5) `withdrawals_root`, each a
+big-endian integer reduced into the scalar field. A STARK's transcript also
+names the withdrawals root from v3.2.5.
 
 **Choose it when** you need fast, trust-minimized finality — high-value DeFi,
 exchanges, anything that benefits from cryptographic finality without a wait.

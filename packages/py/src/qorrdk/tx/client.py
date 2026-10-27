@@ -32,7 +32,7 @@ from cosmpy.protos.cosmos.tx.v1beta1.tx_pb2 import (
     TxRaw,
 )
 
-from ..rules import rollup_id_error, withdrawal_errors
+from ..rules import rollup_id_error, withdrawal_errors, withdrawals_root_error
 from ..accounts.wallet import Signer
 from ..client.http import Transport, default_transport
 from ..enums import RollupStatus
@@ -334,8 +334,16 @@ class RdkTxClient:
     def submit_batch(
         self, inp: "msgs.SubmitBatchInput | dict", opts: Optional[TxOptions] = None
     ) -> BroadcastResult:
-        """Submit a settlement batch. The client's address is the sequencer."""
+        """Submit a settlement batch. The client's address is the sequencer.
+
+        Raises before broadcasting if ``withdrawals_root`` is neither empty nor
+        32 bytes, which the chain refuses from v3.2.5 only after the fee has
+        been paid.
+        """
         data = _coerce(inp, msgs.SubmitBatchInput, sequencer=self.address)
+        root_error = withdrawals_root_error(data.withdrawals_root)
+        if root_error:
+            raise ValueError(f"cannot submit batch {data.batch_index}: {root_error}")
         return self.broadcast_messages([msgs.submit_batch_msg(data)], opts)
 
     def challenge_batch(

@@ -11,7 +11,7 @@
  */
 
 /** RDK package version. */
-export const VERSION = "0.6.2";
+export const VERSION = "0.7.0";
 
 // Network and module constants (documented defaults; read live values from the chain).
 export * from "./constants";
@@ -33,6 +33,7 @@ export * from "./utils/denom";
 export * from "./utils/economics";
 export * from "./utils/bech32";
 export * from "./utils/bytes";
+export * from "./utils/qorehash";
 
 // Transactions: the rdk registry, friendly message builders, and the tx client.
 export { RDK_TYPES, createRdkRegistry } from "./tx/registry";
@@ -62,6 +63,8 @@ export * from "./rules";
 // The canonical batch transition root the chain judges optimistic batches by,
 // and the fraud-proof layout its verifier reads.
 export * from "./transition";
+// Readable names for the rdk module's refusals.
+export * from "./errors";
 
 // Lifecycle: rollup/batch state-machine awareness and challenge-window math.
 export * from "./lifecycle/state-machine";

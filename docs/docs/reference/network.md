@@ -100,12 +100,18 @@ Read the live `rdk` module parameters from the chain — never hardcode them:
 const params = await rdk.params();
 ```
 
+Live values differ by network; read them rather than relying on this table. On
+27 October 2026 the testnet (chain v3.2.5, which made the parameters governable)
+had `maxRollups` 200 and `defaultChallengeWindow` 3,600 s; mainnet had the
+defaults below. Each rollup also registers an `x/multilayer` sidechain layer,
+capped by that module's `max_sidechains` (64 on the testnet, 10 on mainnet).
+
 | Parameter | Documented default | Meaning |
 | --- | --- | --- |
-| `maxRollups` | `100` | Maximum registered rollups |
+| `maxRollups` | `100` | Maximum registered rollups (from v3.2.5 a stopped rollup frees its slot) |
 | `minStakeForRollup` | `10000000000` uqor (10,000 QOR) | Minimum stake to create a rollup |
 | `rollupCreationBurnRate` | `0.01` | Fraction of stake burned on creation |
-| `defaultChallengeWindow` | `604800` s | Optimistic challenge window — 7 days of block time from chain v3.2.4; `window / 6` blocks before it (about 3.75 days on mainnet, 28 hours on the testnet). Each rollup can set its own. |
+| `defaultChallengeWindow` | `604800` s | Optimistic challenge window — 7 days of block time from chain v3.2.4; `window / 6` blocks before it (about 3.75 days on mainnet, 28 hours on the testnet). From v3.2.5 a new optimistic rollup takes this value at creation and keeps it. |
 | `maxDaBlobSize` | `2097152` bytes (2 MiB) | Maximum native DA blob size |
 | `blobRetentionBlocks` | `432000` (~30 days) | Blocks before expired blobs are pruned |
 | `maxBatchesPerBlock` | `10` | Maximum settlement batches per block |

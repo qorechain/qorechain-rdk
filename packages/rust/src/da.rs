@@ -4,16 +4,17 @@
 //! QoreChain no transaction posts a blob to the native DA store yet, so on a
 //! `native` or `both` rollup the chain refuses a batch whose `data_hash` claims
 //! one: leave it empty there (see `rules::data_hash_error`). This module
-//! assembles a blob (enforcing the size limit) and computes its SHA-256
-//! commitment for your own records. Read the live `max_da_blob_size` from
-//! `rdk.params()`; the default here is reference only.
+//! assembles a blob (enforcing the size limit) and computes the commitment the
+//! chain's blob store uses, SHAKE-256 (32 bytes); releases before 0.7.0 used
+//! SHA-256. Read the live `max_da_blob_size` from `rdk.params()`; the default
+//! here is reference only.
 
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::config::DaBackend;
 use crate::constants::DEFAULT_MAX_DA_BLOB_SIZE;
 use crate::utils::bytes::bytes_to_hex;
+use crate::utils::qorehash::qorehash;
 
 /// Message shown when a not-yet-active DA backend is selected for live use.
 pub const DA_CELESTIA_UNAVAILABLE_MESSAGE: &str =
@@ -36,12 +37,13 @@ pub enum DaError {
     BackendUnavailable(String),
 }
 
-/// A prepared DA blob and its SHA-256 commitment (not for a native batch's `data_hash`).
+/// A prepared DA blob and the chain's SHAKE-256 commitment to it (not for a
+/// native batch's `data_hash` yet).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DaBlob {
     /// The blob bytes.
     pub data: Vec<u8>,
-    /// SHA-256 of the blob, `0x`-prefixed.
+    /// The chain's commitment to the blob: SHAKE-256, 32 bytes, `0x`-prefixed.
     pub data_hash: String,
     /// Blob size in bytes.
     pub size: usize,
@@ -65,8 +67,7 @@ pub fn build_da_blob(
             max,
         });
     }
-    let digest = Sha256::digest(&data);
-    let data_hash = format!("0x{}", bytes_to_hex(&digest));
+    let data_hash = format!("0x{}", bytes_to_hex(&qorehash(&[&data])));
     let size = data.len();
     Ok(DaBlob {
         data,
@@ -98,19 +99,19 @@ mod tests {
 
     #[test]
     fn builds_blob_with_data_hash() {
-        // SHA-256("") = e3b0c442...
+        // SHAKE-256("", 32 bytes) = 46b9dd2b...
         let blob = build_da_blob(Vec::new(), None).unwrap();
         assert_eq!(blob.size, 0);
         assert_eq!(
             blob.data_hash,
-            "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            "0x46b9dd2b0ba88d13233b3feb743eeb243fcd52ea62b81b82b50c27646ed5762f"
         );
 
         let blob = build_da_blob(b"abc".to_vec(), None).unwrap();
         assert_eq!(blob.size, 3);
         assert_eq!(
             blob.data_hash,
-            "0xba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+            "0x483366601360a8771c6863080cc4114d8db44530f8f1e1ee4f94ea37e78b5739"
         );
     }
 

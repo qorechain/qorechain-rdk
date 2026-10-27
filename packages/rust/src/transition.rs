@@ -11,11 +11,16 @@
 
 use crate::client::rest::{RestClient, RestError};
 use crate::client::views::BatchView;
+use crate::utils::qorehash::qorehash;
 
 /// The protocol feature that switches batches to the v2 binding.
 pub const FEATURE_RDK_WITHDRAWALS_BINDING: &str = "rdk-withdrawals-binding";
 /// The chain upgrade that turns it on.
 pub const WITHDRAWALS_BINDING_UPGRADE: &str = "v3.2.5";
+/// The chain v3.2.5 protocol feature for in-order settlement: batches finalize
+/// in order, any account may resolve a challenge, an upheld fraud rejects the
+/// later batches too, and a rollup with an unsettled batch cannot be stopped.
+pub const FEATURE_RDK_CHALLENGE_SETTLEMENT: &str = "rdk-challenge-settlement";
 
 /// Which transition binding a batch is judged by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,7 +62,7 @@ pub fn batch_transition_root_v1(input: &TransitionInput) -> [u8; 32] {
     msg.extend_from_slice(&input.prev_state_root);
     msg.extend_from_slice(&input.data_hash);
     msg.extend_from_slice(&input.tx_count.to_be_bytes());
-    qorechain_pqc::shake256(&msg)
+    qorehash(&[&msg])
 }
 
 /// The v2 binding (chain v3.2.5, `rdk-withdrawals-binding`), which also covers
@@ -83,7 +88,7 @@ pub fn batch_transition_root_v2(input: &TransitionInput) -> Result<[u8; 32], Str
     field(&mut msg, &input.data_hash);
     msg.extend_from_slice(&input.tx_count.to_be_bytes());
     field(&mut msg, &input.withdrawals_root);
-    Ok(qorechain_pqc::shake256(&msg))
+    Ok(qorehash(&[&msg]))
 }
 
 /// The transition root under `version`.

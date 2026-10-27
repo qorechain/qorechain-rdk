@@ -2,32 +2,39 @@ package rdk
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"fmt"
 )
 
-// MerkleOptions configures binary Merkle tree construction.
+// Generic binary Merkle tree utilities for assembling withdrawal proofs.
 //
-// IMPORTANT: the leaf encoding, hash function, and odd-node handling MUST match
-// the network's withdrawals_root construction for the proof to verify on-chain.
-// The defaults (SHA-256, hash each leaf, duplicate the last node on odd levels,
-// no domain separation) are a common convention; override to match the chain.
+// An rdk settlement batch commits its L2 to L1 messages (withdrawals) as a
+// binary Merkle root (withdrawals_root), and MsgExecuteWithdrawal carries the
+// sibling hashes from a leaf to that root. These helpers build the root and a
+// leaf's proof.
+//
+// The hash defaults to the chain's: SHAKE-256 with a 32-byte output. For a
+// batch's withdrawals use NewWithdrawalsTree, which also builds the chain's
+// leaves and places each at its withdrawal index; these generic helpers hash
+// each input leaf by default, which the chain does not. Releases before 0.7.0
+// defaulted to SHA-256, which no chain construction uses.
+
+// MerkleOptions configures binary Merkle tree construction. A nil
+// *MerkleOptions, or a nil field, takes the default.
 type MerkleOptions struct {
 	// Hash is the hash function for internal nodes (and leaves when HashLeaves).
-	// Nil means SHA-256.
+	// Nil means SHAKE-256 (32 bytes), see Qorehash.
 	Hash func(data []byte) []byte
-	// HashLeaves, when set, hashes each input leaf before building the tree.
+	// HashLeaves, when set, says whether to hash each input leaf before
+	// building the tree. Default true.
 	HashLeaves *bool
-	// DuplicateOdd, when set, duplicates the last node on an odd level.
+	// DuplicateOdd, when set, says whether to duplicate the last node on an odd
+	// level. Default true.
 	DuplicateOdd *bool
 }
 
 func boolPtr(b bool) *bool { return &b }
 
-func sha256Hash(data []byte) []byte {
-	sum := sha256.Sum256(data)
-	return sum[:]
-}
+func qorehashOne(data []byte) []byte { return Qorehash(data) }
 
 type resolvedMerkleOptions struct {
 	hash         func([]byte) []byte
@@ -36,7 +43,7 @@ type resolvedMerkleOptions struct {
 }
 
 func resolveMerkleOptions(opts *MerkleOptions) resolvedMerkleOptions {
-	r := resolvedMerkleOptions{hash: sha256Hash, hashLeaves: true, duplicateOdd: true}
+	r := resolvedMerkleOptions{hash: qorehashOne, hashLeaves: true, duplicateOdd: true}
 	if opts == nil {
 		return r
 	}
@@ -176,8 +183,15 @@ type WithdrawalProof struct {
 }
 
 // AssembleWithdrawalProof assembles the Merkle proof for the withdrawal at
-// withdrawalIndex from the full list of the batch's withdrawal leaves.
+// withdrawalIndex from the full list of the batch's withdrawal leaves (from
+// WithdrawalLeafV1 / WithdrawalLeafV2). Nil opts is the chain's tree: leaves
+// are not re-hashed, nodes are SHAKE-256(left || right) and an odd last node is
+// paired with itself. Before 0.7.0 nil opts re-hashed each leaf with SHA-256,
+// which the chain does not do.
 func AssembleWithdrawalProof(leaves [][]byte, withdrawalIndex int, opts *MerkleOptions) (WithdrawalProof, error) {
+	if opts == nil {
+		opts = chainTree()
+	}
 	proof, err := BinaryMerkleProof(leaves, withdrawalIndex, opts)
 	if err != nil {
 		return WithdrawalProof{}, err

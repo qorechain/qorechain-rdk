@@ -36,12 +36,47 @@ type RollupHealth struct {
 	// mode only; on the block-count path see ChallengeWindow.DeadlineHeight.
 	ChallengeDeadlineSecs         int64
 	SecondsUntilChallengeDeadline int64
+	// HeldBackBy is set when the latest batch could finalize on its own window
+	// but an earlier batch is still submitted or challenged: from chain v3.2.5
+	// (rdk-challenge-settlement) batches finalize in order, so a batch whose
+	// own window has passed still waits for every earlier batch. Nil otherwise.
+	HeldBackBy *HeldBackBy
 	// HasTip reports whether the chain tip could be read.
 	HasTip bool
 	// Healthy is a coarse health flag: active rollup, latest batch not rejected.
 	Healthy bool
 	// Notes are human-readable observations.
 	Notes []string
+}
+
+// HeldBackBy names the earlier batch a latest batch is waiting for.
+type HeldBackBy struct {
+	BatchIndex int
+	Status     string
+}
+
+// oldestUnsettledBefore finds the oldest batch before latestIndex that is still
+// submitted or challenged, or nil. At most MaxPendingOptimisticBatches batches
+// can be waiting, so the search starts that far back instead of at batch 0.
+func oldestUnsettledBefore(ctx context.Context, client *RdkClient, rollupID string, latestIndex int) (*HeldBackBy, error) {
+	start := latestIndex - MaxPendingOptimisticBatches
+	if start < 0 {
+		start = 0
+	}
+	batches, err := client.Rest.ListBatchesFrom(ctx, rollupID, uint64(start))
+	if err != nil {
+		return nil, err
+	}
+	var oldest *HeldBackBy
+	for _, b := range batches {
+		if b.BatchIndex >= latestIndex || (b.Status != "submitted" && b.Status != "challenged") {
+			continue
+		}
+		if oldest == nil || b.BatchIndex < oldest.BatchIndex {
+			oldest = &HeldBackBy{BatchIndex: b.BatchIndex, Status: b.Status}
+		}
+	}
+	return oldest, nil
 }
 
 // HealthOptions configures GetRollupHealth.
@@ -136,8 +171,36 @@ func GetRollupHealth(ctx context.Context, client *RdkClient, rollupID string, op
 		if latest.Status == "challenged" {
 			health.Notes = append(health.Notes, "latest batch is under challenge")
 		}
+		if latest.Status == "submitted" && health.HasChallengeWindow && health.ChallengeWindow.Finalizable {
+			if note := checkInOrderSettlement(ctx, client, rollupID, latest.BatchIndex, &health); note != "" {
+				health.Notes = append(health.Notes, note)
+			}
+		}
 	}
 
 	health.Healthy = healthy
 	return health, nil
+}
+
+// checkInOrderSettlement sets health.HeldBackBy when the chain settles batches
+// in order and an earlier batch is still unsettled, returning the note to add.
+// A read that fails is reported as a note rather than failing the snapshot.
+func checkInOrderSettlement(ctx context.Context, client *RdkClient, rollupID string, latestIndex int, health *RollupHealth) string {
+	on, err := client.Rest.IsProtocolFeatureEnabled(ctx, FeatureRDKChallengeSettlement)
+	if err != nil {
+		return "could not read the chain's protocol features: " + err.Error()
+	}
+	if !on {
+		return ""
+	}
+	blocker, err := oldestUnsettledBefore(ctx, client, rollupID, latestIndex)
+	if err != nil {
+		return "could not read the earlier batches: " + err.Error()
+	}
+	if blocker == nil {
+		return ""
+	}
+	health.HeldBackBy = blocker
+	return fmt.Sprintf("batch %d's window has passed, but batches finalize in order and batch %d is still %s",
+		latestIndex, blocker.BatchIndex, blocker.Status)
 }

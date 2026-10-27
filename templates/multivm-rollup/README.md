@@ -15,30 +15,38 @@ oracle, token, or registry from EVM code.
   `0x0000000000000000000000000000000000000901`, called as
   `executeCrossVMCall(uint8 targetVM, string targetContract, bytes payload)`
   with `targetVM = 1` for QoreChain Native.
-- `src/crossvm-call.ts` checks whether the precompile is live, then encodes the
-  calldata with the RDK's `encodeCrossVmCalldata`; `contracts/CrossVmCaller.sol`
-  is the equivalent on-chain call. (EVM↔QoreChain Native only — SVM is separate.)
+- `src/crossvm-call.ts` checks that the call can reach its target (precompile
+  active, bridge enabled, target allowlisted), then encodes the calldata with the
+  RDK's `encodeCrossVmCalldata`; `contracts/CrossVmCaller.sol` is the equivalent
+  on-chain call. (EVM↔QoreChain Native only — SVM is separate.)
 
-> **Status: the precompile is not active on mainnet or testnet today.** It is
-> compiled into the validators' build but runs only once governance lists its
-> address in the EVM parameter `active_static_precompiles` — empty on both
-> networks — and, from chain v3.2.3, reaches only targets governance has
-> allowlisted in the cross-VM parameter `bridge_allowed_targets`. Activation is
-> planned for an upcoming release. Check the live state any time:
+> **Status: the precompile is not active on mainnet or testnet today.** It runs
+> only once governance lists its address in the EVM parameter
+> `active_static_precompiles` (it is not listed on either network), and it
+> reaches only targets governance has allowlisted in the cross-VM parameter
+> `bridge_allowed_targets` (empty on testnet; served at
+> `/qorechain/crossvm/v1/params` from chain v3.2.5). Check the live state for
+> your target any time:
 >
 > ```ts
-> import { isCrossVmPrecompileActive } from "@qorechain/rdk";
-> const status = await isCrossVmPrecompileActive("https://api.qore.host");
+> import { crossVmTargetReady } from "@qorechain/rdk";
+> const status = await crossVmTargetReady("https://api-testnet.qore.host", "qor1…");
 > ```
 
-**Why the check matters.** While the precompile is inactive, its address has no
-code, and a call to it *succeeds* with empty return data — so a `success` check
-alone reports a cross-VM call that never happened. The precompile also returns
-the target's **raw** reply, so an empty reply can be genuine too, and a
-precompile has no bytecode whether active or not. The dependable in-contract
-guard is therefore a target that always returns a non-empty acknowledgement:
-`CrossVmCaller.sol` requires one, which turns an inactive precompile into a
-revert instead of a silent no-op.
+**What the call looks like from chain v3.2.5.** The precompile answers only
+`executeCrossVMCall(uint8 targetVM, string targetContract, bytes payload) returns (bytes)`
+with `targetVM = 1`, as a plain `CALL` with no value. It ABI-encodes the Native
+contract's response, so decode it with `abi.decode(ret, (bytes))`
+(`decodeCrossVmResult` off chain); a refusal reverts with `Error(string)`
+(`decodeRevertReason`). The Native contract sees the calling contract, as its
+`qor1` address, as the sender, not `tx.origin`.
+
+**Why the length check matters.** While the precompile is inactive, its
+address has no code, and a call to it *succeeds* with empty return data, so a
+`success` check alone reports a cross-VM call that never happened. An active
+v3.2.5 precompile always returns at least 64 bytes, so `CrossVmCaller.sol`
+requires that, turning an inactive precompile into a revert instead of a silent
+no-op, and passes the chain's refusal reason through.
 
 **EVM authorisation windows (chain v3.2.3).** If your EVM transactions run
 under a scoped authorisation window, `native_only: true` refuses any calldata —

@@ -10,8 +10,15 @@
  * fraudulent. Vectors in the tests come from the chain's own
  * `BatchTransitionRoot`.
  */
-import { shake256 } from "@noble/hashes/sha3";
 import { toBytes } from "../utils/bytes";
+import { qorehash } from "../utils/qorehash";
+
+/**
+ * The chain v3.2.5 protocol feature for in-order settlement: batches finalize
+ * in order, any account may resolve a challenge, an upheld fraud rejects the
+ * later batches too, and a rollup with an unsettled batch cannot be stopped.
+ */
+export const FEATURE_RDK_CHALLENGE_SETTLEMENT = "rdk-challenge-settlement";
 
 /** The protocol feature that switches batches to the v2 binding. */
 export const FEATURE_RDK_WITHDRAWALS_BINDING = "rdk-withdrawals-binding";
@@ -53,11 +60,7 @@ function u32be(n: number): Uint8Array {
   return new Uint8Array([(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff]);
 }
 
-function shake32(parts: Uint8Array[]): Uint8Array {
-  const h = shake256.create({ dkLen: 32 });
-  for (const p of parts) h.update(p);
-  return h.digest();
-}
+const shake32 = (parts: Uint8Array[]): Uint8Array => qorehash(...parts);
 
 const bytesOf = (b: string | Uint8Array | undefined): Uint8Array =>
   b === undefined ? new Uint8Array() : toBytes(b);

@@ -1,4 +1,5 @@
-"""Utilities: denom conversion, creation-cost economics, and byte/bech32 helpers."""
+"""Utilities: denom conversion, creation-cost economics, byte/bech32 helpers and
+the chain's default hash."""
 
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ from .bytes import (
     to_bytes,
 )
 from .denom import qor_to_uqor, uqor_to_qor
+from .qorehash import qorehash
 from .economics import CreationCost, estimate_creation_cost, mul_decimal_floor
 
 __all__ = [
@@ -29,4 +31,5 @@ __all__ = [
     "base64_to_bytes",
     "bytes_to_base64",
     "decode_wire_bytes",
+    "qorehash",
 ]

@@ -19,11 +19,59 @@ final class Golden {
     Map<String, Map<String, Object>> presetDefaults;
     AnchorSignBytesSection anchorSignBytes;
     MldsaVectorSection mldsaVector;
+    WithdrawalLeafSection withdrawalLeaf;
+    WithdrawalTreeSection withdrawalTree;
+    DaBlobSection daBlob;
 
     static final class MerkleSection {
+        String hash;
         List<String> leavesHex;
         String root;
         List<String> proofIndex1Siblings;
+        /** The SHA-256 values the generic helpers produced before 0.7.0. */
+        MerkleLegacy sha256Legacy;
+    }
+
+    static final class MerkleLegacy {
+        String root;
+        List<String> proofIndex1Siblings;
+    }
+
+    static final class WithdrawalLeafSection {
+        String rollupId;
+        long withdrawalIndex;
+        String recipient;
+        String denom;
+        long amount;
+        String v1;
+        String v2ChainId;
+        String v2;
+    }
+
+    /** Every proof here is accepted by the chain's own VerifyWithdrawalMerkle. */
+    static final class WithdrawalTreeSection {
+        String chainId;
+        String rollupId;
+        String denom;
+        List<WithdrawalEntry> withdrawals;
+        WithdrawalTreeVersion v1;
+        WithdrawalTreeVersion v2;
+    }
+
+    static final class WithdrawalEntry {
+        String recipient;
+        long amount;
+    }
+
+    static final class WithdrawalTreeVersion {
+        List<String> leaves;
+        String root;
+        List<List<String>> proofs;
+    }
+
+    static final class DaBlobSection {
+        String dataUtf8;
+        String commitment;
     }
 
     static final class AnchorSignBytesSection {

@@ -66,3 +66,4 @@ pub use receipts::{
     RECEIPT_ALGORITHM, RECEIPT_VERSION, SUPPORTED_RECEIPT_VERSIONS,
 };
 pub use tx::{MockTxClient, RdkTxClient, TxOptions};
+pub use utils::qorehash::qorehash;

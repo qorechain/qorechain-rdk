@@ -39,8 +39,9 @@ await tx.submitBatch({ rollupId, batchIndex, stateRoot, prevStateRoot, txCount }
 // no dataHash: dataHashError("native", "0xab...") explains why
 ```
 
-`buildDaBlob` still computes a size-checked SHA-256 commitment for your own
-records; it just must not go into a batch on a `native` rollup until blob
+`buildDaBlob` still computes a size-checked commitment for your own records,
+the same SHAKE-256 (32 bytes) the chain's blob store uses (releases before 0.7.0
+used SHA-256); it just must not go into a batch on a `native` rollup until blob
 posting exists. The limits it checks, `maxDaBlobSize` (default `2097152` bytes)
 and `blobRetentionBlocks` (default `432000`), are the chain's parameters for
 that future storage; read them live from `rdk.params()`.

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from qorrdk import (
+    MerkleOptions,
     assemble_withdrawal_proof,
     binary_merkle_proof,
     binary_merkle_root,
@@ -40,9 +43,28 @@ def test_tampered_proof_fails(golden):
     assert not verify_binary_merkle_proof(leaves[0], 1, proof.siblings, root)
 
 
-def test_assemble_withdrawal_proof(golden):
+def test_sha256_still_available_explicitly(golden):
+    """Releases before 0.7.0 defaulted to SHA-256; it can still be chosen."""
+    sha256 = MerkleOptions(hash=lambda d: hashlib.sha256(d).digest())
     leaves = _leaves(golden)
+    legacy = golden["merkle"]["sha256Legacy"]
+    assert binary_merkle_root(leaves, sha256).hex() == legacy["root"]
+    proof = binary_merkle_proof(leaves, 1, sha256)
+    assert [s.hex() for s in proof.siblings] == legacy["proofIndex1Siblings"]
+    assert verify_binary_merkle_proof(leaves[1], 1, proof.siblings, proof.root, sha256)
+
+
+def test_assemble_withdrawal_proof(golden):
+    leaves = [hashlib.sha256(bytes([i])).digest() for i in range(1, 5)]
     wp = assemble_withdrawal_proof(leaves, 1)
     assert wp.withdrawal_index == 1
+    # The chain's tree does not re-hash leaves: verify the same way.
+    chain = MerkleOptions(hash_leaves=False)
+    assert verify_binary_merkle_proof(leaves[1], 1, wp.proof, wp.withdrawals_root, chain)
+    assert not verify_binary_merkle_proof(leaves[1], 1, wp.proof, wp.withdrawals_root)
+
+
+def test_assemble_withdrawal_proof_generic_options_match_golden(golden):
+    wp = assemble_withdrawal_proof(_leaves(golden), 1, MerkleOptions())
     assert wp.withdrawals_root.hex() == golden["merkle"]["root"]
     assert [s.hex() for s in wp.proof] == golden["merkle"]["proofIndex1Siblings"]

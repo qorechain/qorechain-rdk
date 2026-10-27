@@ -252,6 +252,14 @@ impl<S: Signer> RdkTxClient<S> {
         opts: &TxOptions,
     ) -> Result<Value, TxError> {
         input.sequencer = self.address().to_string();
+        // From chain v3.2.5 the chain refuses a malformed withdrawals root
+        // after the fee is paid.
+        if let Some(e) = crate::rules::withdrawals_root_error(&input.withdrawals_root) {
+            return Err(TxError::WouldBeRefused(format!(
+                "cannot submit batch {}: {e}",
+                input.batch_index
+            )));
+        }
         self.broadcast(&input.to_msg(), opts)
     }
 
@@ -312,6 +320,10 @@ impl<S: Signer> RdkTxClient<S> {
     }
 
     /// Stop a rollup permanently. Pass `current_status` to guard the transition.
+    ///
+    /// Once the chain reports `rdk-challenge-settlement` (v3.2.5), a rollup
+    /// whose latest batch is still submitted or challenged is refused here,
+    /// before the fee is paid.
     pub fn stop_rollup(
         &self,
         rollup_id: impl Into<String>,
@@ -325,6 +337,22 @@ impl<S: Signer> RdkTxClient<S> {
             creator: self.address().to_string(),
             rollup_id: rollup_id.into(),
         };
+        // From chain v3.2.5 a rollup with an unsettled latest batch cannot be
+        // stopped; check before paying the fee.
+        if self
+            .rest
+            .is_protocol_feature_enabled(crate::transition::FEATURE_RDK_CHALLENGE_SETTLEMENT)?
+        {
+            // An error here is a rollup with no batch yet.
+            let latest = self.rest.get_latest_batch(&input.rollup_id).ok();
+            let status = latest.as_ref().map(|b| b.status.as_str());
+            if let Some(e) = crate::rules::stop_rollup_error(status) {
+                return Err(TxError::WouldBeRefused(format!(
+                    "cannot stop rollup \"{}\": {e}",
+                    input.rollup_id
+                )));
+            }
+        }
         self.broadcast(&input.to_stop_msg(), opts)
     }
 

@@ -37,8 +37,8 @@ func TestBuildDaBlob(t *testing.T) {
 	if blob.Size != 5 {
 		t.Errorf("size got %d want 5", blob.Size)
 	}
-	// sha256("hello")
-	if blob.DataHash != "0x2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824" {
+	// SHAKE-256("hello"), 32 bytes
+	if blob.DataHash != "0x1234075ae4a1e77316cf2d8000974581a343b9ebbca7e3d1db83394c30f22162" {
 		t.Errorf("unexpected data hash: %s", blob.DataHash)
 	}
 	if _, err := BuildDaBlob([]byte("toolong"), 3); err == nil {

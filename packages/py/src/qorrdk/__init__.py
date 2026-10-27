@@ -13,7 +13,7 @@ account derivation) works fully offline.
 
 from __future__ import annotations
 
-__version__ = "0.6.2"
+__version__ = "0.7.0"
 
 # Constants.
 from .constants import (  # noqa: E402
@@ -94,6 +94,7 @@ from .utils import (  # noqa: E402
     hex_to_bytes,
     mul_decimal_floor,
     qor_to_uqor,
+    qorehash,
     to_bytes,
     uqor_to_qor,
 )
@@ -122,12 +123,17 @@ from .da import (  # noqa: E402
 from .bridge import (  # noqa: E402
     MerkleOptions,
     MerkleProof,
+    WithdrawalLeafInput,
     WithdrawalProof,
+    WithdrawalsTree,
     assemble_withdrawal_proof,
     binary_merkle_proof,
     binary_merkle_root,
     build_execute_withdrawal_input,
     verify_binary_merkle_proof,
+    withdrawal_leaf_v1,
+    withdrawal_leaf_v2,
+    withdrawals_tree,
 )
 
 # Manifest.
@@ -242,7 +248,7 @@ from .profiles import ProfileSuggestion, suggest_profile  # noqa: E402
 
 # Preflight, health, faucet.
 from .preflight import PreflightCheck, PreflightResult, check_preflight  # noqa: E402
-from .health import RollupHealth, get_rollup_health  # noqa: E402
+from .health import HeldBackBy, RollupHealth, get_rollup_health  # noqa: E402
 from .faucet import FaucetResult, request_faucet  # noqa: E402
 
 # Live monitoring.
@@ -251,15 +257,19 @@ from .monitor import Watcher, events_from_tx_hash, watch_rollup  # noqa: E402
 from .rules import (
     ID_MAX_LENGTH,
     ID_MIN_LENGTH,
+    MAX_PENDING_OPTIMISTIC_BATCHES,
     MAX_WITHDRAWAL_PROOF_DEPTH,
     ROLLUP_ESCROW_DENOM,
     data_hash_error,
     is_valid_rollup_id,
     rollup_id_error,
+    stop_rollup_error,
     withdrawal_errors,
+    withdrawals_root_error,
 )
 from .lifecycle.state_machine import ChainTip, ChallengeWindowStatus, batch_challenge_window
 from .transition import (
+    FEATURE_RDK_CHALLENGE_SETTLEMENT,
     FEATURE_RDK_WITHDRAWALS_BINDING,
     batch_transition_root,
     batch_transition_root_v1,
@@ -269,6 +279,7 @@ from .transition import (
 )
 
 __all__ = [
+    "FEATURE_RDK_CHALLENGE_SETTLEMENT",
     "FEATURE_RDK_WITHDRAWALS_BINDING",
     "batch_transition_root",
     "batch_transition_root_v1",
@@ -276,6 +287,9 @@ __all__ = [
     "fraud_proof",
     "transition_root_version_for",
     "data_hash_error",
+    "withdrawals_root_error",
+    "MAX_PENDING_OPTIMISTIC_BATCHES",
+    "stop_rollup_error",
     "ID_MAX_LENGTH",
     "ID_MIN_LENGTH",
     "MAX_WITHDRAWAL_PROOF_DEPTH",
@@ -355,6 +369,7 @@ __all__ = [
     "bytes_to_hex",
     "hex_to_bytes",
     "to_bytes",
+    "qorehash",
     "base64_to_bytes",
     "bytes_to_base64",
     "decode_wire_bytes",
@@ -378,7 +393,12 @@ __all__ = [
     "binary_merkle_root",
     "binary_merkle_proof",
     "verify_binary_merkle_proof",
+    "WithdrawalLeafInput",
     "WithdrawalProof",
+    "WithdrawalsTree",
+    "withdrawal_leaf_v1",
+    "withdrawal_leaf_v2",
+    "withdrawals_tree",
     "assemble_withdrawal_proof",
     "build_execute_withdrawal_input",
     # manifest
@@ -474,6 +494,7 @@ __all__ = [
     "PreflightCheck",
     "PreflightResult",
     "check_preflight",
+    "HeldBackBy",
     "RollupHealth",
     "get_rollup_health",
     "FaucetResult",

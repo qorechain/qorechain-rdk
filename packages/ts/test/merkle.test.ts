@@ -52,6 +52,7 @@ describe("binary Merkle", () => {
     const leaves = [leaf(1), leaf(2), leaf(3), leaf(4)];
     const w = assembleWithdrawalProof(leaves, 1);
     expect(w.withdrawalIndex).toBe(1);
-    expect(verifyBinaryMerkleProof(leaves[1], 1, w.proof, w.withdrawalsRoot)).toBe(true);
+    // The chain's tree does not re-hash leaves: verify the same way.
+    expect(verifyBinaryMerkleProof(leaves[1], 1, w.proof, w.withdrawalsRoot, { hashLeaves: false })).toBe(true);
   });
 });

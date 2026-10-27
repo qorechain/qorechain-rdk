@@ -10,9 +10,14 @@ from .merkle import (
     verify_binary_merkle_proof,
 )
 from .withdrawal import (
+    WithdrawalLeafInput,
     WithdrawalProof,
+    WithdrawalsTree,
     assemble_withdrawal_proof,
     build_execute_withdrawal_input,
+    withdrawal_leaf_v1,
+    withdrawal_leaf_v2,
+    withdrawals_tree,
 )
 
 __all__ = [
@@ -21,7 +26,12 @@ __all__ = [
     "binary_merkle_root",
     "binary_merkle_proof",
     "verify_binary_merkle_proof",
+    "WithdrawalLeafInput",
     "WithdrawalProof",
+    "WithdrawalsTree",
+    "withdrawal_leaf_v1",
+    "withdrawal_leaf_v2",
+    "withdrawals_tree",
     "assemble_withdrawal_proof",
     "build_execute_withdrawal_input",
 ]

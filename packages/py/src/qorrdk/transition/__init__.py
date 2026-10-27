@@ -11,11 +11,16 @@ test vectors come from the chain's own ``BatchTransitionRoot``.
 
 from __future__ import annotations
 
-import hashlib
 import struct
 from typing import Optional, Union
 
 from ..utils.bytes import to_bytes
+from ..utils.qorehash import qorehash
+
+#: The chain v3.2.5 protocol feature for in-order settlement: batches finalize
+#: in order, any account may resolve a challenge, an upheld fraud rejects the
+#: later batches too, and a rollup with an unsettled batch cannot be stopped.
+FEATURE_RDK_CHALLENGE_SETTLEMENT = "rdk-challenge-settlement"
 
 #: The protocol feature that switches batches to the v2 binding.
 FEATURE_RDK_WITHDRAWALS_BINDING = "rdk-withdrawals-binding"
@@ -32,10 +37,7 @@ def _field(b: bytes) -> bytes:
 
 
 def _shake32(*parts: bytes) -> bytes:
-    h = hashlib.shake_256()
-    for p in parts:
-        h.update(p)
-    return h.digest(32)
+    return qorehash(*parts)
 
 
 def batch_transition_root_v1(
@@ -111,6 +113,7 @@ def fraud_proof(prev_state_root: BytesLike, correct_state_root: BytesLike) -> by
 
 
 __all__ = [
+    "FEATURE_RDK_CHALLENGE_SETTLEMENT",
     "FEATURE_RDK_WITHDRAWALS_BINDING",
     "batch_transition_root",
     "batch_transition_root_v1",

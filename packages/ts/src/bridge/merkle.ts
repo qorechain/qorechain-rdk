@@ -6,16 +6,16 @@
  * hashes from a leaf to that root. These helpers build the root and a leaf's
  * proof.
  *
- * IMPORTANT: the leaf encoding, hash function, and odd-node handling MUST match
- * the network's `withdrawals_root` construction for the proof to verify on-chain.
- * The defaults here (SHA-256, hash each leaf, duplicate the last node on odd
- * levels, no domain separation) are a common convention — override `options` to
- * match the chain exactly.
+ * The hash defaults to the chain's: SHAKE-256 with a 32-byte output. For a
+ * batch's withdrawals use `withdrawalsTree` (bridge/withdrawal), which also
+ * builds the chain's leaves and places each at its withdrawal index; these
+ * generic helpers hash each input leaf by default, which the chain does not.
+ * Releases before 0.7.0 defaulted to SHA-256, which no chain construction uses.
  */
-import { sha256 } from "@cosmjs/crypto";
+import { qorehash } from "../utils/qorehash";
 
 export interface MerkleOptions {
-  /** Hash function for internal nodes (and leaves when `hashLeaves`). Default SHA-256. */
+  /** Hash function for internal nodes (and leaves when `hashLeaves`). Default SHAKE-256 (32 bytes). */
   hash?: (data: Uint8Array) => Uint8Array;
   /** Hash each input leaf before building the tree. Default true. */
   hashLeaves?: boolean;
@@ -32,7 +32,7 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
 
 function resolved(options: MerkleOptions = {}): Required<MerkleOptions> {
   return {
-    hash: options.hash ?? sha256,
+    hash: options.hash ?? ((data: Uint8Array) => qorehash(data)),
     hashLeaves: options.hashLeaves ?? true,
     duplicateOdd: options.duplicateOdd ?? true,
   };

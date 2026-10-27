@@ -113,3 +113,47 @@ describe("isCrossVmPrecompileActive", () => {
     expect(seen).toBe("https://node/cosmos/evm/vm/v1/params");
   });
 });
+
+describe("cross-VM result and refusal decoding (chain v3.2.5)", () => {
+  it("decodes abi.encode(bytes) the way Solidity's abi.decode does", async () => {
+    const { decodeCrossVmResult, decodeRevertReason, bytesToHex } = await import("../src/index");
+    const word = (n: number) => n.toString(16).padStart(64, "0");
+    // abi.encode(bytes): offset 0x20, length, data right-padded to 32 bytes.
+    const enc = (hex: string) => {
+      const len = hex.length / 2;
+      return "0x" + word(32) + word(len) + hex.padEnd(Math.ceil(len / 32) * 64, "0");
+    };
+    for (const payload of ["", "01", "ab".repeat(70)]) {
+      expect(bytesToHex(decodeCrossVmResult(enc(payload)))).toBe(payload);
+    }
+    expect(() => decodeCrossVmResult("0x")).toThrow(/not active/);
+    expect(() => decodeCrossVmResult("0x" + "00".repeat(40))).toThrow(/at least 64/);
+
+    // Error(string): selector 0x08c379a0, then abi.encode(string).
+    const reason = "target cosmwasm:qor1abc is not allowlisted";
+    const hex = Buffer.from(reason, "utf8").toString("hex");
+    expect(decodeRevertReason("0x08c379a0" + enc(hex).slice(2))).toBe(reason);
+    expect(decodeRevertReason("0x1234")).toBeUndefined();
+  });
+
+  it("reads the allowlist and says which condition blocks a call", async () => {
+    const { crossVmTargetReady, getCrossVmParams } = await import("../src/index");
+    const reply = (active: string[], targets: string[], crossvmStatus = 200) => async (url: string) => {
+      if (url.endsWith("/cosmos/evm/vm/v1/params"))
+        return { ok: true, status: 200, json: async () => ({ params: { active_static_precompiles: active } }) };
+      return {
+        ok: crossvmStatus === 200,
+        status: crossvmStatus,
+        // The node serves these fields at the top level (diana, v3.2.5).
+        json: async () => ({ enabled: true, max_message_size: "65536", bridge_allowed_targets: targets }),
+      };
+    };
+    const p = await getCrossVmParams("https://r", reply([], ["cosmwasm:qor1a"]));
+    expect(p).toEqual({ enabled: true, bridgeAllowedTargets: ["cosmwasm:qor1a"], maxMessageSize: 65536 });
+    const pc = "0x0000000000000000000000000000000000000901";
+    expect((await crossVmTargetReady("https://r", "qor1a", reply([], []))).ready).toBe(false);
+    expect((await crossVmTargetReady("https://r", "qor1a", reply([pc], []))).reason).toMatch(/not in bridge_allowed_targets/);
+    expect((await crossVmTargetReady("https://r", "qor1a", reply([pc], ["cosmwasm:qor1a"]))).ready).toBe(true);
+    expect((await crossVmTargetReady("https://r", "qor1a", reply([pc], [], 501))).reason).toMatch(/501/);
+  });
+});

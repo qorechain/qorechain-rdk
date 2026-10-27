@@ -5,17 +5,21 @@
 //! the sibling hashes from a leaf to that root. These helpers build the root and
 //! a leaf's proof.
 //!
-//! IMPORTANT: the leaf encoding, hash function, and odd-node handling MUST match
-//! the network's `withdrawals_root` construction for the proof to verify
-//! on-chain. The defaults here (SHA-256, hash each leaf, duplicate the last node
-//! on odd levels, no domain separation) are a common convention -- override
-//! `options` to match the chain exactly.
+//! The hash defaults to the chain's: SHAKE-256 with a 32-byte output. For a
+//! batch's withdrawals use [`crate::bridge::withdrawal::withdrawals_tree`],
+//! which also builds the chain's leaves and places each at its withdrawal
+//! index; these generic helpers hash each input leaf by default, which the
+//! chain does not. Releases before 0.7.0 defaulted to SHA-256, which no chain
+//! construction uses.
 
-use sha2::{Digest, Sha256};
+use crate::utils::qorehash::qorehash;
 
 /// Options controlling tree construction.
 #[derive(Debug, Clone, Copy)]
 pub struct MerkleOptions {
+    /// Hash function for internal nodes (and leaves when `hash_leaves`).
+    /// Default SHAKE-256 (32 bytes).
+    pub hash: fn(&[u8]) -> Vec<u8>,
     /// Hash each input leaf before building the tree. Default `true`.
     pub hash_leaves: bool,
     /// On an odd number of nodes, duplicate the last one. Default `true`.
@@ -25,28 +29,39 @@ pub struct MerkleOptions {
 impl Default for MerkleOptions {
     fn default() -> Self {
         MerkleOptions {
+            hash: qorehash_vec,
             hash_leaves: true,
             duplicate_odd: true,
         }
     }
 }
 
-fn sha256(data: &[u8]) -> Vec<u8> {
-    let mut h = Sha256::new();
-    h.update(data);
-    h.finalize().to_vec()
+impl MerkleOptions {
+    /// The chain's tree over already-hashed leaves: SHAKE-256 nodes, leaves
+    /// not re-hashed, an odd last node paired with itself.
+    pub const fn chain_tree() -> Self {
+        MerkleOptions {
+            hash: qorehash_vec,
+            hash_leaves: false,
+            duplicate_odd: true,
+        }
+    }
 }
 
-fn concat_hash(a: &[u8], b: &[u8]) -> Vec<u8> {
+fn qorehash_vec(data: &[u8]) -> Vec<u8> {
+    qorehash(&[data]).to_vec()
+}
+
+fn concat_hash(a: &[u8], b: &[u8], opts: MerkleOptions) -> Vec<u8> {
     let mut buf = Vec::with_capacity(a.len() + b.len());
     buf.extend_from_slice(a);
     buf.extend_from_slice(b);
-    sha256(&buf)
+    (opts.hash)(&buf)
 }
 
 fn leaf_nodes(leaves: &[Vec<u8>], opts: MerkleOptions) -> Vec<Vec<u8>> {
     if opts.hash_leaves {
-        leaves.iter().map(|l| sha256(l)).collect()
+        leaves.iter().map(|l| (opts.hash)(l)).collect()
     } else {
         leaves.to_vec()
     }
@@ -55,7 +70,7 @@ fn leaf_nodes(leaves: &[Vec<u8>], opts: MerkleOptions) -> Vec<Vec<u8>> {
 /// Compute the binary Merkle root of a list of leaves.
 pub fn binary_merkle_root(leaves: &[Vec<u8>], options: MerkleOptions) -> Vec<u8> {
     if leaves.is_empty() {
-        return sha256(&[]);
+        return (options.hash)(&[]);
     }
     let mut level = leaf_nodes(leaves, options);
     while level.len() > 1 {
@@ -64,9 +79,9 @@ pub fn binary_merkle_root(leaves: &[Vec<u8>], options: MerkleOptions) -> Vec<u8>
         while i < level.len() {
             let left = &level[i];
             if i + 1 < level.len() {
-                next.push(concat_hash(left, &level[i + 1]));
+                next.push(concat_hash(left, &level[i + 1], options));
             } else if options.duplicate_odd {
-                next.push(concat_hash(left, left));
+                next.push(concat_hash(left, left, options));
             } else {
                 next.push(left.clone());
             }
@@ -119,9 +134,9 @@ pub fn binary_merkle_proof(
         while i < level.len() {
             let left = &level[i];
             if i + 1 < level.len() {
-                next.push(concat_hash(left, &level[i + 1]));
+                next.push(concat_hash(left, &level[i + 1], options));
             } else if options.duplicate_odd {
-                next.push(concat_hash(left, left));
+                next.push(concat_hash(left, left, options));
             } else {
                 next.push(left.clone());
             }
@@ -146,7 +161,7 @@ pub fn verify_binary_merkle_proof(
     options: MerkleOptions,
 ) -> bool {
     let mut node = if options.hash_leaves {
-        sha256(leaf)
+        (options.hash)(leaf)
     } else {
         leaf.to_vec()
     };
@@ -154,9 +169,9 @@ pub fn verify_binary_merkle_proof(
     for sibling in siblings {
         let is_right = idx % 2 == 1;
         node = if is_right {
-            concat_hash(sibling, &node)
+            concat_hash(sibling, &node, options)
         } else {
-            concat_hash(&node, sibling)
+            concat_hash(&node, sibling, options)
         };
         idx /= 2;
     }
@@ -166,9 +181,14 @@ pub fn verify_binary_merkle_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
 
     fn leaves() -> Vec<Vec<u8>> {
         vec![vec![1], vec![2], vec![3], vec![4]]
+    }
+
+    fn sha256(data: &[u8]) -> Vec<u8> {
+        Sha256::digest(data).to_vec()
     }
 
     #[test]
@@ -177,7 +197,7 @@ mod tests {
         let root = binary_merkle_root(&leaves(), opts);
         assert_eq!(
             hex::encode(&root),
-            "98d658fb28540a2eca2a8a5930c309a9c37f89979d48d025a72c36a77a74510d"
+            "2ddb9821033b7e9b8a5373831724cc1f531f787ed9460e8029096ef6b9eb8708"
         );
         let proof = binary_merkle_proof(&leaves(), 1, opts);
         assert!(verify_binary_merkle_proof(
@@ -187,5 +207,17 @@ mod tests {
             &root,
             opts
         ));
+    }
+
+    #[test]
+    fn sha256_when_asked() {
+        let opts = MerkleOptions {
+            hash: sha256,
+            ..MerkleOptions::default()
+        };
+        assert_eq!(
+            hex::encode(binary_merkle_root(&leaves(), opts)),
+            "98d658fb28540a2eca2a8a5930c309a9c37f89979d48d025a72c36a77a74510d"
+        );
     }
 }

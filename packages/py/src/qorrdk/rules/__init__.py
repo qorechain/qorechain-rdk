@@ -131,6 +131,41 @@ def data_hash_error(da_backend: str, data_hash: Union[bytes, str, None]) -> Opti
     )
 
 
+def withdrawals_root_error(withdrawals_root: Union[bytes, bytearray, str, None]) -> Optional[str]:
+    """Why a batch's ``withdrawals_root`` would be refused, or ``None`` if it is
+    acceptable. From chain v3.2.5 (``rdk-withdrawals-binding``) it must be empty
+    or exactly 32 bytes, the root of the batch's withdrawals tree.
+    """
+    if withdrawals_root is None:
+        return None
+    n = _byte_length(withdrawals_root)
+    if n < 0:
+        return "withdrawals_root is not valid hex"
+    if n in (0, 32):
+        return None
+    return f"withdrawals_root must be empty or 32 bytes, got {n}"
+
+
+#: From chain v3.2.5 (``rdk-challenge-settlement``) an optimistic rollup may have
+#: at most this many batches waiting for finality; the next one is refused.
+MAX_PENDING_OPTIMISTIC_BATCHES = 4096
+
+
+def stop_rollup_error(latest_batch_status: Optional[str]) -> Optional[str]:
+    """Why stopping a rollup would be refused, given the status of its latest
+    batch, or ``None`` if it would not be. From chain v3.2.5
+    (``rdk-challenge-settlement``) a rollup whose latest batch is still submitted
+    or challenged cannot be stopped: stopping refunds the escrow that pays an
+    upheld challenge.
+    """
+    if latest_batch_status in ("submitted", "challenged"):
+        return (
+            f"the rollup's latest batch is {latest_batch_status}; stop it once that "
+            "batch is finalized or rejected"
+        )
+    return None
+
+
 __all__ = [
     "ID_MIN_LENGTH",
     "ID_MAX_LENGTH",
@@ -140,4 +175,7 @@ __all__ = [
     "is_valid_rollup_id",
     "withdrawal_errors",
     "data_hash_error",
+    "withdrawals_root_error",
+    "MAX_PENDING_OPTIMISTIC_BATCHES",
+    "stop_rollup_error",
 ]

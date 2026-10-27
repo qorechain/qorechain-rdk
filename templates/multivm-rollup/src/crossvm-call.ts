@@ -5,9 +5,11 @@
  *
  * Read this first: the precompile is not active on mainnet or testnet today. It
  * runs only once governance lists its address in the EVM parameter
- * `active_static_precompiles`, and from chain v3.2.3 it reaches only targets
- * governance allowlists in `bridge_allowed_targets`. Until then a call to it
- * succeeds with empty data and does nothing, so this script checks first.
+ * `active_static_precompiles`, and it reaches only targets governance
+ * allowlists in `bridge_allowed_targets`. Until then a call to it succeeds with
+ * empty data and does nothing, so this script checks both first. From chain
+ * v3.2.5 the result is ABI-encoded bytes (decode with `decodeCrossVmResult`)
+ * and a refusal reverts with a reason (`decodeRevertReason`).
  *
  * If you send through a scoped EVM authorisation window (chain v3.2.3), note
  * that `native_only: true` refuses any calldata — a cross-VM call included —
@@ -19,9 +21,9 @@ import {
   CROSS_VM_PRECOMPILE,
   CROSS_VM_DEFAULT_SIGNATURE,
   CROSS_VM_TARGET,
+  crossVmTargetReady,
   encodeCrossVmCalldata,
   functionSelector,
-  isCrossVmPrecompileActive,
 } from "@qorechain/rdk";
 import { getClient } from "./client.js";
 
@@ -31,11 +33,11 @@ const client = getClient();
 const nativeContract = process.env.QORE_CW_CONTRACT ?? "qor1examplecontractxxxxxxxxxxxxxxxxxxxxxxx";
 const executeMsg = JSON.stringify({ increment: {} });
 
-const status = await isCrossVmPrecompileActive(client.network.endpoints.rest);
-console.log(`Cross-VM precompile on ${client.network.chainId}: ${status.active ? "ACTIVE" : "NOT ACTIVE"}`);
+const status = await crossVmTargetReady(client.network.endpoints.rest, nativeContract);
+console.log(`Cross-VM call to ${nativeContract} on ${client.network.chainId}: ${status.ready ? "READY" : "NOT READY"}`);
 console.log(`  ${status.reason}`);
-if (!status.active) {
-  console.log("  A call sent now would succeed with empty data and reach no contract.");
+if (!status.ready) {
+  console.log("  A call sent now would not reach the contract.");
 }
 console.log();
 

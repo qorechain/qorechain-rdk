@@ -111,3 +111,35 @@ pub fn data_hash_error(da_backend: &str, data_hash: &[u8]) -> Option<String> {
          stores a data-availability blob on chain, so the chain refuses a batch that claims one"
     ))
 }
+
+/// Why a batch's `withdrawals_root` would be refused, or `None` if it is
+/// acceptable. From chain v3.2.5 (`rdk-withdrawals-binding`) it must be empty
+/// or exactly 32 bytes, the root of the batch's withdrawals tree.
+pub fn withdrawals_root_error(withdrawals_root: &[u8]) -> Option<String> {
+    let n = withdrawals_root.len();
+    if n == 0 || n == 32 {
+        return None;
+    }
+    Some(format!(
+        "withdrawals_root must be empty or 32 bytes, got {n}"
+    ))
+}
+
+/// From chain v3.2.5 (`rdk-challenge-settlement`) an optimistic rollup may
+/// have at most this many batches waiting for finality; the next one is
+/// refused.
+pub const MAX_PENDING_OPTIMISTIC_BATCHES: u64 = 4096;
+
+/// Why stopping a rollup would be refused, given the status of its latest
+/// batch, or `None` if it would not be. From chain v3.2.5
+/// (`rdk-challenge-settlement`) a rollup whose latest batch is still submitted
+/// or challenged cannot be stopped: stopping refunds the escrow that pays an
+/// upheld challenge.
+pub fn stop_rollup_error(latest_batch_status: Option<&str>) -> Option<String> {
+    match latest_batch_status {
+        Some(s @ ("submitted" | "challenged")) => Some(format!(
+            "the rollup's latest batch is {s}; stop it once that batch is finalized or rejected"
+        )),
+        _ => None,
+    }
+}

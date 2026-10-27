@@ -8,6 +8,8 @@ use crate::challenge_window::{
 };
 use crate::client::rest::RestError;
 use crate::client::RdkClient;
+use crate::rules::MAX_PENDING_OPTIMISTIC_BATCHES;
+use crate::transition::FEATURE_RDK_CHALLENGE_SETTLEMENT;
 
 /// A consolidated rollup-health snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,10 +37,46 @@ pub struct RollupHealth {
     pub challenge_deadline_secs: Option<i64>,
     /// Time mode only: seconds until it closes (negative once past).
     pub seconds_until_challenge_deadline: Option<i64>,
+    /// From chain v3.2.5 (`rdk-challenge-settlement`) batches finalize in
+    /// order: a batch whose own window has passed still waits for every
+    /// earlier batch. Set when the latest batch could finalize on its own
+    /// window but an earlier batch is still submitted or challenged.
+    pub held_back_by: Option<HeldBackBy>,
     /// Coarse health flag: active rollup, latest batch not rejected.
     pub healthy: bool,
     /// Human-readable observations.
     pub notes: Vec<String>,
+}
+
+/// The earlier batch that keeps the latest one from finalizing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeldBackBy {
+    /// The earlier batch's index.
+    pub batch_index: i64,
+    /// Its status (`submitted` or `challenged`).
+    pub status: String,
+}
+
+/// The oldest batch before `latest_index` that is still submitted or
+/// challenged. At most [`MAX_PENDING_OPTIMISTIC_BATCHES`] batches can be
+/// waiting, so the search starts that far back instead of at batch 0.
+fn oldest_unsettled_before(
+    client: &RdkClient,
+    rollup_id: &str,
+    latest_index: i64,
+) -> Result<Option<HeldBackBy>, RestError> {
+    let start = (latest_index.max(0) as u64).saturating_sub(MAX_PENDING_OPTIMISTIC_BATCHES);
+    let batches = client.rest.list_batches_from(rollup_id, start)?;
+    Ok(batches
+        .into_iter()
+        .filter(|b| {
+            b.batch_index < latest_index && (b.status == "submitted" || b.status == "challenged")
+        })
+        .min_by_key(|b| b.batch_index)
+        .map(|b| HeldBackBy {
+            batch_index: b.batch_index,
+            status: b.status,
+        }))
 }
 
 /// Options for [`get_rollup_health`].
@@ -76,6 +114,7 @@ pub fn get_rollup_health(
         challenge_window: None,
         challenge_deadline_secs: None,
         seconds_until_challenge_deadline: None,
+        held_back_by: None,
         healthy,
         notes,
     };
@@ -147,6 +186,23 @@ pub fn get_rollup_health(
             health
                 .notes
                 .push("latest batch is under challenge".to_string());
+        }
+        let finalizable = health.challenge_window.is_some_and(|w| w.finalizable);
+        if latest_batch.status == "submitted"
+            && finalizable
+            && client
+                .rest
+                .is_protocol_feature_enabled(FEATURE_RDK_CHALLENGE_SETTLEMENT)?
+        {
+            if let Some(blocker) =
+                oldest_unsettled_before(client, rollup_id, latest_batch.batch_index)?
+            {
+                health.notes.push(format!(
+                    "batch {}'s window has passed, but batches finalize in order and batch {} is still {}",
+                    latest_batch.batch_index, blocker.batch_index, blocker.status
+                ));
+                health.held_back_by = Some(blocker);
+            }
         }
     }
 

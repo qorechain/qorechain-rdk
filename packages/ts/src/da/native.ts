@@ -5,11 +5,11 @@
  * QoreChain no transaction posts a blob to the native DA store yet, so on a
  * `native` or `both` rollup the chain refuses a batch whose `data_hash` claims
  * one: leave it empty there (see `dataHashError`). This module assembles a blob
- * (enforcing the size limit) and computes its SHA-256 commitment for your own
- * records. Read the live `max_da_blob_size` from
+ * (enforcing the size limit) and computes the commitment the chain's blob
+ * store uses, SHAKE-256 (32 bytes); releases before 0.7.0 used SHA-256. Read the live `max_da_blob_size` from
  * `rdk.params()`; the default here is reference only.
  */
-import { sha256 } from "@cosmjs/crypto";
+import { qorehash } from "../utils/qorehash";
 import { DEFAULT_RDK_PARAMS } from "../constants";
 import type { DABackend } from "../config/enums";
 import { bytesToHex, toBytes } from "../utils/bytes";
@@ -19,11 +19,11 @@ export const DA_CELESTIA_UNAVAILABLE_MESSAGE =
   "Celestia data availability is selectable but not yet active on the QoreChain " +
   "network. Use the 'native' backend, or wait until Celestia is enabled.";
 
-/** A prepared DA blob and its SHA-256 commitment (not for a native batch's `data_hash`). */
+/** A prepared DA blob and the chain's SHAKE-256 commitment to it (not for a native batch's `data_hash` yet). */
 export interface DaBlob {
   /** The blob bytes. */
   data: Uint8Array;
-  /** SHA-256 of the blob, `0x`-prefixed. */
+  /** The chain's commitment to the blob: SHAKE-256, 32 bytes, `0x`-prefixed. */
   dataHash: string;
   /** Blob size in bytes. */
   size: number;
@@ -43,7 +43,7 @@ export function buildDaBlob(input: { data: string | Uint8Array; maxBlobSize?: nu
       `DA blob is ${data.length} bytes, exceeding the maximum of ${maxBlobSize} bytes`,
     );
   }
-  return { data, dataHash: `0x${bytesToHex(sha256(data))}`, size: data.length };
+  return { data, dataHash: `0x${bytesToHex(qorehash(data))}`, size: data.length };
 }
 
 /** Whether a DA backend is currently active on the network. */

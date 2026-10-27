@@ -37,7 +37,8 @@ import {
   type SignBytesVersionOption,
 } from "@qorechain/sdk";
 import { RestClient } from "../client/rest";
-import { dataHashError, rollupIdError, withdrawalErrors } from "../rules";
+import { dataHashError, rollupIdError, stopRollupError, withdrawalErrors, withdrawalsRootError } from "../rules";
+import { FEATURE_RDK_CHALLENGE_SETTLEMENT } from "../transition";
 import { anchorSignBytesV2 } from "../receipts";
 import { bytesToHex, toBytes } from "../utils/bytes";
 import type { RollupStatus } from "../config/enums";
@@ -408,6 +409,8 @@ export class RdkTxClient {
     opts: TxOptions & { anchor?: "auto" | "require" | "off" } = {},
   ): Promise<DeliverTxResponse> {
     const mode = opts.anchor ?? "auto";
+    const rootErr = withdrawalsRootError(input.withdrawalsRoot);
+    if (rootErr) throw new Error(`cannot submit batch ${String(input.batchIndex)}: ${rootErr}`);
     // A non-empty data hash on a native-DA rollup is always refused by the
     // chain; catch it before the fee is paid when the rollup can be read.
     if (input.dataHash && toBytes(input.dataHash).length > 0 && this.hybrid?.rest) {
@@ -518,6 +521,21 @@ export class RdkTxClient {
     opts?: TxOptions,
   ): Promise<DeliverTxResponse> {
     if (input.currentStatus) assertRollupAction("stop", input.currentStatus);
+    // From chain v3.2.5 a rollup with an unsettled latest batch cannot be
+    // stopped; check before paying the fee when the chain can be read.
+    if (this.hybrid?.rest) {
+      const rest = new RestClient(this.hybrid.rest);
+      if (await rest.isProtocolFeatureEnabled(FEATURE_RDK_CHALLENGE_SETTLEMENT)) {
+        let latest: { status: string } | undefined;
+        try {
+          latest = await rest.getLatestBatch(input.rollupId);
+        } catch {
+          latest = undefined; // no batch yet
+        }
+        const err = stopRollupError(latest?.status);
+        if (err) throw new Error(`cannot stop rollup "${input.rollupId}": ${err}`);
+      }
+    }
     return this.broadcast(
       [msgs.stopRollupMsg({ creator: this.address, rollupId: input.rollupId })],
       opts,

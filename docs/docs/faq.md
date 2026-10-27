@@ -69,7 +69,9 @@ before v3.2.2 keep their ids.
 See [Settlement paradigms](concepts/settlement-paradigms.md). In short:
 `optimistic` for general-purpose app-chains that tolerate delayed finality, `zk`
 for fast trust-minimized finality, `based` for host-coupled finality with a
-based sequencer, and `sovereign` for maximum autonomy over consensus.
+based sequencer, and `sovereign` for maximum autonomy over consensus. Note that
+`zk` cannot settle on either network yet: the chain has no way to register a
+verification key until chain v3.2.7.
 
 ### What does it cost to create a rollup?
 

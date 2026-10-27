@@ -75,6 +75,12 @@ export interface RollupView {
   challengeBond?: string;
   /** The rollup's proof system (e.g. `fraud`, `snark`), when exposed (v3.2.4+). */
   proofSystem?: string;
+  /**
+   * Whether the rollup has a ZK verification key registered. No release before
+   * the planned chain v3.2.7 can register one, so `undefined` (field not served)
+   * means none: every zk batch is then refused.
+   */
+  hasVerificationKey?: boolean;
 }
 
 /** A settlement batch. */
@@ -201,6 +207,7 @@ export function mapRollupView(raw: RawRecord): RollupView {
       const v = pick(raw, "proof_system", "proofSystem");
       return v === undefined || v === null || v === "" ? undefined : String(v);
     })(),
+    hasVerificationKey: pick(raw, "has_verification_key", "hasVerificationKey") === true ? true : undefined,
   };
 }
 

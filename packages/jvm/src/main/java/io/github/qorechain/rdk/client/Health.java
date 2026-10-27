@@ -3,6 +3,8 @@ package io.github.qorechain.rdk.client;
 import io.github.qorechain.rdk.client.ChallengeWindow.ChainTip;
 import io.github.qorechain.rdk.client.Views.BatchView;
 import io.github.qorechain.rdk.client.Views.RollupView;
+import io.github.qorechain.rdk.rules.Rules;
+import io.github.qorechain.rdk.transition.Transition;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,8 +42,26 @@ public final class Health {
         public boolean hasChallengeWindow;
         /** Whether the chain tip could be read. */
         public boolean hasTip;
+        /**
+         * From chain v3.2.5 ({@code rdk-challenge-settlement}) batches finalize in order: a batch
+         * whose own window has passed still waits for every earlier batch. Set (otherwise {@code
+         * null}) when the latest batch could finalize on its own window but an earlier batch is
+         * still submitted or challenged.
+         */
+        public HeldBack heldBackBy;
         public boolean healthy;
         public List<String> notes = new ArrayList<>();
+    }
+
+    /** The earlier batch a finalizable batch is waiting for. */
+    public static final class HeldBack {
+        public final int batchIndex;
+        public final String status;
+
+        public HeldBack(int batchIndex, String status) {
+            this.batchIndex = batchIndex;
+            this.status = status;
+        }
     }
 
     /** Options for {@link #getRollupHealth}. */
@@ -144,9 +164,44 @@ public final class Health {
             if ("challenged".equals(latest.status)) {
                 health.notes.add("latest batch is under challenge");
             }
+            if ("submitted".equals(latest.status)
+                    && health.challengeWindow != null
+                    && health.challengeWindow.finalizable
+                    && client.rest.isProtocolFeatureEnabled(
+                            Transition.FEATURE_RDK_CHALLENGE_SETTLEMENT)) {
+                HeldBack blocker = oldestUnsettledBefore(client, rollupId, latest.batchIndex);
+                if (blocker != null) {
+                    health.heldBackBy = blocker;
+                    health.notes.add(
+                            "batch "
+                                    + latest.batchIndex
+                                    + "'s window has passed, but batches finalize in order and batch "
+                                    + blocker.batchIndex
+                                    + " is still "
+                                    + blocker.status);
+                }
+            }
         }
 
         health.healthy = healthy;
         return health;
+    }
+
+    /**
+     * The oldest batch before {@code latestIndex} that is still submitted or challenged, or {@code
+     * null}. At most {@link Rules#MAX_PENDING_OPTIMISTIC_BATCHES} batches can be waiting, so the
+     * search starts that far back instead of at batch 0.
+     */
+    private static HeldBack oldestUnsettledBefore(RdkClient client, String rollupId, int latestIndex) {
+        long start = Math.max(0L, (long) latestIndex - Rules.MAX_PENDING_OPTIMISTIC_BATCHES);
+        BatchView oldest = null;
+        for (BatchView b : client.rest.listBatchesFrom(rollupId, start)) {
+            if (b.batchIndex < latestIndex
+                    && ("submitted".equals(b.status) || "challenged".equals(b.status))
+                    && (oldest == null || b.batchIndex < oldest.batchIndex)) {
+                oldest = b;
+            }
+        }
+        return oldest == null ? null : new HeldBack(oldest.batchIndex, oldest.status);
     }
 }

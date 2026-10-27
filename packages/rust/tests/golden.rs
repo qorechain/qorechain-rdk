@@ -69,6 +69,19 @@ fn economics_matches_golden() {
     assert_eq!(cost.burn_rate, e["burnRate"].as_str().unwrap());
 }
 
+fn hex_list(v: &Value) -> Vec<String> {
+    v.as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_str().unwrap().to_string())
+        .collect()
+}
+
+fn sha256(data: &[u8]) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(data).to_vec()
+}
+
 #[test]
 fn merkle_matches_golden() {
     let g = golden();
@@ -79,22 +92,18 @@ fn merkle_matches_golden() {
         .iter()
         .map(|h| hex::decode(h.as_str().unwrap()).unwrap())
         .collect();
+    // The default hash is the chain's, SHAKE-256.
     let opts = MerkleOptions::default();
     let root = binary_merkle_root(&leaves, opts);
     assert_eq!(hex::encode(&root), m["root"].as_str().unwrap());
 
     let proof = binary_merkle_proof(&leaves, 1, opts);
     let siblings_hex: Vec<String> = proof.siblings.iter().map(hex::encode).collect();
-    let expected: Vec<String> = m["proofIndex1Siblings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_string())
-        .collect();
-    assert_eq!(siblings_hex, expected);
+    assert_eq!(siblings_hex, hex_list(&m["proofIndex1Siblings"]));
 
-    // The withdrawal helper reproduces the same root + siblings.
-    let w = assemble_withdrawal_proof(&leaves, 1, opts);
+    // The withdrawal helper reproduces the same root + siblings when given the
+    // same options.
+    let w = assemble_withdrawal_proof(&leaves, 1, Some(opts));
     assert_eq!(
         hex::encode(&w.withdrawals_root),
         m["root"].as_str().unwrap()
@@ -102,6 +111,46 @@ fn merkle_matches_golden() {
     assert!(verify_binary_merkle_proof(
         &leaves[1], 1, &w.proof, &root, opts
     ));
+
+    // Its default is the chain's tree, which does not re-hash leaves: verify
+    // the same way.
+    let chain = assemble_withdrawal_proof(&leaves, 1, None);
+    assert!(verify_binary_merkle_proof(
+        &leaves[1],
+        1,
+        &chain.proof,
+        &chain.withdrawals_root,
+        MerkleOptions::chain_tree()
+    ));
+    assert!(!verify_binary_merkle_proof(
+        &leaves[1],
+        1,
+        &chain.proof,
+        &chain.withdrawals_root,
+        opts
+    ));
+}
+
+#[test]
+fn merkle_sha256_on_request_matches_the_legacy_vector() {
+    let g = golden();
+    let m = &g["merkle"];
+    let legacy = &m["sha256Legacy"];
+    let leaves: Vec<Vec<u8>> = m["leavesHex"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| hex::decode(h.as_str().unwrap()).unwrap())
+        .collect();
+    let opts = MerkleOptions {
+        hash: sha256,
+        ..MerkleOptions::default()
+    };
+    let root = binary_merkle_root(&leaves, opts);
+    assert_eq!(hex::encode(&root), legacy["root"].as_str().unwrap());
+    let proof = binary_merkle_proof(&leaves, 1, opts);
+    let siblings_hex: Vec<String> = proof.siblings.iter().map(hex::encode).collect();
+    assert_eq!(siblings_hex, hex_list(&legacy["proofIndex1Siblings"]));
 }
 
 #[test]

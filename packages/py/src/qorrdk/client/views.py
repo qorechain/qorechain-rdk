@@ -95,6 +95,10 @@ class RollupView:
     challenge_bond: Optional[str] = None
     #: The rollup's proof system, e.g. ``"fraud"`` (chain v3.2.4+).
     proof_system: Optional[str] = None
+    #: Whether the rollup has a ZK verification key registered. No release
+    #: before the planned chain v3.2.7 can register one, so ``None`` (field not
+    #: served) means none: every zk batch is then refused.
+    has_verification_key: Optional[bool] = None
 
 
 @dataclass
@@ -215,6 +219,9 @@ def map_rollup_view(raw: RawRecord) -> RollupView:
         challenge_window_sec=_optional_num(_pick(raw, "challenge_window_sec", "challengeWindowSec")),
         challenge_bond=_optional_str(_pick(raw, "challenge_bond", "challengeBond")),
         proof_system=_optional_str(_pick(raw, "proof_system", "proofSystem")),
+        has_verification_key=(
+            True if _pick(raw, "has_verification_key", "hasVerificationKey") is True else None
+        ),
     )
 
 

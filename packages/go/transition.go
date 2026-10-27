@@ -5,8 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-
-	pqc "github.com/qorechain/qorechain-pqc/go"
 )
 
 // The canonical batch transition root: the state root a protocol-following
@@ -20,6 +18,11 @@ import (
 // The test vectors come from the chain's own BatchTransitionRoot.
 
 const (
+	// FeatureRDKChallengeSettlement is the chain v3.2.5 protocol feature for
+	// in-order settlement: batches finalize in order, any account may resolve a
+	// challenge, an upheld fraud rejects the later batches too, and a rollup
+	// with an unsettled batch cannot be stopped.
+	FeatureRDKChallengeSettlement = "rdk-challenge-settlement"
 	// FeatureRDKWithdrawalsBinding switches batches to the v2 binding.
 	FeatureRDKWithdrawalsBinding = "rdk-withdrawals-binding"
 	// WithdrawalsBindingUpgrade is the chain upgrade that turns it on.
@@ -37,13 +40,7 @@ type TransitionInput struct {
 	WithdrawalsRoot []byte
 }
 
-func shake32(parts ...[]byte) []byte {
-	var all []byte
-	for _, p := range parts {
-		all = append(all, p...)
-	}
-	return pqc.Shake256(all, 32)
-}
+func shake32(parts ...[]byte) []byte { return Qorehash(parts...) }
 
 func u64Bytes(n uint64) []byte {
 	var b [8]byte

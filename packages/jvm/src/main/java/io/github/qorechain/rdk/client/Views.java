@@ -46,6 +46,12 @@ public final class Views {
         public String challengeBond;
         /** The rollup's proof system, e.g. {@code fraud} (chain v3.2.4+), or {@code null}. */
         public String proofSystem;
+        /**
+         * Whether the rollup has a ZK verification key registered. True only when the node serves
+         * the field as true. No release before the planned chain v3.2.7 can register one, so false
+         * (field not served) means none: every zk batch is then refused.
+         */
+        public boolean hasVerificationKey;
     }
 
     /** A settlement batch. */
@@ -251,6 +257,8 @@ public final class Views {
         r.challengeBond = bond == null ? null : asStr(bond, "");
         Object proof = present(pick(raw, "proof_system", "proofSystem"));
         r.proofSystem = proof == null ? null : asStr(proof, "");
+        r.hasVerificationKey =
+                Boolean.TRUE.equals(pick(raw, "has_verification_key", "hasVerificationKey"));
         return r;
     }
 

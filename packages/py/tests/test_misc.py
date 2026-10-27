@@ -230,3 +230,64 @@ def test_health_no_batches():
     health = get_rollup_health(client, "r1", now_secs=1500)
     assert not health.has_batches
     assert any("no settlement batches" in n for n in health.notes)
+
+
+class _InOrderRest(_FakeRest):
+    """A chain on v3.2.5 whose latest batch waits behind an earlier one."""
+
+    def __init__(self, latest, batches, settlement_enabled):
+        super().__init__(rollup_status="active", latest=latest)
+        self._batches = batches
+        self._settlement_enabled = settlement_enabled
+        self.list_calls: list = []
+
+    def is_protocol_feature_enabled(self, name):
+        return name == "rdk-challenge-settlement" and self._settlement_enabled
+
+    def list_batches(self, rollup_id, start_index=None):
+        from qorrdk import map_batch_view
+
+        self.list_calls.append(start_index)
+        return [map_batch_view(b) for b in self._batches]
+
+
+def _in_order_chain(settlement_enabled):
+    def batch(i, status):
+        return {"rollup_id": "r1", "batch_index": i, "status": status, "submitted_at": 900 + i}
+
+    latest = {"rollup_id": "r1", "batch_index": 2, "status": "submitted", "submitted_at": 1000}
+    batches = [batch(0, "challenged"), batch(1, "submitted"), latest]
+    return _InOrderRest(latest, batches, settlement_enabled)
+
+
+def test_health_latest_batch_held_back_by_an_earlier_challenged_batch():
+    from qorrdk.lifecycle.state_machine import ChainTip
+
+    rest = _in_order_chain(settlement_enabled=True)
+    client = _FakeClient(rest, _PARAMS)
+    # A 600 s window is 100 blocks: at height 1200 batch 2's own window has passed.
+    health = get_rollup_health(
+        client, "r1", tip=ChainTip(height=1200, time_secs=0), challenge_window_secs=600
+    )
+    assert health.challenge_window.finalizable
+    assert health.held_back_by is not None
+    assert health.held_back_by.batch_index == 0
+    assert health.held_back_by.status == "challenged"
+    assert rest.list_calls == [0]  # max(0, 2 - 4096)
+    assert any(
+        "batches finalize in order and batch 0 is still challenged" in n for n in health.notes
+    )
+
+
+def test_health_not_held_back_when_in_order_settlement_is_off():
+    from qorrdk.lifecycle.state_machine import ChainTip
+
+    rest = _in_order_chain(settlement_enabled=False)
+    client = _FakeClient(rest, _PARAMS)
+    health = get_rollup_health(
+        client, "r1", tip=ChainTip(height=1200, time_secs=0), challenge_window_secs=600
+    )
+    assert health.challenge_window.finalizable
+    assert health.held_back_by is None
+    assert rest.list_calls == []
+    assert not any("finalize in order" in n for n in health.notes)

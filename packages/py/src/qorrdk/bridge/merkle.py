@@ -5,30 +5,31 @@ Merkle root (``withdrawals_root``), and ``MsgExecuteWithdrawal`` carries the
 sibling hashes from a leaf to that root. These helpers build the root and a
 leaf's proof.
 
-IMPORTANT: the leaf encoding, hash function, and odd-node handling MUST match the
-network's ``withdrawals_root`` construction for the proof to verify on-chain. The
-defaults here (SHA-256, hash each leaf, duplicate the last node on odd levels, no
-domain separation) are a common convention -- override ``options`` to match the
-chain exactly.
+The hash defaults to the chain's: SHAKE-256 with a 32-byte output. For a batch's
+withdrawals use :func:`~qorrdk.bridge.withdrawal.withdrawals_tree`, which also
+builds the chain's leaves and places each at its withdrawal index; these generic
+helpers hash each input leaf by default, which the chain does not. Releases
+before 0.7.0 defaulted to SHA-256, which no chain construction uses.
 """
-
 from __future__ import annotations
 
-import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional
 
+from ..utils.qorehash import qorehash
 
-def _sha256(data: bytes) -> bytes:
-    return hashlib.sha256(data).digest()
+
+def _qorehash(data: bytes) -> bytes:
+    return qorehash(data)
 
 
 @dataclass
 class MerkleOptions:
     """Tunable Merkle-tree construction parameters."""
 
-    #: Hash for internal nodes (and leaves when ``hash_leaves``). Default SHA-256.
-    hash: Callable[[bytes], bytes] = _sha256
+    #: Hash for internal nodes (and leaves when ``hash_leaves``). Default
+    #: SHAKE-256 (32 bytes).
+    hash: Callable[[bytes], bytes] = _qorehash
     #: Hash each input leaf before building the tree. Default True.
     hash_leaves: bool = True
     #: On an odd number of nodes, duplicate the last one. Default True.

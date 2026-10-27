@@ -3,10 +3,23 @@
  *
  * It polls a rollup's settlement batches, surfaces each new batch and its
  * challenge-window deadline, and (when you supply a validity predicate) flags
- * batches you should challenge before the window closes. The kit does NOT
- * decide validity for you — only you know your rollup's expected state. Wire
- * `onInvalid` to your `challengeBatch` call to close the loop.
+ * batches you should challenge before the window closes. Supply your own
+ * `validate`, or {@link transitionRootValidator}, which applies the chain's own
+ * fraud rule: an optimistic batch is fraudulent exactly when its published root
+ * differs from the canonical transition root of its inputs. Wire `onInvalid` to
+ * `challengeBatch` with {@link fraudProofForBatch} to close the loop.
+ *
+ * From chain v3.2.5 an upheld fraud rejects the batch and every later
+ * unfinalized one, and the sequencer resubmits from the last good root under
+ * the same indexes. The watchtower therefore tells batches apart by index AND
+ * state root, so a resubmitted index is judged again.
  */
+import { decodeWireBytes } from "../utils/bytes";
+import {
+  batchTransitionRoot,
+  fraudProof,
+  transitionRootVersionForBatch,
+} from "../transition";
 import type { RdkClient } from "../client/rdk-client";
 import type { BatchView } from "../client/views";
 import {
@@ -90,9 +103,12 @@ export function watchBatches(
   const warnSecs = options.deadlineWarnSecs ?? 300;
   const warnBlocks = options.deadlineWarnBlocks ?? 50;
   const readTip = options.tip ?? (() => client.getChainTip());
-  const seen = new Set<number>();
+  // A batch is its index plus its state root: from chain v3.2.5 a rejected
+  // index is reused by a different batch, which must be judged afresh.
+  const keyOf = (b: BatchView): string => `${b.batchIndex}:${b.stateRoot}`;
+  const seen = new Set<string>();
   // Batches already alerted as near their deadline, so each alerts once.
-  const warned = new Set<number>();
+  const warned = new Set<string>();
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let windowSecs: number | undefined = options.challengeWindowSecs;
@@ -151,19 +167,20 @@ export function watchBatches(
         const info = deadlineFor(batch, tip);
         const finalized = batch.status === "finalized" || batch.finalizedAt > 0;
 
-        if (!seen.has(batch.batchIndex)) {
-          seen.add(batch.batchIndex);
+        if (!seen.has(keyOf(batch))) {
+          seen.add(keyOf(batch));
           options.onBatch?.(batch);
-          if (!finalized && options.validate) {
+          if (!finalized && batch.status !== "rejected" && options.validate) {
             const ok = await options.validate(batch);
             if (!ok && !stopped) options.onInvalid?.(info);
           }
         }
 
-        if (!finalized && info.window?.open) {
+        const live = !finalized && batch.status !== "rejected";
+        if (live && info.window?.open) {
           if (oldestOpen === undefined || batch.batchIndex < oldestOpen) oldestOpen = batch.batchIndex;
-          if (nearDeadline(info) && !warned.has(batch.batchIndex) && !stopped) {
-            warned.add(batch.batchIndex);
+          if (nearDeadline(info) && !warned.has(keyOf(batch)) && !stopped) {
+            warned.add(keyOf(batch));
             options.onDeadline?.(info);
           }
         }
@@ -183,4 +200,53 @@ export function watchBatches(
   }
   void tick();
   return { stop };
+}
+
+/** The canonical transition root the chain judges `batch` by. */
+async function canonicalRootFor(client: RdkClient, rollupId: string, batch: BatchView): Promise<Uint8Array> {
+  const version = await transitionRootVersionForBatch(client.rest, batch);
+  return batchTransitionRoot(
+    {
+      chainId: client.network.chainId,
+      rollupId,
+      prevStateRoot: decodeWireBytes(batch.prevStateRoot),
+      dataHash: decodeWireBytes(batch.dataHash),
+      txCount: batch.txCount,
+      withdrawalsRoot: decodeWireBytes(batch.withdrawalsRoot),
+    },
+    version,
+  );
+}
+
+const sameBytes = (a: Uint8Array, b: Uint8Array): boolean =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
+
+/**
+ * A `validate` predicate that applies the chain's own fraud rule to an
+ * optimistic batch: valid exactly when its published state root equals the
+ * canonical transition root under the binding the chain judges that batch by.
+ * A batch it rejects is one a challenge built by {@link fraudProofForBatch}
+ * wins.
+ */
+export function transitionRootValidator(
+  client: RdkClient,
+  rollupId: string,
+): (batch: BatchView) => Promise<boolean> {
+  return async (batch) =>
+    sameBytes(decodeWireBytes(batch.stateRoot), await canonicalRootFor(client, rollupId, batch));
+}
+
+/**
+ * The fraud proof that wins a challenge against `batch`, or `undefined` when
+ * the batch publishes the canonical root (a challenge would be dismissed and
+ * forfeit its bond).
+ */
+export async function fraudProofForBatch(
+  client: RdkClient,
+  rollupId: string,
+  batch: BatchView,
+): Promise<Uint8Array | undefined> {
+  const canonical = await canonicalRootFor(client, rollupId, batch);
+  if (sameBytes(decodeWireBytes(batch.stateRoot), canonical)) return undefined;
+  return fraudProof(decodeWireBytes(batch.prevStateRoot), canonical);
 }

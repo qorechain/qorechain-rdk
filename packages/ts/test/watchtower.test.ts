@@ -151,3 +151,71 @@ describe("watchBatches", () => {
     expect(deadlines[0].secondsRemaining).toBe(100);
   });
 });
+
+describe("watchtower under chain v3.2.5 settlement", () => {
+  it("judges a resubmitted index again, and never validates a rejected batch", async () => {
+    // Batch 1 is rejected by an upheld fraud and its index is resubmitted
+    // from the last good root with a different state root.
+    const chain: Chain = { batches: [batch(0), batch(1, { status: "rejected", state_root: "aa".repeat(32) })] };
+    const { fetch } = node(chain);
+    const client = createRdkClient({ endpoints: { rest: "https://r", rpc: "https://rpc" }, fetch });
+    const validated: string[] = [];
+    await new Promise<void>((resolve) => {
+      let ticks = 0;
+      const handle = watchBatches(client, "d", {
+        intervalMs: 1,
+        challengeWindowSecs: 3600,
+        tip: () => ({ height: 1100, timeSecs: 0 }),
+        validate: (b) => {
+          validated.push(`${b.batchIndex}:${b.stateRoot.slice(0, 2)}`);
+          return true;
+        },
+        onError: (e) => {
+          throw e;
+        },
+      });
+      const poll = setInterval(() => {
+        ticks++;
+        if (ticks === 3) chain.batches[1] = batch(1, { state_root: "bb".repeat(32) });
+        if (ticks >= 8) {
+          clearInterval(poll);
+          handle.stop();
+          resolve();
+        }
+      }, 5);
+    });
+    expect(validated).toContain("0:");
+    expect(validated).not.toContain("1:aa");
+    expect(validated).toContain("1:bb");
+  });
+});
+
+describe("transitionRootValidator / fraudProofForBatch", () => {
+  const prev = "00".repeat(32);
+  const client = () =>
+    createRdkClient({
+      network: "testnet",
+      endpoints: { rest: "https://r" },
+      fetch: mockFetch((call) => {
+        if (call.url.endsWith("/applied_plan/v3.2.5")) return { json: { height: "8890800" } };
+        return { json: {} };
+      }).fetch,
+    });
+
+  it("accepts the canonical root, rejects anything else, and builds the winning proof", async () => {
+    const { batchTransitionRoot, bytesToHex, fraudProofForBatch, transitionRootValidator } = await import(
+      "../src/index"
+    );
+    const canonical = bytesToHex(
+      batchTransitionRoot({ chainId: "qorechain-diana", rollupId: "roll-x", prevStateRoot: prev, txCount: 1 }, "v2"),
+    );
+    const mk = (root: string) =>
+      ({ batchIndex: 0, stateRoot: root, prevStateRoot: prev, dataHash: "", txCount: 1, withdrawalsRoot: "", submittedAt: 8_890_801 }) as never;
+    const c = client();
+    expect(await transitionRootValidator(c, "roll-x")(mk(canonical))).toBe(true);
+    expect(await transitionRootValidator(c, "roll-x")(mk("11".repeat(32)))).toBe(false);
+    expect(await fraudProofForBatch(c, "roll-x", mk(canonical))).toBeUndefined();
+    const proof = await fraudProofForBatch(c, "roll-x", mk("11".repeat(32)));
+    expect(bytesToHex(proof!)).toBe(prev + canonical);
+  });
+});

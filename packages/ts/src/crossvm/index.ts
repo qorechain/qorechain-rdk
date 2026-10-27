@@ -8,7 +8,8 @@
  * **Read this before relying on it.** The precompile is **not active on
  * qorechain-vladi (mainnet) or qorechain-diana (testnet)** today: it runs only
  * once governance lists its address in the EVM parameter
- * `active_static_precompiles`, which is empty on both networks. From chain
+ * `active_static_precompiles`, which does not include it on either network
+ * (checked 27 October 2026). From chain
  * v3.2.3 it also reaches only the targets governance allowlists in the
  * cross-VM parameter `bridge_allowed_targets`; an empty list keeps it shut.
  *
@@ -17,6 +18,15 @@
  * therefore reports a call that never happened. Check
  * {@link isCrossVmPrecompileActive} first; see that function for the reason an
  * in-contract check cannot settle this on its own.
+ *
+ * From chain v3.2.5 (`crossvm-bridge-abi`) the precompile checks the selector,
+ * answers only `executeCrossVMCall(uint8,string,bytes) returns (bytes)` with
+ * `targetVM` 1 (QoreChain Native), and ABI-encodes its result: decode it with
+ * {@link decodeCrossVmResult} (Solidity: `abi.decode(ret, (bytes))`). A
+ * refusal reverts with `Error(string)` ({@link decodeRevertReason}). The
+ * Native contract sees the CALLER of `0x…0901` as its sender, not
+ * `tx.origin`. The allowlist is served at `/qorechain/crossvm/v1/params`
+ * ({@link getCrossVmParams}).
  *
  * Note: this is the EVM↔QoreChain Native bridge only. SVM cross-calls are separate.
  */
@@ -192,6 +202,102 @@ export async function isCrossVmPrecompileActive(
         ? "active_static_precompiles is empty on this network, so no QoreChain precompile runs; a call to the address succeeds with empty data and does nothing"
         : `the cross-VM precompile is not among the ${list.length} active precompile(s)`,
   };
+}
+
+/** The cross-VM module parameters a node serves (chain v3.2.5 and later). */
+export interface CrossVmParams {
+  enabled: boolean;
+  /** Allowlisted targets, each `<vm>:<contract>` (e.g. `cosmwasm:qor1…`). */
+  bridgeAllowedTargets: string[];
+  maxMessageSize: number;
+}
+
+/**
+ * Read the cross-VM parameters, including the allowlist
+ * (`/qorechain/crossvm/v1/params`). Chains before v3.2.5 do not serve the route
+ * (HTTP 501), which this reports as an error.
+ */
+export async function getCrossVmParams(
+  restBase: string,
+  fetchImpl: (url: string) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }> = (u) =>
+    fetch(u),
+): Promise<CrossVmParams> {
+  const res = await fetchImpl(`${restBase.replace(/\/+$/, "")}/qorechain/crossvm/v1/params`);
+  if (!res.ok) throw new Error(`could not read cross-VM params (HTTP ${res.status})`);
+  const body = (await res.json()) as Record<string, unknown>;
+  const p = (body.params ?? body) as Record<string, unknown>;
+  const targets = Array.isArray(p.bridge_allowed_targets) ? p.bridge_allowed_targets.map(String) : [];
+  return {
+    enabled: p.enabled === true,
+    bridgeAllowedTargets: targets,
+    maxMessageSize: Number(p.max_message_size ?? 0),
+  };
+}
+
+/**
+ * Whether a call to the QoreChain Native contract `contract` would reach it:
+ * the precompile is active, the bridge is enabled, and `cosmwasm:<contract>`
+ * is allowlisted. Says which condition failed.
+ */
+export async function crossVmTargetReady(
+  restBase: string,
+  contract: string,
+  fetchImpl?: (url: string) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>,
+): Promise<{ ready: boolean; reason: string }> {
+  const precompile = await isCrossVmPrecompileActive(restBase, fetchImpl);
+  if (!precompile.active) return { ready: false, reason: precompile.reason };
+  let params: CrossVmParams;
+  try {
+    params = await getCrossVmParams(restBase, fetchImpl);
+  } catch (err) {
+    return { ready: false, reason: (err as Error).message };
+  }
+  if (!params.enabled) return { ready: false, reason: "the cross-VM bridge is disabled on this network" };
+  const target = `cosmwasm:${contract}`;
+  return params.bridgeAllowedTargets.includes(target)
+    ? { ready: true, reason: `${target} is allowlisted and the precompile is active` }
+    : { ready: false, reason: `${target} is not in bridge_allowed_targets; governance must allowlist it` };
+}
+
+const readWord = (b: Uint8Array, at: number): bigint => {
+  let v = 0n;
+  for (let i = 0; i < 32; i++) v = (v << 8n) | BigInt(b[at + i]);
+  return v;
+};
+
+/**
+ * Decode the precompile's return data, `abi.encode(bytes)`, into the Native
+ * contract's response bytes (often empty). Throws on empty or malformed data:
+ * from chain v3.2.5 an active precompile always returns at least 64 bytes, so
+ * empty data means the call reached nothing.
+ */
+export function decodeCrossVmResult(ret: string | Uint8Array): Uint8Array {
+  const b = toBytes(ret);
+  if (b.length === 0) {
+    throw new Error("empty return data: the cross-VM precompile is not active, so the call did nothing");
+  }
+  if (b.length < 64) throw new Error(`cross-VM return data is ${b.length} bytes; abi.encode(bytes) is at least 64`);
+  const offset = Number(readWord(b, 0));
+  if (offset + 32 > b.length) throw new Error("cross-VM return data has an out-of-range offset");
+  const len = Number(readWord(b, offset));
+  if (offset + 32 + len > b.length) throw new Error("cross-VM return data is shorter than its length word");
+  return b.slice(offset + 32, offset + 32 + len);
+}
+
+/**
+ * The reason string of a revert encoded as `Error(string)` (selector
+ * `0x08c379a0`), which is how the precompile reports a refusal, or `undefined`
+ * if `data` is not one.
+ */
+export function decodeRevertReason(data: string | Uint8Array): string | undefined {
+  const b = toBytes(data);
+  if (b.length < 4 + 64 || bytesToHex(b.slice(0, 4)) !== "08c379a0") return undefined;
+  const body = b.slice(4);
+  const offset = Number(readWord(body, 0));
+  if (offset + 32 > body.length) return undefined;
+  const len = Number(readWord(body, offset));
+  if (offset + 32 + len > body.length) return undefined;
+  return new TextDecoder().decode(body.slice(offset + 32, offset + 32 + len));
 }
 
 /** Coerce a hex/bytes payload to bytes (re-exported convenience). */

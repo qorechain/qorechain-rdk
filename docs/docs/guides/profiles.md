@@ -35,7 +35,10 @@ const config = presets.defi({ rollupId: "my-defi-rollup" });
 ## When to use each
 
 - **`defi`** — high-value, latency-sensitive financial apps that want fast,
-  cryptographic finality. zk-SNARK settlement with EIP-1559 fees on the EVM.
+  cryptographic finality. zk-SNARK settlement with EIP-1559 fees on the EVM. It
+  cannot settle yet: zk batches need a verification key, which no chain release
+  up to v3.2.5 can register (planned for v3.2.7; see
+  [Settlement paradigms](../concepts/settlement-paradigms.md)).
 - **`gaming`** — high-throughput, low-latency apps. Based settlement and a
   based sequencer with flat gas on a custom VM, tuned for many small
   transactions per block.

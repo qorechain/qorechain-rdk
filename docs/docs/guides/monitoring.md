@@ -78,6 +78,12 @@ chain tip, read from the RPC endpoint's `/status`; pass `tip` or
 `challengeWindowSecs` to set either explicitly. ZK settlement does not use this
 window — finalization there is gated by on-chain proof verification.
 
+**Finality in order (chain v3.2.5).** `finalizable` says the batch's *own*
+window has passed. From v3.2.5 a batch also waits for every earlier batch to be
+final, so when the chain reports `rdk-challenge-settlement` and an earlier batch
+is still submitted or challenged, `getRollupHealth` sets
+`heldBackBy: { batchIndex, status }` and adds a note naming it.
+
 :::note `submitted_at` is a block height
 Releases before 0.6.0 treated it as a Unix timestamp, so their batch age and
 countdown were meaningless. They also requested the latest batch from a route

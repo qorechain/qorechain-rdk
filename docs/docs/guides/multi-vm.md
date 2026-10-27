@@ -16,33 +16,34 @@ and a scaffold template to start from.
 
 :::caution Not yet active on mainnet or testnet
 The precompile is built into the validators' binary but runs only once governance
-lists its address in the EVM parameter `active_static_precompiles`, which is
-**empty on both networks today**. From chain v3.2.3 it also reaches only the
-targets governance allowlists in the cross-VM parameter `bridge_allowed_targets`
-(each `<vm>:<contract>`); every other target is refused. Activation is planned
-for an upcoming release.
+lists its address in the EVM parameter `active_static_precompiles`, which does
+**not** list it on either network (checked 27 October 2026). It also reaches only
+the targets governance allowlists in the cross-VM parameter
+`bridge_allowed_targets` (each `<vm>:<contract>`), which is empty on the testnet.
 
 Until then, **a call to it succeeds and does nothing.** Its address has no code,
 and the EVM treats a call to such an address as a success with empty return
 data. Check first — see below.
 :::
 
-## Is it live?
+## Will my call reach its target?
 
 ```ts
-import { isCrossVmPrecompileActive } from "@qorechain/rdk";
+import { crossVmTargetReady, getCrossVmParams } from "@qorechain/rdk";
 
-const status = await isCrossVmPrecompileActive("https://api.qore.host");
-console.log(status.active, status.reason);
+const status = await crossVmTargetReady("https://api-testnet.qore.host", "qor1…");
+console.log(status.ready, status.reason);
+// e.g. "cosmwasm:qor1… is not in bridge_allowed_targets; governance must allowlist it"
+
+const params = await getCrossVmParams("https://api-testnet.qore.host");
+console.log(params.enabled, params.bridgeAllowedTargets);
 ```
 
-This reads `GET /cosmos/evm/vm/v1/params` and reports `active: true` only when
-the precompile's address is listed in `active_static_precompiles`. It has to be
-checked off-chain: the precompile returns the target's **raw** reply, so a
-genuine call to a contract that returns nothing is *also* empty, and a
-precompile has no bytecode whether active or not, so `extcodesize` cannot tell
-either. Neither empty return data nor a code-size check distinguishes "inactive"
-from "succeeded" inside a contract.
+`crossVmTargetReady` reads `active_static_precompiles` (`/cosmos/evm/vm/v1/params`,
+also on its own as `isCrossVmPrecompileActive`) and, from chain v3.2.5, the
+cross-VM parameters at `/qorechain/crossvm/v1/params`, and says which condition
+blocks the call: the precompile inactive, the bridge disabled, or the target not
+allowlisted.
 
 ## Encoding a cross-VM call
 
@@ -69,31 +70,45 @@ encoded with an older release could have reached it, even on a network that had
 activated it. Re-encode with 0.6.0 or later.
 :::
 
-## The Solidity side
+## The result, and refusals (chain v3.2.5)
 
-Call the precompile with the same signature, and guard against the silent
-success of an inactive precompile. The dependable in-contract guard is a target
-that always returns a non-empty acknowledgement, which you then require:
+From chain v3.2.5 the precompile answers only
+`executeCrossVMCall(uint8,string,bytes) returns (bytes)` (a two-argument call is
+refused with "unknown method"), as a plain `CALL` with no value:
+
+- its return data is `abi.encode(bytes)`: the Native contract's response, often
+  empty. Decode it with `abi.decode(ret, (bytes))`, or off chain with
+  `decodeCrossVmResult`;
+- a refusal (target not allowlisted, the Native contract failing, out of gas)
+  reverts with `Error(string)`; read it with `decodeRevertReason`;
+- the Native contract sees the **calling contract**, as its `qor1` address, as
+  the sender, not `tx.origin`.
+
+## The Solidity side
 
 ```solidity
 address constant CROSS_VM_PRECOMPILE = 0x0000000000000000000000000000000000000901;
 uint8 constant TARGET_NATIVE = 1;
 
 function callNative(string calldata nativeContract, bytes calldata msg_)
-    external returns (bytes memory)
+    external returns (bytes memory result)
 {
     bytes memory data = abi.encodeWithSignature(
         "executeCrossVMCall(uint8,string,bytes)", TARGET_NATIVE, nativeContract, msg_
     );
     (bool ok, bytes memory ret) = CROSS_VM_PRECOMPILE.call(data);
-    require(ok, "cross-VM call failed");
-    require(ret.length > 0, "cross-VM precompile inactive, or no acknowledgement");
-    return ret;
+    if (!ok) {
+        assembly { revert(add(ret, 32), mload(ret)) } // pass the chain's reason through
+    }
+    // An inactive precompile returns nothing; an active one at least 64 bytes.
+    require(ret.length >= 64, "cross-VM precompile inactive: the call reached no contract");
+    result = abi.decode(ret, (bytes));
 }
 ```
 
 A `require(ok)` on its own is not enough: against an inactive precompile it
-passes, and your contract carries on as if the call had happened.
+passes, and your contract carries on as if the call had happened. The length
+check closes that.
 
 ## EVM authorisation windows (chain v3.2.3)
 

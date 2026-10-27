@@ -12,6 +12,11 @@ import {
   PROFILE_NAMES,
   assembleWithdrawalProof,
   buildExecuteWithdrawalInput,
+  bytesToHex,
+  decodeWireBytes,
+  transitionRootValidator,
+  transitionRootVersionForBatch,
+  withdrawalsTree,
   checkPreflight,
   deriveNativeAccount,
   estimateCreationCost,
@@ -178,6 +183,11 @@ export async function cmdStatus(ctx: CliContext, parsed: ParsedCli): Promise<num
     if (w) {
       ctx.out.line(`  ${describeWindow(w)}`);
     }
+    if (health.heldBackBy) {
+      ctx.out.warn(
+        `  finality held back: batches finalize in order, and batch #${health.heldBackBy.batchIndex} is ${health.heldBackBy.status}`,
+      );
+    }
   } else {
     ctx.out.line("  no settlement batches yet");
   }
@@ -328,14 +338,66 @@ export async function cmdWithdraw(ctx: CliContext, parsed: ParsedCli): Promise<n
   const spec = JSON.parse(readFileSync(file, "utf8")) as {
     rollupId: string;
     batchIndex: number;
-    recipient: string;
-    denom: string;
-    amount: string | number;
-    leaves: string[];
     index: number;
+    /** The batch's withdrawals in index order: the chain's leaves are built from them. */
+    withdrawals?: Array<{ recipient: string; denom: string; amount: string | number }>;
+    /** Or the batch's leaf hashes, already in the chain's encoding. */
+    leaves?: string[];
+    recipient?: string;
+    denom?: string;
+    amount?: string | number;
   };
-  const leaves = spec.leaves.map((h) => hexToBytes(h));
-  const proof = assembleWithdrawalProof(leaves, spec.index);
+  let proof;
+  let recipient = spec.recipient;
+  let denom = spec.denom;
+  let amount = spec.amount;
+  let batch;
+  try {
+    batch = await ctx.client.rest.getBatch(spec.rollupId, spec.batchIndex);
+  } catch (err) {
+    if (!flagBool(parsed.flags, "dry-run")) {
+      ctx.out.error(`cannot read batch ${spec.batchIndex} of ${spec.rollupId}: ${(err as Error).message}`);
+      return 1;
+    }
+  }
+  if (spec.withdrawals) {
+    if (!batch) {
+      ctx.out.error("the batch must be readable to know which leaf encoding it commits (v1 or v2)");
+      return 1;
+    }
+    const version = await transitionRootVersionForBatch(ctx.client.rest, batch);
+    const tree = withdrawalsTree(spec.withdrawals, {
+      rollupId: spec.rollupId,
+      version,
+      chainId: ctx.client.network.chainId,
+    });
+    proof = tree.proof(spec.index);
+    const w = spec.withdrawals[spec.index];
+    recipient = w.recipient;
+    denom = w.denom;
+    amount = w.amount;
+  } else if (spec.leaves) {
+    proof = assembleWithdrawalProof(spec.leaves.map((h) => hexToBytes(h)), spec.index);
+  } else {
+    ctx.out.error("the withdrawal spec needs `withdrawals` (or `leaves`)");
+    return 1;
+  }
+  if (recipient === undefined || denom === undefined || amount === undefined) {
+    ctx.out.error("the withdrawal spec needs recipient, denom and amount (or `withdrawals`)");
+    return 1;
+  }
+  // The proof can only verify against the root the batch committed: check
+  // before paying the fee.
+  if (batch) {
+    const onChain = bytesToHex(decodeWireBytes(batch.withdrawalsRoot));
+    if (onChain !== bytesToHex(proof.withdrawalsRoot)) {
+      ctx.out.error(
+        `the computed withdrawals root ${bytesToHex(proof.withdrawalsRoot)} is not the batch's (${onChain || "empty"}); ` +
+          "the chain would refuse this proof",
+      );
+      return 1;
+    }
+  }
   if (flagBool(parsed.flags, "dry-run")) {
     ctx.out.success(`Assembled withdrawal proof (${proof.proof.length} sibling hashes). Dry run — not submitted.`);
     return 0;
@@ -345,9 +407,9 @@ export async function cmdWithdraw(ctx: CliContext, parsed: ParsedCli): Promise<n
     submitter: tx.address,
     rollupId: spec.rollupId,
     batchIndex: spec.batchIndex,
-    recipient: spec.recipient,
-    denom: spec.denom,
-    amount: spec.amount,
+    recipient,
+    denom,
+    amount,
     withdrawal: proof,
   });
   const res = await tx.executeWithdrawal({
@@ -577,12 +639,17 @@ export async function cmdReceipt(ctx: CliContext, parsed: ParsedCli): Promise<nu
 export async function cmdWatchtower(ctx: CliContext, parsed: ParsedCli): Promise<number> {
   const rollupId = rollupIdArg(parsed);
   if (!rollupId) {
-    ctx.out.error("usage: qorollup watchtower <rollup-id> [--interval <ms>]");
+    ctx.out.error("usage: qorollup watchtower <rollup-id> [--interval <ms>] [--canonical]");
     return 1;
   }
   const intervalMs = Number(flagStr(parsed.flags, "interval") ?? "5000");
+  const canonical = flagBool(parsed.flags, "canonical");
   ctx.out.line(`Watchtower on ${rollupId} (every ${intervalMs}ms; Ctrl-C to stop).`);
-  ctx.out.line("Note: supply your own validity check to auto-flag batches; this CLI only reports.");
+  ctx.out.line(
+    canonical
+      ? "Checking each optimistic batch against the chain's transition-root rule; this CLI reports, it does not challenge."
+      : "Note: pass --canonical to flag batches that break the chain's transition-root rule; this CLI only reports.",
+  );
   await new Promise<void>((resolve) => {
     const controller = new AbortController();
     const onSig = (): void => controller.abort();
@@ -592,6 +659,12 @@ export async function cmdWatchtower(ctx: CliContext, parsed: ParsedCli): Promise
       signal: controller.signal,
       onBatch: (b) =>
         ctx.out.line(`new batch #${b.batchIndex} (${b.status}) state ${b.stateRoot.slice(0, 16)}…`),
+      validate: canonical ? transitionRootValidator(ctx.client, rollupId) : undefined,
+      onInvalid: (info) =>
+        ctx.out.warn(
+          `batch #${info.batch.batchIndex} does not publish the canonical transition root: a challenge would win` +
+            (info.window ? ` (${describeWindow(info.window)})` : ""),
+        ),
       onDeadline: (info) =>
         ctx.out.warn(
           `batch #${info.batch.batchIndex} ${info.window ? describeWindow(info.window) : "challenge window closing"}`,

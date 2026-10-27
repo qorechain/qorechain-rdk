@@ -136,3 +136,36 @@ export function dataHashError(daBackend: string, dataHash: Uint8Array | string |
     "a data-availability blob on chain, so the chain refuses a batch that claims one"
   );
 }
+
+/**
+ * Why a batch's `withdrawalsRoot` would be refused, or `undefined` if it is
+ * acceptable. From chain v3.2.5 (`rdk-withdrawals-binding`) it must be empty or
+ * exactly 32 bytes, the root of the batch's withdrawals tree.
+ */
+export function withdrawalsRootError(withdrawalsRoot: Uint8Array | string | undefined): string | undefined {
+  if (withdrawalsRoot === undefined) return undefined;
+  const n =
+    typeof withdrawalsRoot === "string"
+      ? withdrawalsRoot.replace(/^0x/i, "").length / 2
+      : withdrawalsRoot.length;
+  return n === 0 || n === 32 ? undefined : `withdrawalsRoot must be empty or 32 bytes, got ${n}`;
+}
+
+/**
+ * From chain v3.2.5 (`rdk-challenge-settlement`) an optimistic rollup may have
+ * at most this many batches waiting for finality; the next one is refused.
+ */
+export const MAX_PENDING_OPTIMISTIC_BATCHES = 4096;
+
+/**
+ * Why stopping a rollup would be refused, given the status of its latest batch,
+ * or `undefined` if it would not be. From chain v3.2.5
+ * (`rdk-challenge-settlement`) a rollup whose latest batch is still submitted
+ * or challenged cannot be stopped: stopping refunds the escrow that pays an
+ * upheld challenge.
+ */
+export function stopRollupError(latestBatchStatus: string | undefined): string | undefined {
+  return latestBatchStatus === "submitted" || latestBatchStatus === "challenged"
+    ? `the rollup's latest batch is ${latestBatchStatus}; stop it once that batch is finalized or rejected`
+    : undefined;
+}

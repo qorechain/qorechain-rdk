@@ -4,6 +4,8 @@
  * countdown — assembled from the existing read surface.
  */
 import type { RdkClient } from "../client/rdk-client";
+import { MAX_PENDING_OPTIMISTIC_BATCHES } from "../rules";
+import { FEATURE_RDK_CHALLENGE_SETTLEMENT } from "../transition";
 import {
   batchChallengeWindow,
   type ChainTip,
@@ -40,10 +42,36 @@ export interface RollupHealth {
   challengeDeadlineSecs?: number;
   /** Time mode only: seconds until the window closes (negative once past). */
   secondsUntilChallengeDeadline?: number;
+  /**
+   * From chain v3.2.5 (`rdk-challenge-settlement`) batches finalize in order:
+   * a batch whose own window has passed still waits for every earlier batch.
+   * Set when the latest batch could finalize on its own window but an earlier
+   * batch is still submitted or challenged.
+   */
+  heldBackBy?: { batchIndex: number; status: string };
   /** Coarse health flag: active rollup, latest batch not rejected. */
   healthy: boolean;
   /** Human-readable observations. */
   notes: string[];
+}
+
+/**
+ * The oldest batch before `latestIndex` that is still submitted or challenged.
+ * At most {@link MAX_PENDING_OPTIMISTIC_BATCHES} batches can be waiting, so
+ * the search starts that far back instead of at batch 0.
+ */
+async function oldestUnsettledBefore(
+  client: RdkClient,
+  rollupId: string,
+  latestIndex: number,
+): Promise<{ batchIndex: number; status: string } | undefined> {
+  const batches = await client.rest.listBatches(rollupId, {
+    startIndex: Math.max(0, latestIndex - MAX_PENDING_OPTIMISTIC_BATCHES),
+  });
+  const pending = batches
+    .filter((b) => b.batchIndex < latestIndex && (b.status === "submitted" || b.status === "challenged"))
+    .sort((a, b) => a.batchIndex - b.batchIndex);
+  return pending[0] ? { batchIndex: pending[0].batchIndex, status: pending[0].status } : undefined;
 }
 
 /** Assemble a {@link RollupHealth} snapshot for a rollup. */
@@ -143,6 +171,20 @@ export async function getRollupHealth(
     }
     if (latestBatch.status === "challenged") {
       notes.push("latest batch is under challenge");
+    }
+    if (
+      latestBatch.status === "submitted" &&
+      health.challengeWindow?.finalizable &&
+      (await client.rest.isProtocolFeatureEnabled(FEATURE_RDK_CHALLENGE_SETTLEMENT))
+    ) {
+      const blocker = await oldestUnsettledBefore(client, rollupId, latestBatch.batchIndex);
+      if (blocker) {
+        health.heldBackBy = blocker;
+        notes.push(
+          `batch ${latestBatch.batchIndex}'s window has passed, but batches finalize in order and batch ` +
+            `${blocker.batchIndex} is still ${blocker.status}`,
+        );
+      }
     }
   }
 

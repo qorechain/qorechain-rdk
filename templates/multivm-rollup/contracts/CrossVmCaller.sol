@@ -7,14 +7,18 @@ pragma solidity ^0.8.20;
 ///
 /// READ BEFORE DEPLOYING. The precompile is not active on qorechain-vladi
 /// (mainnet) or qorechain-diana (testnet) today: it runs only once governance
-/// lists 0x…0901 in the EVM parameter `active_static_precompiles`, and from
-/// chain v3.2.3 it reaches only targets governance allowlists in the cross-VM
-/// parameter `bridge_allowed_targets`. Check with the RDK's
-/// `isCrossVmPrecompileActive()` (or `GET /cosmos/evm/vm/v1/params`).
+/// lists 0x…0901 in the EVM parameter `active_static_precompiles`, and it
+/// reaches only the targets governance allowlists in the cross-VM parameter
+/// `bridge_allowed_targets` (served at /qorechain/crossvm/v1/params). Check
+/// both with the RDK's `crossVmTargetReady()`.
 ///
-/// While it is inactive, 0x…0901 is an address with no code, and a call to it
-/// SUCCEEDS with empty return data. A `success` check alone therefore reports a
-/// call that never happened — which is what this example did before 0.6.0.
+/// From chain v3.2.5 the precompile answers only
+/// `executeCrossVMCall(uint8,string,bytes) returns (bytes)` and ABI-encodes
+/// its result, so an active precompile always returns at least 64 bytes; a
+/// refusal reverts with `Error(string)`. While it is inactive, 0x…0901 has no
+/// code and a call to it SUCCEEDS with empty return data, which is why the
+/// length check below matters. The Native contract sees THIS contract (as its
+/// qor1 address) as the sender, not `tx.origin`.
 contract CrossVmCaller {
     /// The fixed cross-VM precompile address (EVM -> QoreChain Native).
     address constant CROSS_VM_PRECOMPILE = 0x0000000000000000000000000000000000000901;
@@ -37,17 +41,15 @@ contract CrossVmCaller {
             "executeCrossVMCall(uint8,string,bytes)", TARGET_NATIVE, nativeContract, msg_
         );
         (bool ok, bytes memory ret) = CROSS_VM_PRECOMPILE.call(callData);
-        require(ok, "cross-VM call failed");
-
-        // The precompile returns the target's RAW reply, so an empty reply can
-        // also be genuine — and a precompile has no bytecode whether active or
-        // not, so extcodesize cannot tell either. The only in-contract guard
-        // that holds is a target that always returns a non-empty acknowledgement.
-        // Make yours do so, and this line then rejects an inactive precompile.
-        require(
-            ret.length > 0,
-            "cross-VM precompile inactive, or the target returned no acknowledgement"
-        );
-        return ret;
+        if (!ok) {
+            // Pass the chain's reason through (e.g. "target ... is not allowlisted").
+            assembly {
+                revert(add(ret, 32), mload(ret))
+            }
+        }
+        // Empty data: the precompile is not active, and the call reached nothing.
+        require(ret.length >= 64, "cross-VM precompile inactive: the call reached no contract");
+        // The Native contract's response data (often empty).
+        result = abi.decode(ret, (bytes));
     }
 }

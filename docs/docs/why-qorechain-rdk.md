@@ -140,9 +140,10 @@ See [QCAI Copilot](guides/qcai-copilot.md).
 
 > **Status: not yet active on mainnet or testnet.** The precompile is built into the
 > validators' binary but runs only once governance lists its address in the EVM parameter
-> `active_static_precompiles` (empty on both networks today), and from chain v3.2.3 it
-> reaches only targets governance has allowlisted. Activation is planned for an upcoming
-> release. The tooling below is ready for it and tells you whether it is switched on.
+> `active_static_precompiles` (which lists it on neither network today), and it reaches
+> only targets governance has allowlisted. The tooling below is ready for it, decodes the
+> chain v3.2.5 result and refusal formats, and tells you whether a call would reach its
+> target.
 
 Your EVM (Solidity) rollup contract can call an existing **QoreChain Native (Wasm)** contract
 through a fixed precompile at `0x…0901`. The RDK builds the calldata — byte-for-byte what the

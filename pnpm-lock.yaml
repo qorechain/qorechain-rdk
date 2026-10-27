@@ -129,8 +129,8 @@ importers:
         specifier: ^0.8.0
         version: 0.8.0(viem@2.54.1(typescript@5.9.3))
       '@qorechain/sdk':
-        specifier: ^0.9.0
-        version: 0.9.0(viem@2.54.1(typescript@5.9.3))
+        specifier: ^0.10.0
+        version: 0.10.0(viem@2.54.1(typescript@5.9.3))
       bech32:
         specifier: ^2.0.0
         version: 2.0.0
@@ -892,6 +892,14 @@ packages:
   '@qorechain/pqc@0.2.2':
     resolution: {integrity: sha512-Z4P4xITtrjAhI51ylr4xyprHHncDSyQt8KsDpJchSCWDV4YMDNWeyyNaNYreES1ZOJm3CEZkM3MpAm9RJw0oVQ==}
     engines: {node: '>=18'}
+
+  '@qorechain/sdk@0.10.0':
+    resolution: {integrity: sha512-PUZAnoLXJ5isBVEiueY+BZ9e5dZogSrvB5q9vVAi3gD8KQ64pNW0fGUhdfS/OJpUDOuseCCHswKiFQP7v9XHhA==}
+    peerDependencies:
+      viem: ^2.0.0
+    peerDependenciesMeta:
+      viem:
+        optional: true
 
   '@qorechain/sdk@0.9.0':
     resolution: {integrity: sha512-6g2AIKCToiLvcr9xvQK8E7aDeVpjZe8AcGz5XiUx8yHjplVk5Z6RVQNfnSNnREolbQKGDNXlLw2mrqf1/j2Skw==}
@@ -2937,6 +2945,30 @@ snapshots:
     dependencies:
       '@noble/hashes': 2.2.0
       '@noble/post-quantum': 0.6.1
+
+  '@qorechain/sdk@0.10.0(viem@2.54.1(typescript@5.9.3))':
+    dependencies:
+      '@bufbuild/protobuf': 2.12.1
+      '@cosmjs/amino': 0.39.0
+      '@cosmjs/cosmwasm-stargate': 0.39.0
+      '@cosmjs/proto-signing': 0.39.0
+      '@cosmjs/stargate': 0.39.0
+      '@cosmjs/tendermint-rpc': 0.39.0
+      '@noble/curves': 1.9.7
+      '@noble/hashes': 1.8.0
+      '@qorechain/evm': 0.8.0(viem@2.54.1(typescript@5.9.3))
+      '@qorechain/pqc': 0.2.2
+      '@scure/base': 1.2.6
+      '@scure/bip32': 1.7.0
+      '@scure/bip39': 1.6.0
+      bech32: 2.0.0
+      cosmjs-types: 0.11.0
+      micro-key-producer: 0.9.0
+    optionalDependencies:
+      viem: 2.54.1(typescript@5.9.3)
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   '@qorechain/sdk@0.9.0(viem@2.54.1(typescript@5.9.3))':
     dependencies:

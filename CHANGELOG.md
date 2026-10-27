@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.7.0
+
+Ready for QoreChain v3.2.5, which the testnet runs since block 8,890,800. New
+byte formats are tested against vectors produced by the chain's own code, and
+every withdrawal proof in those vectors is accepted by the chain's verifier.
+
+### Fixed
+
+- **Withdrawal proofs never verified on chain.** The Merkle and withdrawal
+  helpers defaulted to SHA-256 and re-hashed each leaf; the chain hashes nodes
+  with SHAKE-256 and builds its leaves from the withdrawal itself. New in all
+  five languages: `withdrawalsTree` builds a batch's withdrawals root and every
+  proof exactly as the chain does, with v1 leaves, or v2 leaves (chain v3.2.5,
+  `rdk-withdrawals-binding`) that also name the chain id; `withdrawalLeafV1` /
+  `withdrawalLeafV2`; `assembleWithdrawalProof` now builds the chain's tree by
+  default; the generic Merkle helpers default to SHAKE-256. Breaking for code
+  that relied on the SHA-256 defaults; pass `hash` explicitly to keep them.
+- **`buildDaBlob`'s commitment** is now the chain's (SHAKE-256), not SHA-256.
+- **The Watchtower missed a batch resubmitted at a rejected index.** From chain
+  v3.2.5 an upheld fraud rejects the batch and every later unfinalized one, and
+  the sequencer resubmits under the same indexes; the Watchtower told batches
+  apart by index only. It now uses index and state root, and never validates a
+  rejected batch.
+- **The defi template paid a fee for a batch the chain always refuses.** No chain
+  release up to v3.2.5 can register a ZK verification key, so every zk batch is
+  refused (code 21). The template now stops before sending, and its README and
+  the docs say plainly that zk settlement cannot be used yet (key registration is
+  planned for chain v3.2.7). `RollupView.hasVerificationKey` reads the field that
+  release is to add.
+
+### Added
+
+- **Chain v3.2.5 settlement** (`rdk-challenge-settlement`): `getRollupHealth`
+  reports `heldBackBy` when the latest batch could finalize on its own window
+  but an earlier batch is still submitted or challenged (batches finalize in
+  order), and `qorollup status` prints it; `stopRollupError` and a pre-check in
+  `stopRollup` (TypeScript, Rust), since a rollup with an unsettled latest batch
+  cannot be stopped; `MAX_PENDING_OPTIMISTIC_BATCHES` (4,096);
+  `withdrawalsRootError` (empty or 32 bytes), checked before every
+  `MsgSubmitBatch` in all five languages. Any account can now resolve a
+  challenge; the docs say so.
+- **Watchtower helpers:** `transitionRootValidator` (a `validate` predicate that
+  applies the chain's fraud rule) and `fraudProofForBatch` (the proof that wins,
+  or none for an honest batch); `qorollup watchtower --canonical` reports
+  batches a challenge would win.
+- **Cross-VM, chain v3.2.5:** `getCrossVmParams` (the allowlist, at
+  `/qorechain/crossvm/v1/params`), `crossVmTargetReady` (precompile active,
+  bridge enabled, target allowlisted, with the blocking reason),
+  `decodeCrossVmResult` (`abi.decode(ret, (bytes))`) and `decodeRevertReason`
+  (`Error(string)`), checked against encodings Solidity produced. The
+  `multivm-rollup` contract decodes the result, requires the 64-byte minimum an
+  active precompile returns, and passes the chain's refusal reason through.
+- **`qorollup withdraw`** takes the batch's withdrawals, builds the proof under
+  the batch's own binding, and refuses before paying a fee when the result is
+  not the batch's on-chain `withdrawals_root`.
+- **`decodeRdkTxError`** and `RDK_ERRORS`: the `rdk` module's codes (2 to 36),
+  with what to do about the ones an operator meets.
+- `qorehash` (SHAKE-256, 32 bytes) in all five languages;
+  `FEATURE_RDK_CHALLENGE_SETTLEMENT`.
+
+### Changed
+
+- `@qorechain/sdk ^0.10.0` (was `^0.9.0`).
+- The templates pin `@qorechain/rdk ^0.7.0`.
+
 ## 0.6.2
 
 ### Fixed

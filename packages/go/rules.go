@@ -93,6 +93,10 @@ func preflightMessages(messages []Msg) error {
 			if e := RollupIDError(v.RollupID); e != "" {
 				return &RollupConfigError{Errors: []string{fmt.Sprintf("rollupId %q %s", v.RollupID, e)}}
 			}
+		case MsgSubmitBatch:
+			if e := WithdrawalsRootError(v.WithdrawalsRoot); e != "" {
+				return &RollupConfigError{Errors: []string{fmt.Sprintf("cannot submit batch %d: %s", v.BatchIndex, e)}}
+			}
 		case MsgExecuteWithdrawal:
 			if errs := WithdrawalErrors(v); len(errs) > 0 {
 				return &RollupConfigError{Errors: append([]string{"withdrawal would be refused by the chain"}, errs...)}
@@ -116,4 +120,33 @@ func DataHashError(daBackend string, dataHash []byte) string {
 	}
 	return "data_hash must be empty on a rollup with " + daBackend + " data availability: no transaction " +
 		"stores a data-availability blob on chain, so the chain refuses a batch that claims one"
+}
+
+// WithdrawalsRootError says why a batch's WithdrawalsRoot would be refused, or
+// returns "" if it is acceptable. From chain v3.2.5 (rdk-withdrawals-binding)
+// it must be empty or exactly 32 bytes, the root of the batch's withdrawals
+// tree (see NewWithdrawalsTree).
+func WithdrawalsRootError(withdrawalsRoot []byte) string {
+	if n := len(withdrawalsRoot); n != 0 && n != 32 {
+		return fmt.Sprintf("WithdrawalsRoot must be empty or 32 bytes, got %d", n)
+	}
+	return ""
+}
+
+// MaxPendingOptimisticBatches is how many batches an optimistic rollup may have
+// waiting for finality from chain v3.2.5 (rdk-challenge-settlement); the next
+// one is refused.
+const MaxPendingOptimisticBatches = 4096
+
+// StopRollupError says why stopping a rollup would be refused, given the status
+// of its latest batch, or returns "" if it would not be. From chain v3.2.5
+// (rdk-challenge-settlement) a rollup whose latest batch is still submitted or
+// challenged cannot be stopped: stopping refunds the escrow that pays an upheld
+// challenge. Pass "" when the rollup has no batch.
+func StopRollupError(latestBatchStatus string) string {
+	if latestBatchStatus == "submitted" || latestBatchStatus == "challenged" {
+		return "the rollup's latest batch is " + latestBatchStatus +
+			"; stop it once that batch is finalized or rejected"
+	}
+	return ""
 }

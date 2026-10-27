@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..lifecycle.state_machine import ChainTip, ChallengeWindowStatus, batch_challenge_window
+from ..rules import MAX_PENDING_OPTIMISTIC_BATCHES
+from ..transition import FEATURE_RDK_CHALLENGE_SETTLEMENT
 
 
 @dataclass
@@ -33,6 +35,39 @@ class RollupHealth:
     challenge_deadline_secs: Optional[int] = None
     #: Time mode only: seconds until it closes (negative once past).
     seconds_until_challenge_deadline: Optional[int] = None
+    #: From chain v3.2.5 (``rdk-challenge-settlement``) batches finalize in
+    #: order: a batch whose own window has passed still waits for every earlier
+    #: batch. Set when the latest batch could finalize on its own window but an
+    #: earlier batch is still submitted or challenged.
+    held_back_by: Optional["HeldBackBy"] = None
+
+
+@dataclass
+class HeldBackBy:
+    """The earlier batch that keeps the latest one from finalizing."""
+
+    batch_index: int
+    status: str
+
+
+def _oldest_unsettled_before(client, rollup_id: str, latest_index: int) -> Optional[HeldBackBy]:
+    """The oldest batch before ``latest_index`` that is still submitted or
+    challenged. At most :data:`MAX_PENDING_OPTIMISTIC_BATCHES` batches can be
+    waiting, so the search starts that far back instead of at batch 0."""
+    batches = client.rest.list_batches(
+        rollup_id, start_index=max(0, latest_index - MAX_PENDING_OPTIMISTIC_BATCHES)
+    )
+    pending = sorted(
+        (
+            b
+            for b in batches
+            if b.batch_index < latest_index and b.status in ("submitted", "challenged")
+        ),
+        key=lambda b: b.batch_index,
+    )
+    if not pending:
+        return None
+    return HeldBackBy(batch_index=pending[0].batch_index, status=pending[0].status)
 
 
 def get_rollup_health(
@@ -116,9 +151,22 @@ def get_rollup_health(
             )
         if latest.status == "challenged":
             notes.append("latest batch is under challenge")
+        if (
+            latest.status == "submitted"
+            and health.challenge_window is not None
+            and health.challenge_window.finalizable
+            and client.rest.is_protocol_feature_enabled(FEATURE_RDK_CHALLENGE_SETTLEMENT)
+        ):
+            blocker = _oldest_unsettled_before(client, rollup_id, latest.batch_index)
+            if blocker is not None:
+                health.held_back_by = blocker
+                notes.append(
+                    f"batch {latest.batch_index}'s window has passed, but batches finalize "
+                    f"in order and batch {blocker.batch_index} is still {blocker.status}"
+                )
 
     health.healthy = healthy
     return health
 
 
-__all__ = ["RollupHealth", "get_rollup_health"]
+__all__ = ["HeldBackBy", "RollupHealth", "get_rollup_health"]

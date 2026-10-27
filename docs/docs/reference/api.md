@@ -77,12 +77,27 @@ produce it.
 
 ### Data availability
 
-- **`buildDaBlob(opts)`** — assemble a blob and compute its SHA-256 commitment,
+- **`buildDaBlob(opts)`** — assemble a blob and compute the chain's SHAKE-256 commitment to it,
   enforcing the maximum blob size. No transaction posts a blob to the chain
   today, so do **not** put this hash in a batch on a `native` or `both` rollup
   (see [Data availability](../guides/data-availability.md)).
 - **`assertDaBackendAvailable(backend)`** — guard against not-yet-active
   backends (Celestia / both).
+
+### Withdrawals
+
+- **`withdrawalsTree(withdrawals, { rollupId, version, chainId })`** — a batch's
+  withdrawals root and every proof, built exactly as the chain does (tested
+  against the chain's own verifier). `version` is the batch's binding
+  (`transitionRootVersionForBatch`).
+- **`withdrawalLeafV1`** / **`withdrawalLeafV2`** — the chain's leaves (v2, from
+  chain v3.2.5, names the chain id).
+- **`assembleWithdrawalProof(leaves, index)`** — a proof from leaves you hold;
+  the chain's tree by default (before 0.7.0 it re-hashed with SHA-256).
+- **`buildExecuteWithdrawalInput`** — the `executeWithdrawal` input.
+- **`binaryMerkleRoot`** / **`binaryMerkleProof`** / **`verifyBinaryMerkleProof`**
+  — generic helpers, SHAKE-256 by default.
+- **`qorehash(...parts)`** — SHAKE-256, 32 bytes: the chain's default hash.
 
 ### Lifecycle
 
@@ -108,6 +123,19 @@ produce it.
 - **`anchorSignBytesV1`** / **`anchorSignBytesV2`** / **`anchorSignBytesVersionFor`**
   — the two canonical anchor messages and the height-based choice between them.
 
+### Errors
+
+- **`decodeRdkTxError(result)`** / **`RDK_ERRORS`** — `@qorechain/sdk`'s
+  `decodeTxError` plus the `rdk` module's own codes (2 to 36), with what to do
+  about the ones an operator meets.
+
+### Watchtower helpers
+
+- **`transitionRootValidator(client, rollupId)`** — a `validate` predicate for
+  `watchBatches` that applies the chain's fraud rule.
+- **`fraudProofForBatch(client, rollupId, batch)`** — the proof that wins a
+  challenge against a batch, or `undefined` for an honest one.
+
 ### Transition roots
 
 - **`batchTransitionRoot(input, version)`** / **`batchTransitionRootV1`** /
@@ -127,6 +155,11 @@ produce it.
 - **`rollupIdError`** / **`isValidRollupId`** — the v3.2.2 id grammar.
 - **`withdrawalErrors`** — the v3.2.3 withdrawal checks (denom, amount, proof
   depth and sibling length, addresses).
+- **`withdrawalsRootError`** — from chain v3.2.5 a batch's withdrawals root is
+  empty or 32 bytes; `submitBatch` checks it.
+- **`stopRollupError`** / **`MAX_PENDING_OPTIMISTIC_BATCHES`** — v3.2.5's stop
+  guard (`stopRollup` checks it when it can read the chain) and the 4,096
+  pending-batch limit.
 - **`dataHashError`** — a batch on a `native` or `both` DA rollup must leave
   `dataHash` empty. `RdkTxClient.submitBatch` applies it when it can read the
   rollup.
@@ -137,6 +170,11 @@ produce it.
   **`CROSS_VM_DEFAULT_SIGNATURE`** — `executeCrossVMCall(uint8,string,bytes)`.
 - **`isCrossVmPrecompileActive(rest)`** — whether the precompile is live on a
   network (it is not yet active on mainnet or testnet).
+- **`getCrossVmParams(rest)`** / **`crossVmTargetReady(rest, contract)`** — the
+  allowlist (`/qorechain/crossvm/v1/params`, chain v3.2.5) and whether a call
+  to `contract` would reach it, with the blocking reason.
+- **`decodeCrossVmResult(ret)`** / **`decodeRevertReason(data)`** — the
+  precompile's `abi.encode(bytes)` result and its `Error(string)` refusals.
 
 ### Utilities
 

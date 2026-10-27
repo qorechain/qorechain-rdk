@@ -4,20 +4,21 @@ A settlement batch can commit to its data via the batch's ``data_hash``. On
 QoreChain no transaction posts a blob to the native DA store yet, so on a
 ``native`` or ``both`` rollup the chain refuses a batch whose ``data_hash``
 claims one: leave it empty there (see ``data_hash_error``). This module
-assembles a blob (enforcing the size limit) and computes its SHA-256 commitment
-for your own records. Read the live ``max_da_blob_size`` from ``rdk.params()``; the
-default here is reference only.
+assembles a blob (enforcing the size limit) and computes the commitment the
+chain's blob store uses, SHAKE-256 (32 bytes); releases before 0.7.0 used
+SHA-256. Read the live ``max_da_blob_size`` from ``rdk.params()``; the default
+here is reference only.
 """
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from typing import Optional, Union
 
 from ..constants import DEFAULT_RDK_PARAMS
 from ..enums import DABackend
 from ..utils.bytes import bytes_to_hex, to_bytes
+from ..utils.qorehash import qorehash
 
 _DEFAULT_MAX_BLOB_SIZE = int(DEFAULT_RDK_PARAMS["max_da_blob_size"])
 
@@ -30,10 +31,14 @@ DA_CELESTIA_UNAVAILABLE_MESSAGE = (
 
 @dataclass
 class DaBlob:
-    """A prepared DA blob and its SHA-256 commitment (not for a native batch's ``data_hash``)."""
+    """A prepared DA blob and the chain's SHAKE-256 commitment to it (not for a
+    native batch's ``data_hash`` yet)."""
 
+    #: The blob bytes.
     data: bytes
+    #: The chain's commitment to the blob: SHAKE-256, 32 bytes, ``0x``-prefixed.
     data_hash: str
+    #: Blob size in bytes.
     size: int
 
 
@@ -51,7 +56,7 @@ def build_da_blob(
         raise ValueError(
             f"DA blob is {len(blob)} bytes, exceeding the maximum of {limit} bytes"
         )
-    digest = hashlib.sha256(blob).digest()
+    digest = qorehash(blob)
     return DaBlob(data=blob, data_hash=f"0x{bytes_to_hex(digest)}", size=len(blob))
 
 

@@ -15,17 +15,25 @@
     "burnRate": "0.01"
   },
   "merkle": {
+    "hash": "shake256",
     "leavesHex": [
       "01",
       "02",
       "03",
       "04"
     ],
-    "root": "98d658fb28540a2eca2a8a5930c309a9c37f89979d48d025a72c36a77a74510d",
+    "root": "2ddb9821033b7e9b8a5373831724cc1f531f787ed9460e8029096ef6b9eb8708",
     "proofIndex1Siblings": [
-      "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a",
-      "75a1abcc800ef8f92b7e3b1be166e87a7babdaa05cfa4805be3dfc7c0f0b3e29"
-    ]
+      "94da6280b240ea6a2ab2cfdf0fb301fd77153d5b748baf796190856803d977ba",
+      "158d6ec6537f9cf4ce99af93075429943df1d085c7afa61e83a52e3f47a326b0"
+    ],
+    "sha256Legacy": {
+      "root": "98d658fb28540a2eca2a8a5930c309a9c37f89979d48d025a72c36a77a74510d",
+      "proofIndex1Siblings": [
+        "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a",
+        "75a1abcc800ef8f92b7e3b1be166e87a7babdaa05cfa4805be3dfc7c0f0b3e29"
+      ]
+    }
   },
   "anchorSignBytes": {
     "layerId": "layer-rollup-1",
@@ -150,5 +158,112 @@
     "v1": "9c2dee78a030c0987628c205c2fe2cd25e3330c0743d4588fbd3303fee952200",
     "v2ChainId": "qorechain-diana",
     "v2": "09e43ebea577047025b26c99e907d291c9ea1434af7aae1b3e7b199d671a52bc"
+  },
+  "withdrawalTree": {
+    "source": "every proof is accepted by the chain's own VerifyWithdrawalMerkle at release v3.2.5, and refused at the wrong index; leaf position = withdrawal index, nodes SHAKE-256(left || right), an odd last node is paired with itself",
+    "chainId": "qorechain-diana",
+    "rollupId": "roll-vectors",
+    "denom": "uqor",
+    "withdrawals": [
+      {
+        "recipient": "qor1alice",
+        "amount": 1500000
+      },
+      {
+        "recipient": "qor1bob",
+        "amount": 2
+      },
+      {
+        "recipient": "qor1carol",
+        "amount": 3000000
+      },
+      {
+        "recipient": "qor1dave",
+        "amount": 7
+      },
+      {
+        "recipient": "qor1erin",
+        "amount": 42
+      }
+    ],
+    "v1": {
+      "leaves": [
+        "19c36ef3e12e178b9f010a57b6d68099776213a4b8f33584a48450d18a89bd2f",
+        "411b0538e015e841a00def2bc35e0a1973c15ee44432cda425a4e5e889eac5cf",
+        "af5ef2957593ff06b731875288ea347d78376013c19c1a469814491b693a95db",
+        "465bec6ddb93979a78fcaf54a2c130c6fa77bf12c6b50bed32c0994edf35cb2f",
+        "8d164a87f66f21dfa138ed40c3915a7e524dc0d57cfb8ba4a638c220922a3fe6"
+      ],
+      "root": "05369a5ca547bf3cb9cf9e08b176e2bf26329f078e9a48803f84baca0561c2de",
+      "proofs": [
+        [
+          "411b0538e015e841a00def2bc35e0a1973c15ee44432cda425a4e5e889eac5cf",
+          "0fe5129476283cb3a9635bf6e6c20e3dca774ada7e52885ce7853e0ff023e898",
+          "731742f0ca4de1ef2346e5e4e65871f7d02f398150213595653fb7e1d1d574dd"
+        ],
+        [
+          "19c36ef3e12e178b9f010a57b6d68099776213a4b8f33584a48450d18a89bd2f",
+          "0fe5129476283cb3a9635bf6e6c20e3dca774ada7e52885ce7853e0ff023e898",
+          "731742f0ca4de1ef2346e5e4e65871f7d02f398150213595653fb7e1d1d574dd"
+        ],
+        [
+          "465bec6ddb93979a78fcaf54a2c130c6fa77bf12c6b50bed32c0994edf35cb2f",
+          "1c18a9ee607ac2af50c1b3694615ab7b439be6eede44785e44057a59af62d2c8",
+          "731742f0ca4de1ef2346e5e4e65871f7d02f398150213595653fb7e1d1d574dd"
+        ],
+        [
+          "af5ef2957593ff06b731875288ea347d78376013c19c1a469814491b693a95db",
+          "1c18a9ee607ac2af50c1b3694615ab7b439be6eede44785e44057a59af62d2c8",
+          "731742f0ca4de1ef2346e5e4e65871f7d02f398150213595653fb7e1d1d574dd"
+        ],
+        [
+          "8d164a87f66f21dfa138ed40c3915a7e524dc0d57cfb8ba4a638c220922a3fe6",
+          "99c0ea4204257a1c7edb268793c1e195e2fba4181c618d0df5c43d3e1f007d35",
+          "6735583551e64917dcb40a12447626f1efc205004d5161dd96440cd7b9b4eb8e"
+        ]
+      ]
+    },
+    "v2": {
+      "leaves": [
+        "db270fe35357b2e8a4e10f21d0b531483da7d1dfd7983d5e48b1524d2bac97d9",
+        "9c435fbdb90f2a355131edf16459a6be074840f8579f282813ff364249994d0c",
+        "dd63d787e32663d1db10dcd93168abe0a7aeb86789e3fd4fe40697cd23962a87",
+        "096ca5fc7afab8d27b3b9657061927bd9b12cfdc81588b72bff98a9fc6b06da0",
+        "c9cd7bea54881430d70a18c8ec06eb869df6d39ec189205ec2a1eafb2315eaaa"
+      ],
+      "root": "e15b2b74ead494739757d58c22ef41bdf7f5d9d6a056d8feef2e744c40248c88",
+      "proofs": [
+        [
+          "9c435fbdb90f2a355131edf16459a6be074840f8579f282813ff364249994d0c",
+          "79b35a395d9b0981f049292a54114df10b41d620dbf3511ad834201ee835f21b",
+          "5f9a49e05e9fc43c811790e29dfc5778d5e7574ee68d7e8f75700b8124942234"
+        ],
+        [
+          "db270fe35357b2e8a4e10f21d0b531483da7d1dfd7983d5e48b1524d2bac97d9",
+          "79b35a395d9b0981f049292a54114df10b41d620dbf3511ad834201ee835f21b",
+          "5f9a49e05e9fc43c811790e29dfc5778d5e7574ee68d7e8f75700b8124942234"
+        ],
+        [
+          "096ca5fc7afab8d27b3b9657061927bd9b12cfdc81588b72bff98a9fc6b06da0",
+          "32a2429238ee5ff7d4f9a49a3e268515cb32eccb705eb8c6281171eb799eb4cc",
+          "5f9a49e05e9fc43c811790e29dfc5778d5e7574ee68d7e8f75700b8124942234"
+        ],
+        [
+          "dd63d787e32663d1db10dcd93168abe0a7aeb86789e3fd4fe40697cd23962a87",
+          "32a2429238ee5ff7d4f9a49a3e268515cb32eccb705eb8c6281171eb799eb4cc",
+          "5f9a49e05e9fc43c811790e29dfc5778d5e7574ee68d7e8f75700b8124942234"
+        ],
+        [
+          "c9cd7bea54881430d70a18c8ec06eb869df6d39ec189205ec2a1eafb2315eaaa",
+          "235ecaf0a2ba2248da87593891110106a7e0cea7bad2ccdfefc581187085e0a9",
+          "3d720e35825417d0340dc30ee498d2a4bdfcaf9b487bf3199ce5e6fa7127fa04"
+        ]
+      ]
+    }
+  },
+  "daBlob": {
+    "source": "the chain's blob commitment, qorehash.Sum256 (SHAKE-256, 32 bytes)",
+    "dataUtf8": "example batch data",
+    "commitment": "c09a7c3005cccef579a5c914498d1e24965b890096b09e3d5f207d66ab1a86bd"
   }
 }

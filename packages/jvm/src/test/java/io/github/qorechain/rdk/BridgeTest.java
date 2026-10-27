@@ -29,9 +29,26 @@ class BridgeTest {
     }
 
     @Test
+    void sha256StillAvailableExplicitly() {
+        // The pre-0.7.0 default, kept for rebuilding a tree made by an earlier release.
+        Golden g = Golden.load();
+        Merkle.MerkleOptions o = new Merkle.MerkleOptions();
+        o.hash = Merkle::sha256;
+        assertEquals(g.merkle.sha256Legacy.root, Bytes.bytesToHex(Merkle.binaryMerkleRoot(leaves(g), o)));
+        List<String> siblings = new ArrayList<>();
+        for (byte[] s : Merkle.binaryMerkleProof(leaves(g), 1, o).siblings) {
+            siblings.add(Bytes.bytesToHex(s));
+        }
+        assertEquals(g.merkle.sha256Legacy.proofIndex1Siblings, siblings);
+    }
+
+    @Test
     void withdrawalProofMatchesGolden() {
         Golden g = Golden.load();
-        WithdrawalProof proof = Withdrawal.assembleWithdrawalProof(leaves(g), 1, null);
+        // The golden merkle vector hashes each leaf (the generic defaults), so ask for them; the
+        // withdrawal default is the chain's tree, which does not.
+        WithdrawalProof proof =
+                Withdrawal.assembleWithdrawalProof(leaves(g), 1, new Merkle.MerkleOptions());
         assertEquals(g.merkle.root, Bytes.bytesToHex(proof.withdrawalsRoot));
 
         List<String> siblings = new ArrayList<>();
@@ -45,9 +62,12 @@ class BridgeTest {
     void assembledProofVerifies() {
         Golden g = Golden.load();
         List<byte[]> ls = leaves(g);
-        WithdrawalProof proof = Withdrawal.assembleWithdrawalProof(ls, 1, null);
+        WithdrawalProof proof = Withdrawal.assembleWithdrawalProof(ls, 1);
+        // The chain's tree does not re-hash leaves: verify the same way.
+        Merkle.MerkleOptions chain = new Merkle.MerkleOptions();
+        chain.hashLeaves = false;
         assertTrue(
                 Merkle.verifyBinaryMerkleProof(
-                        ls.get(1), 1, proof.proof, proof.withdrawalsRoot, null));
+                        ls.get(1), 1, proof.proof, proof.withdrawalsRoot, chain));
     }
 }
