@@ -100,9 +100,10 @@ Read the live `rdk` module parameters from the chain — never hardcode them:
 const params = await rdk.params();
 ```
 
-Live values differ by network; read them rather than relying on this table. On
-27 October 2026 the testnet (chain v3.2.5, which made the parameters governable)
-had `maxRollups` 200 and `defaultChallengeWindow` 3,600 s; mainnet had the
+Live values differ by network; read them rather than relying on this table.
+Chain v3.2.5 made the parameters governable; mainnet runs it since block
+3,906,833 and the testnet since block 8,890,800. On 30 October 2026 the testnet
+had `maxRollups` 200 and `defaultChallengeWindow` 3,600 s, and mainnet the
 defaults below. Each rollup also registers an `x/multilayer` sidechain layer,
 capped by that module's `max_sidechains` (64 on the testnet, 10 on mainnet).
 

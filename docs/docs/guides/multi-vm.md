@@ -17,7 +17,7 @@ and a scaffold template to start from.
 :::caution Not yet active on mainnet or testnet
 The precompile is built into the validators' binary but runs only once governance
 lists its address in the EVM parameter `active_static_precompiles`, which does
-**not** list it on either network (checked 27 October 2026). It also reaches only
+**not** list it on either network (checked 30 October 2026). It also reaches only
 the targets governance allowlists in the cross-VM parameter
 `bridge_allowed_targets` (each `<vm>:<contract>`), which is empty on the testnet.
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs
+
+- Mainnet runs QoreChain v3.2.5 since block 3,906,833 (the testnet since block
+  8,890,800): the v3.2.5 settlement, withdrawal and cross-VM behaviour the RDK
+  follows from 0.7.0 now applies on both networks. No code change was needed;
+  the clients read the applied upgrade from the chain.
+
 ## 0.8.0
 
 ### Fixed

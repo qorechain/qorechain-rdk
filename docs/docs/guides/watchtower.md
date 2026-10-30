@@ -99,8 +99,8 @@ building blocks are `batchTransitionRoot`, `transitionRootVersionForBatch` and
 
 ## Settlement from chain v3.2.5
 
-On a chain running v3.2.5 (`rdk-challenge-settlement`; the testnet since block
-8,890,800):
+On a chain running v3.2.5 (`rdk-challenge-settlement`; mainnet since block
+3,906,833, the testnet since block 8,890,800):
 
 - **Batches finalize in order.** A batch finalizes once its own window has
   passed **and** the batch before it is final, so a challenged batch holds back

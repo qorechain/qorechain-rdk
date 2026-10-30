@@ -36,7 +36,8 @@ signed them classical-only and every one was refused. The key is resolved the
 way the templates resolve it: from `QORE_MNEMONIC` / `--mnemonic`, or
 `QORE_PQC_SEED_HEX` / `--pqc-seed` alongside a raw private key.
 
-**0.7.0** — ready for QoreChain v3.2.5 (the testnet since block 8,890,800):
+**0.7.0** — ready for QoreChain v3.2.5 (mainnet since block 3,906,833, the
+testnet since block 8,890,800):
 withdrawal proofs built exactly as the chain checks them, in-order settlement in
 the Watchtower and health check, cross-VM allowlist and result decoding, and
 pre-checks that refuse a transaction the chain would refuse before any fee is
