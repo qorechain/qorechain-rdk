@@ -93,6 +93,13 @@ class RollupConfig:
     max_da_blob_size: Optional[int] = None
     #: Stake committed at creation, in uqor. Required to build a create message.
     stake_amount_uqor: Optional[str] = None
+    #: Chain v3.2.8+: ``"based"`` sequencing (sent on the wire). Not the same as
+    #: ``sequencer``, which is descriptive and has no effect on chain.
+    sequencing: Optional[str] = None
+    #: Chain v3.2.8+: ``"qledger-v1"``, required for every new optimistic rollup.
+    execution_vm: Optional[str] = None
+    #: Chain v3.2.8+: ``"encapsulated"`` for a private rollup (zk with a Groth16 key).
+    privacy: Optional[str] = None
 
     def copy(self) -> "RollupConfig":
         sp = self.sequencer_params.copy() if self.sequencer_params else None
@@ -108,6 +115,10 @@ class CreateRollupMsgInput:
     profile: ProfileName
     vm_type: VmType
     stake_amount: str
+    #: Chain v3.2.8+ modes; ``""`` when not set.
+    sequencing: str = ""
+    execution_vm: str = ""
+    privacy: str = ""
 
 
 __all__ = ["SequencerParams", "RollupConfig", "CreateRollupMsgInput"]

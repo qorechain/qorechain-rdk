@@ -35,8 +35,8 @@ class ResolvedPqcKeypair:
     #: The chain already holds this key for the account.
     registered: bool
     #: Pass this as ``include_pqc_public_key`` to ``connect_tx``: ``True`` when
-    #: the account has no key on chain yet, so the first hybrid transaction
-    #: registers it.
+    #: the account has no key on chain yet, so the client registers it before
+    #: its first hybrid transaction.
     include_pqc_public_key: bool
 
 
@@ -70,7 +70,8 @@ def resolve_pqc_keypair(
     derives both and returns whichever the chain has registered.
 
     - If the account has **no** key registered, it returns the canonical key
-      with ``include_pqc_public_key=True``, so the first transaction registers it.
+      with ``include_pqc_public_key=True``, so the client registers it before
+      its first transaction.
     - If the account has a key that **neither** derivation produces, it raises:
       the key was registered from another secret, and guessing would only cost
       a refused transaction. Supply that keypair explicitly instead.

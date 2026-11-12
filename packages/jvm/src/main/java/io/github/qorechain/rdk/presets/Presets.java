@@ -1,6 +1,7 @@
 package io.github.qorechain.rdk.presets;
 
 import io.github.qorechain.rdk.config.Constants;
+import io.github.qorechain.rdk.config.Enums;
 import io.github.qorechain.rdk.config.Enums.DABackend;
 import io.github.qorechain.rdk.config.Enums.GasModel;
 import io.github.qorechain.rdk.config.Enums.ProfileName;
@@ -18,7 +19,9 @@ import java.util.function.Consumer;
  * The five preset profiles and their documented default fields.
  *
  * <p>These mirror the network's published profile table. The proof system for each profile is the
- * one its settlement paradigm requires (optimistic → fraud, zk → snark, based → none).
+ * one its settlement paradigm requires (optimistic → fraud, zk → snark, based → none). The
+ * optimistic profiles ({@code nft}, {@code custom}) carry {@code executionVm = "qledger-v1"} and
+ * {@code sequencing = "based"}, which the chain requires of every new optimistic rollup from v3.2.8.
  */
 public final class Presets {
     private Presets() {}
@@ -62,6 +65,9 @@ public final class Presets {
         nft.maxTxPerBlock = 5000;
         nft.challengeWindowSecs = Constants.DEFAULT_CHALLENGE_WINDOW_SECS;
         nft.challengeBondUqor = Constants.DEFAULT_CHALLENGE_BOND_UQOR;
+        // From chain v3.2.8 a new optimistic rollup must run qledger-v1 and be based.
+        nft.executionVm = Enums.EXECUTION_VM_QLEDGER_V1;
+        nft.sequencing = Enums.SEQUENCING_BASED;
         m.put(ProfileName.NFT, nft);
 
         RollupConfig enterprise = base(ProfileName.ENTERPRISE);
@@ -86,6 +92,9 @@ public final class Presets {
         custom.maxTxPerBlock = 10000;
         custom.challengeWindowSecs = Constants.DEFAULT_CHALLENGE_WINDOW_SECS;
         custom.challengeBondUqor = Constants.DEFAULT_CHALLENGE_BOND_UQOR;
+        // From chain v3.2.8 a new optimistic rollup must run qledger-v1 and be based.
+        custom.executionVm = Enums.EXECUTION_VM_QLEDGER_V1;
+        custom.sequencing = Enums.SEQUENCING_BASED;
         m.put(ProfileName.CUSTOM, custom);
 
         PRESET_DEFAULTS = m;

@@ -122,5 +122,8 @@ func (b *RollupConfigBuilder) ToCreateMsg(creator string, stakeAmount string) (C
 		Profile:     b.config.Profile,
 		VmType:      b.config.VmType,
 		StakeAmount: stake,
+		Sequencing:  b.config.Sequencing,
+		ExecutionVm: b.config.ExecutionVm,
+		Privacy:     b.config.Privacy,
 	}, nil
 }

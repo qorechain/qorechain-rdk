@@ -66,7 +66,12 @@ tx.pause_rollup("my-rollup", "maintenance", None, &TxOptions::default()).unwrap(
 - `resolve_pqc_keypair(client, address, mnemonic)` reads the account's
   registered key (`/qorechain/pqc/v1/account/{address}`). No key registered: the
   canonical key (`shake256("qorechain:pqc:v1|" + address + "|" + mnemonic)`),
-  with `include_pqc_public_key: true` so the first transaction registers it.
+  with `include_pqc_public_key: true`. Since chain v3.2.3 an account with no
+  registered key may only send a key registration, so the tx client then
+  broadcasts `MsgRegisterPQCKeyV2` (with a proof of possession; gas 600000, fee
+  90000 uqor) in a transaction of its own, waits for it to be included, and
+  sends the requested transaction at the next sequence (`tx.sequence()`).
+  "Already registered" (pqc code 7) is accepted.
   Registered canonical or legacy key: that key, not embedded. Any other key is
   an error: it was registered from another secret.
 - `pqc_keypair_from_env(client, address)` uses `QORE_PQC_SEED_HEX` (a 32-byte

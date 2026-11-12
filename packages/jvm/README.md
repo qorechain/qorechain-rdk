@@ -18,14 +18,14 @@ native account derivation, and full transaction signing and broadcast for the `r
 <dependency>
   <groupId>io.github.qorechain</groupId>
   <artifactId>qorechain-rdk</artifactId>
-  <version>0.8.0</version>
+  <version>0.9.0</version>
 </dependency>
 ```
 
 Gradle:
 
 ```groovy
-implementation 'io.github.qorechain:qorechain-rdk:0.8.0'
+implementation 'io.github.qorechain:qorechain-rdk:0.9.0'
 ```
 
 ## What's new in 0.5.0

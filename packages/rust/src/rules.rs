@@ -95,20 +95,40 @@ pub fn withdrawal_errors(
 }
 
 /// Why a batch with `data_hash` would be refused for a rollup on `da_backend`,
-/// or `None` if the chain accepts it.
+/// or `None` if the chain may accept it. Equivalent to
+/// [`data_hash_error_with`] with `posted_data_enabled` false: the rule before
+/// chain v3.2.8.
 ///
 /// On a `native` or `both` rollup the chain accepts a non-empty `data_hash`
-/// only when a matching blob is stored on chain, and no transaction stores one:
-/// the batch is refused as data unavailable. Leave it empty there; the batch's
-/// state roots and proof still bind it. (`celestia` is not checked by the
-/// chain, and is not active on the network.)
+/// only when it names data the chain holds, and before v3.2.8 no transaction
+/// stores such data: the batch is refused as data unavailable. Leave it empty
+/// there; the batch's state roots and proof still bind it. (`celestia` is not
+/// checked by the chain, and is not active on the network.)
 pub fn data_hash_error(da_backend: &str, data_hash: &[u8]) -> Option<String> {
+    data_hash_error_with(da_backend, data_hash, false)
+}
+
+/// [`data_hash_error`], aware of posted rollup data. From chain v3.2.8 a
+/// retained `MsgPostRollupData` post (`data_hash` = SHA-256 of the payload,
+/// see [`crate::inbox::posted_data_hash`]) is data the chain holds; pass
+/// `posted_data_enabled` true (the `rdk-post-rollup-data` switch) to allow a
+/// non-empty hash. A based rollup's batch is judged by its inbox range instead;
+/// see [`crate::inbox::inbox_range_hash`].
+pub fn data_hash_error_with(
+    da_backend: &str,
+    data_hash: &[u8],
+    posted_data_enabled: bool,
+) -> Option<String> {
     if data_hash.is_empty() || (da_backend != "native" && da_backend != "both") {
+        return None;
+    }
+    if posted_data_enabled {
         return None;
     }
     Some(format!(
         "data_hash must be empty on a rollup with {da_backend} data availability: no transaction \
-         stores a data-availability blob on chain, so the chain refuses a batch that claims one"
+         stores a data-availability blob on chain before v3.2.8, so the chain refuses a batch \
+         that claims one"
     ))
 }
 

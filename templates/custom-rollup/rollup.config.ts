@@ -22,7 +22,7 @@ export function buildConfig(): RollupConfigBuilder {
     da: "native",
 
     // The proof a settlement batch carries. Must satisfy the matrix below.
-    // "fraud" | "snark" | "stark" | "none".
+    // "fraud" | "snark" | "none". ("stark" is paused on the network.)
     proofSystem: "fraud",
 
     // The fee / gas model the rollup charges end users.
@@ -38,11 +38,19 @@ export function buildConfig(): RollupConfigBuilder {
 
     // Maximum transactions per rollup block.
     maxTxPerBlock: 10000,
+
+    // From chain v3.2.8 a new optimistic rollup runs the qledger-v1 execution
+    // model (its fraud proof re-executes the batch) and is based: anyone posts
+    // data, and batches consume the inbox in order. Clear both if you switch
+    // to zk, based or sovereign settlement.
+    executionVm: "qledger-v1",
+    sequencing: "based",
   });
 
   // Compatibility matrix enforced by `.validate()` / `.build()`:
   //   optimistic → fraud
-  //   zk         → snark | stark
+  //   zk         → snark  (stark is paused on the network)
+  //   optimistic also needs executionVm "qledger-v1" and sequencing "based"
   //   based      → none  (and requires the based sequencer mode)
   //   sovereign  → none
   // Pick a `settlement` and a matching `proofSystem`, or validation throws a

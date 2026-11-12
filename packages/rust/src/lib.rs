@@ -33,18 +33,23 @@ pub mod config;
 pub mod constants;
 pub mod copilot;
 pub mod da;
+pub mod errors;
 pub mod events;
 pub mod faucet;
 pub mod health;
+pub mod inbox;
 pub mod manifest;
 pub mod monitor;
 pub mod preflight;
 pub mod presets;
+pub mod privpost;
+pub mod qledger;
 pub mod receipts;
 pub mod rules;
 pub mod transition;
 pub mod tx;
 pub mod utils;
+pub mod zk;
 
 pub use accounts::{
     pqc_keypair_from_env, resolve_pqc_keypair, signer_from_env, NativeAccount, PqcDerivation,
@@ -52,9 +57,10 @@ pub use accounts::{
 };
 pub use client::{AnchorView, PqcAccountView, RdkClient, RdkClientOptions};
 pub use config::{
-    is_vm_type, vm_type_label, vm_type_wire_value, BatchStatus, DaBackend, GasModel, Profile,
-    ProofSystem, RollupConfig, RollupConfigBuilder, RollupConfigError, RollupStatus, Sequencer,
-    SequencerParams, Settlement, ValidationResult, VmType,
+    is_vm_type, rollup_mode_errors, vm_type_label, vm_type_wire_value, BatchStatus, DaBackend,
+    ExecutionVm, GasModel, Profile, ProofSystem, RollupConfig, RollupConfigBuilder,
+    RollupConfigError, RollupModeInput, RollupPrivacy, RollupStatus, Sequencer, SequencerParams,
+    SequencingMode, Settlement, ValidationResult, VmType,
 };
 pub use constants::*;
 pub use copilot::{get_rollup_advice, CopilotSuggestion, RollupAdvice, SuggestionLevel};
@@ -62,6 +68,8 @@ pub use da::{
     assert_da_backend_available, build_da_blob, is_da_backend_available, DaBlob, DaError,
     DA_CELESTIA_UNAVAILABLE_MESSAGE,
 };
+pub use errors::{decode_rdk_tx_error, rdk_error_info, DecodedRdkTxError, RdkErrorInfo};
+pub use inbox::{inbox_accumulate, inbox_range_hash, posted_data_hash, EMPTY_INBOX_ACC};
 pub use monitor::{events_from_tx_hash, watch_rollup, Watcher};
 pub use presets::{preset, preset_defaults};
 pub use receipts::{
@@ -71,3 +79,7 @@ pub use receipts::{
 };
 pub use tx::{HybridSigningOptions, MockTxClient, RdkTxClient, SignBytesMode, TxOptions};
 pub use utils::qorehash::qorehash;
+pub use zk::{
+    is_canonical_scalar, is_data_hash_chain_bound, to_canonical_scalar, withdrawals_root_matches,
+    zk_public_input_errors, zk_public_inputs, BLS12_381_SCALAR_MODULUS,
+};

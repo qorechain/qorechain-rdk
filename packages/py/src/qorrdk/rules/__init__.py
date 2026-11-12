@@ -105,15 +105,24 @@ def withdrawal_errors(
     return errors
 
 
-def data_hash_error(da_backend: str, data_hash: Union[bytes, str, None]) -> Optional[str]:
+def data_hash_error(
+    da_backend: str,
+    data_hash: Union[bytes, str, None],
+    *,
+    posted_data_enabled: bool = False,
+) -> Optional[str]:
     """Why a batch with ``data_hash`` would be refused for a rollup on
-    ``da_backend``, or ``None`` if the chain accepts it.
+    ``da_backend``, or ``None`` if the chain may accept it.
 
     On a ``native`` or ``both`` rollup the chain accepts a non-empty
-    ``data_hash`` only when a matching blob is stored on chain, and no
-    transaction stores one: the batch is refused as data unavailable. Leave it
-    empty there; the batch's state roots and proof still bind it.
-    (``celestia`` is not checked by the chain, and is not active on the network.)
+    ``data_hash`` only when it names data the chain holds: from chain v3.2.8 a
+    retained ``MsgPostRollupData`` post (``data_hash`` = SHA-256 of the
+    payload, see :func:`~qorrdk.inbox.posted_data_hash`). Before v3.2.8 no
+    transaction stored such data, so the batch is always refused there; pass
+    ``posted_data_enabled=True`` (the ``rdk-post-rollup-data`` switch) to
+    allow it. (``celestia`` is not checked by the chain, and is not active on
+    the network.) A based rollup's batch is judged by its inbox range instead;
+    see :func:`~qorrdk.inbox.inbox_range_hash`.
     """
     if data_hash is None:
         return None
@@ -124,10 +133,12 @@ def data_hash_error(da_backend: str, data_hash: Union[bytes, str, None]) -> Opti
     )
     if empty or da_backend not in ("native", "both"):
         return None
+    if posted_data_enabled:
+        return None
     return (
         f"data_hash must be empty on a rollup with {da_backend} data availability: no "
-        "transaction stores a data-availability blob on chain, so the chain refuses a "
-        "batch that claims one"
+        "transaction stores a data-availability blob on chain before v3.2.8, so the chain "
+        "refuses a batch that claims one"
     )
 
 

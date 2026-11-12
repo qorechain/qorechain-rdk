@@ -57,6 +57,7 @@ fn emits_cosmwasm_on_the_wire_when_the_config_says_native() {
         profile: "nft".to_string(),
         vm_type: "native".to_string(),
         stake_amount: 1,
+        ..Default::default()
     }
     .to_msg();
     assert_eq!(msg.vm_type, "cosmwasm");

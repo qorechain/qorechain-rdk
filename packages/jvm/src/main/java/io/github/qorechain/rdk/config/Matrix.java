@@ -13,7 +13,8 @@ import java.util.Map;
  *
  * <ul>
  *   <li>{@code optimistic} → {@code fraud}
- *   <li>{@code zk} → {@code snark} | {@code stark}
+ *   <li>{@code zk} → {@code snark} ({@code stark} is refused from chain v3.2.8, see {@link
+ *       Enums#PAUSED_PROOF_SYSTEMS})
  *   <li>{@code based} → {@code none}
  *   <li>{@code sovereign} → {@code none}
  * </ul>
@@ -27,7 +28,7 @@ public final class Matrix {
     static {
         Map<SettlementParadigm, List<ProofSystem>> m = new EnumMap<>(SettlementParadigm.class);
         m.put(SettlementParadigm.OPTIMISTIC, List.of(ProofSystem.FRAUD));
-        m.put(SettlementParadigm.ZK, List.of(ProofSystem.SNARK, ProofSystem.STARK));
+        m.put(SettlementParadigm.ZK, List.of(ProofSystem.SNARK));
         m.put(SettlementParadigm.BASED, List.of(ProofSystem.NONE));
         m.put(SettlementParadigm.SOVEREIGN, List.of(ProofSystem.NONE));
         SETTLEMENT_PROOF_MATRIX = Collections.unmodifiableMap(m);

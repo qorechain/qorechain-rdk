@@ -39,6 +39,11 @@ var SequencerModes = []SequencerMode{
 }
 
 // ProofSystem is the proof a settlement batch carries.
+//
+// "stark" stays a known value so rollups created before can be read, but the
+// chain refuses STARK settlement from v3.2.8: a STARK key cannot be set and a
+// STARK rollup's batches are refused until the chain verifies a real rollup
+// statement. New rollups use "snark" (see PausedProofSystems).
 type ProofSystem string
 
 const (
@@ -55,6 +60,52 @@ var ProofSystems = []ProofSystem{
 	ProofStark,
 	ProofNone,
 }
+
+// PausedProofSystems are the proof systems the chain currently refuses for new
+// rollups and new batches.
+var PausedProofSystems = []ProofSystem{ProofStark}
+
+// SequencingMode is how a rollup's transactions are ordered (chain v3.2.8+):
+// "" means the rollup's sequencer settles; "based" means anyone posts data, the
+// order is inclusion on the chain, and every batch consumes the inbox in order.
+// It is sent on the wire, unlike SequencerMode, which is descriptive.
+type SequencingMode string
+
+const (
+	SequencingDefault SequencingMode = ""
+	SequencingBased   SequencingMode = "based"
+)
+
+// SequencingModes enumerates every valid SequencingMode.
+var SequencingModes = []SequencingMode{SequencingDefault, SequencingBased}
+
+// ExecutionVm is the execution model the chain re-executes in an optimistic
+// fraud proof (chain v3.2.8+). "qledger-v1" is a uqor account ledger with
+// signed transfers and withdrawals; every new optimistic rollup needs it.
+type ExecutionVm string
+
+const (
+	ExecutionVmNone      ExecutionVm = ""
+	ExecutionVmQLedgerV1 ExecutionVm = "qledger-v1"
+)
+
+// ExecutionVms enumerates every valid ExecutionVm.
+var ExecutionVms = []ExecutionVm{ExecutionVmNone, ExecutionVmQLedgerV1}
+
+// RollupPrivacy is a rollup's privacy mode (chain v3.2.8+): "encapsulated"
+// posts are ML-KEM-1024 envelopes to the rollup's members.
+type RollupPrivacy string
+
+const (
+	PrivacyNone         RollupPrivacy = ""
+	PrivacyEncapsulated RollupPrivacy = "encapsulated"
+)
+
+// RollupPrivacyModes enumerates every valid RollupPrivacy.
+var RollupPrivacyModes = []RollupPrivacy{PrivacyNone, PrivacyEncapsulated}
+
+// MaxRollupMembers is the most members a private rollup can have.
+const MaxRollupMembers = 32
 
 // DABackend is where rollup data is made available.
 type DABackend string

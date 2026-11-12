@@ -3,7 +3,7 @@
  * valid variant — all locally, no node required.
  *
  * The compatibility matrix the chain enforces pairs each settlement paradigm
- * with specific proof systems: `optimistic → fraud`, `zk → snark | stark`,
+ * with specific proof systems: `optimistic → fraud`, `zk → snark` (stark is paused),
  * `based → none`, `sovereign → none`. Here we deliberately set an INVALID
  * combination (`settlement: "zk"` with `proofSystem: "fraud"`) and read the
  * `errors` from `validationResult()`. Then we fix it to a compatible pair and

@@ -38,7 +38,7 @@ describe("resolvePqcKeypair — use the key the chain actually has", () => {
     expect(bytesToHex(canonical.publicKey)).not.toBe(bytesToHex(legacy.publicKey));
   });
 
-  it("returns the canonical key, set to register on first use, when none is registered", async () => {
+  it("returns the canonical key, flagged for registration, when none is registered", async () => {
     const r = await resolvePqcKeypair(clientWith(), address, mnemonic);
     expect(r.derivation).toBe("canonical");
     expect(r.registered).toBe(false);

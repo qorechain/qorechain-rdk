@@ -118,22 +118,30 @@ export function withdrawalErrors(w: WithdrawalForValidation): string[] {
 
 /**
  * Why a batch with `dataHash` would be refused for a rollup on `daBackend`, or
- * `undefined` if the chain accepts it.
+ * `undefined` if the chain may accept it.
  *
- * On a `native` or `both` rollup the chain accepts a non-empty `data_hash` only
- * when a matching blob is stored on chain, and no transaction stores one: the
- * batch is refused as data unavailable. Leave `dataHash` empty there; the
- * batch's state roots and proof still bind it. (`celestia` is not checked by
- * the chain, and is not active on the network.)
+ * On a `native` or `both` rollup the chain accepts a non-empty `data_hash`
+ * only when it names data the chain holds: from chain v3.2.8 a retained
+ * `MsgPostRollupData` post (`data_hash` = SHA-256 of the payload, see
+ * `postedDataHash`). Before v3.2.8 no transaction stored such data, so the
+ * batch is always refused there; pass `postedDataEnabled: true` (the
+ * `rdk-post-rollup-data` switch) to allow it. (`celestia` is not checked by
+ * the chain, and is not active on the network.) A based rollup's batch is
+ * judged by its inbox range instead; see `inboxRangeHash`.
  */
-export function dataHashError(daBackend: string, dataHash: Uint8Array | string | undefined): string | undefined {
+export function dataHashError(
+  daBackend: string,
+  dataHash: Uint8Array | string | undefined,
+  opts: { postedDataEnabled?: boolean } = {},
+): string | undefined {
   const empty =
     dataHash === undefined ||
     (typeof dataHash === "string" ? dataHash.replace(/^0x/i, "") === "" : dataHash.length === 0);
   if (empty || (daBackend !== "native" && daBackend !== "both")) return undefined;
+  if (opts.postedDataEnabled) return undefined;
   return (
     `dataHash must be empty on a rollup with ${daBackend} data availability: no transaction stores ` +
-    "a data-availability blob on chain, so the chain refuses a batch that claims one"
+    "a data-availability blob on chain before v3.2.8, so the chain refuses a batch that claims one"
   );
 }
 

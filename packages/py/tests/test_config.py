@@ -21,10 +21,8 @@ from qorrdk.config import SETTLEMENT_PROOF_MATRIX
 
 def test_matrix_pairings():
     assert valid_proof_systems(SettlementParadigm.OPTIMISTIC) == (ProofSystem.FRAUD,)
-    assert valid_proof_systems(SettlementParadigm.ZK) == (
-        ProofSystem.SNARK,
-        ProofSystem.STARK,
-    )
+    # STARK settlement is refused by the chain from v3.2.8.
+    assert valid_proof_systems(SettlementParadigm.ZK) == (ProofSystem.SNARK,)
     assert valid_proof_systems(SettlementParadigm.BASED) == (ProofSystem.NONE,)
     assert valid_proof_systems(SettlementParadigm.SOVEREIGN) == (ProofSystem.NONE,)
 
@@ -39,7 +37,7 @@ def test_matrix_covers_all_settlements():
         (SettlementParadigm.OPTIMISTIC, ProofSystem.FRAUD, True),
         (SettlementParadigm.OPTIMISTIC, ProofSystem.SNARK, False),
         (SettlementParadigm.ZK, ProofSystem.SNARK, True),
-        (SettlementParadigm.ZK, ProofSystem.STARK, True),
+        (SettlementParadigm.ZK, ProofSystem.STARK, False),
         (SettlementParadigm.ZK, ProofSystem.FRAUD, False),
         (SettlementParadigm.BASED, ProofSystem.NONE, True),
         (SettlementParadigm.BASED, ProofSystem.SNARK, False),

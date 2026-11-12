@@ -48,8 +48,12 @@ tx := client.ConnectTx(acc, &opts) // or rdk.NewRdkTxClient(...).WithHybrid(opts
 `ResolvePqcKeypair` derives both keys a mnemonic can yield (the canonical,
 address-bound one and the legacy one) and returns whichever the chain has
 registered. An account with no key yet gets the canonical key with
-`IncludePqcPublicKey` set, so its first transaction registers it; a key that
-neither derivation produces is an error. From the environment:
+`IncludePqcPublicKey` set; a key that neither derivation produces is an error.
+Since chain v3.2.3 a new account may send only a key registration, so with
+`IncludePqcPublicKey` set `Broadcast` first sends `MsgRegisterPQCKeyV2` (with a
+proof of possession, fee 90000 uqor for 600000 gas) in a transaction of its
+own, waits for it to be committed, and then sends your messages at the next
+sequence. Re-read the account sequence before the following transaction. From the environment:
 
 ```go
 resolved, ok, err := rdk.PqcKeypairFromEnv(ctx, client, acc.Address, env)

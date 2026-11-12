@@ -48,10 +48,11 @@ v3.2.5 precompile always returns at least 64 bytes, so `CrossVmCaller.sol`
 requires that, turning an inactive precompile into a revert instead of a silent
 no-op, and passes the chain's refusal reason through.
 
-**EVM authorisation windows (chain v3.2.3).** If your EVM transactions run
-under a scoped authorisation window, `native_only: true` refuses any calldata —
-a cross-VM call included — and a non-empty `allowed_targets` must list the
-precompile's address.
+**EVM authorisation windows.** If your EVM transactions run under an
+authorisation window, `native_only: true` refuses any calldata, a cross-VM call
+included. From chain v3.2.3 a non-empty `allowed_targets` must list the
+precompile's address, and from chain v3.2.8 every window must: a call to
+`0x0901` is refused unless the live window lists it.
 
 Run the cross-VM check and encoder:
 

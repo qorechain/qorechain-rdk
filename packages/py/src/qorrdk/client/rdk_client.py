@@ -94,9 +94,10 @@ class RdkClient:
         :func:`~qorrdk.accounts.pqc_keypair_from_env`) to sign every transaction
         hybrid (post-quantum); without one the client signs classical-only,
         which both public networks refuse on the native lane.
-        ``include_pqc_public_key`` embeds the key so the first transaction
-        registers it; ``sign_bytes_version`` is ``"auto"`` (asked of this
-        network's REST endpoint), ``"v1"`` or ``"v2"``.
+        ``include_pqc_public_key`` (the key is not registered yet) makes the
+        client register it in a transaction of its own before the first one;
+        ``sign_bytes_version`` is ``"auto"`` (asked of this network's REST
+        endpoint), ``"v1"`` or ``"v2"``.
         """
         from ..tx.client import RdkTxClient
 

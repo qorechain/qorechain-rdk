@@ -110,7 +110,7 @@ if (!pqc) throw new Error("set QORE_MNEMONIC, or QORE_PQC_SEED_HEX with a raw ke
 const tx = await rdk.connectTx(signer, {
   gasPrice: "0.15uqor",
   pqcKeypair: pqc.keypair,                    // switches the client to hybrid signing
-  includePqcPublicKey: pqc.includePqcPublicKey, // registers it on first use, if needed
+  includePqcPublicKey: pqc.includePqcPublicKey, // registers the key first, if needed
 });
 
 await tx.createRollup({ /* … */ });
@@ -145,9 +145,12 @@ A few things to know:
   an amino-only signer cannot carry the signature extension and is rejected with
   an explicit error. `directSignerFromPrivateKey` and `signerFromEnv` both give
   you a direct signer.
-- **The PQC key must already be registered on chain** (`MsgRegisterPQCKey`) for
-  your operator account. If it is not, set `includePqcPublicKey: true` so the key
-  travels with the transaction and the chain can register it on first use.
+- **The PQC key must be registered on chain** (`MsgRegisterPQCKeyV2`) before
+  your operator account can send anything else: since chain v3.2.3 an account
+  without a registered key may send only a registration. With
+  `includePqcPublicKey: true` the client registers it for you, with a proof of
+  possession, in a transaction of its own before the first real one (about
+  0.09 QOR in fees, once).
 - **`rest` is filled in for you.** The sign-bytes form is resolved from the
   network (`signBytesVersion: "auto"`, the default), which needs the REST/LCD
   endpoint; `rdk.connectTx` passes the network preset's REST endpoint

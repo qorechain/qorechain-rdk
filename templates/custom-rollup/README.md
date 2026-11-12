@@ -52,11 +52,13 @@ every overridable field inline:
 - `settlement` — `optimistic` | `zk` | `based` | `sovereign`
 - `sequencer` — `dedicated` | `shared` | `based`
 - `da` — `native` | `celestia` | `both` (celestia is planned / not yet active)
-- `proofSystem` — `fraud` | `snark` | `stark` | `none`
+- `proofSystem` — `fraud` | `snark` | `none` (`stark` is paused on the network)
 - `gasModel` — `standard` | `eip1559` | `flat` | `subsidized`
 - `vmType` — `evm` | `cosmwasm` | `svm` | `custom`
 - `blockTimeMs` — target block time in milliseconds
 - `maxTxPerBlock` — maximum transactions per rollup block
+- `executionVm` — `qledger-v1` or empty; every new optimistic rollup needs `qledger-v1`
+- `sequencing` — `based` or empty; `qledger-v1` rollups must be `based`
 
 ## The compatibility matrix
 
@@ -65,15 +67,22 @@ every overridable field inline:
 
 | settlement   | allowed proofSystem | extra constraint              |
 | ------------ | ------------------- | ----------------------------- |
-| `optimistic` | `fraud`             | —                             |
-| `zk`         | `snark` \| `stark`  | —                             |
+| `optimistic` | `fraud`             | `executionVm: "qledger-v1"`, `sequencing: "based"` |
+| `zk`         | `snark`             | (`stark` is paused on the network) |
 | `based`      | `none`              | requires the based sequencer  |
 | `sovereign`  | `none`              | —                             |
 
 A mismatch throws a `RollupConfigError` describing exactly what to fix. The
 default config (optimistic + fraud) submits batches with a fraud proof; if you
 switch to `based`/`sovereign`, drop the proof in `src/submit-batch.ts`, and for
-`zk` supply a SNARK/STARK proof instead.
+`zk` supply a SNARK proof instead. A zk batch's public inputs must be
+canonical BLS12-381 scalars: see `zkPublicInputErrors` and `toCanonicalScalar`.
+
+The default config is a qledger-v1 rollup: the chain re-executes a challenged
+batch, and anyone holding a submitter bond (`bondRollupSubmitter`) may submit
+batches of up to 64 inbox entries. Users post with `postRollupData` and deposit
+with `depositToRollup`; each batch sets `inboxEnd` and carries the inbox range
+commitment (`RestClient.getInbox`) as `dataHash`.
 
 ## Quantum-safe signing
 

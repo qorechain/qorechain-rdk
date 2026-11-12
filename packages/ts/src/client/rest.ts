@@ -6,15 +6,23 @@ import { defaultFetch, type FetchLike } from "./http";
 import {
   mapAnchorView,
   mapBatchView,
+  mapInboxView,
+  mapKemKeyView,
   mapParamsView,
+  mapPostedDataView,
   mapPqcAccountView,
   mapRollupView,
+  mapSubmitterBondView,
   type AnchorView,
   type BatchView,
+  type InboxView,
+  type KemKeyView,
   type ParamsView,
+  type PostedDataView,
   type PqcAccountView,
   type RawRecord,
   type RollupView,
+  type SubmitterBondView,
 } from "./views";
 
 /** One protocol switch as the chain reports it. */
@@ -35,6 +43,22 @@ function asArray(value: unknown): RawRecord[] {
   return Array.isArray(value) ? (value as RawRecord[]) : [];
 }
 
+/** An HTTP error from a REST read, with its status (404 = the chain has no such record). */
+export class RestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "RestError";
+  }
+}
+
+/** Whether `err` is a REST 404: the record does not exist (or is no longer retained). */
+export function isRestNotFound(err: unknown): boolean {
+  return err instanceof RestError && err.status === 404;
+}
+
 export class RestClient {
   private readonly base: string;
   private readonly fetch: FetchLike;
@@ -50,7 +74,7 @@ export class RestClient {
       headers: { accept: "application/json" },
     });
     if (!res.ok) {
-      throw new Error(`REST GET ${path} failed: ${res.status} ${res.statusText}`);
+      throw new RestError(`REST GET ${path} failed: ${res.status} ${res.statusText}`, res.status);
     }
     return asRecord(await res.json());
   }
@@ -181,6 +205,61 @@ export class RestClient {
     return Number.isFinite(h) && h > 0 ? h : 0;
   }
 
+  /**
+   * A rollup's inbox (chain v3.2.8+): head, consumed position, and the
+   * `data_hash` a based batch ending at `inboxEnd` must carry (0 = the head).
+   */
+  async getInbox(rollupId: string, inboxEnd: number | bigint = 0): Promise<InboxView> {
+    const q = BigInt(inboxEnd) > 0n ? `?inbox_end=${inboxEnd}` : "";
+    const body = await this.get(`/qorechain/rdk/v1/inbox/${encodeURIComponent(rollupId)}${q}`);
+    return mapInboxView(asRecord(body.inbox ?? body));
+  }
+
+  /** One posted-data commitment (chain v3.2.8+). The payload is in the transaction at `height`. */
+  async getPostedData(rollupId: string, sequence: number | bigint): Promise<PostedDataView> {
+    const body = await this.get(`/qorechain/rdk/v1/posted_data/${encodeURIComponent(rollupId)}/${sequence}`);
+    return mapPostedDataView(asRecord(body.posted_data ?? body.postedData ?? body));
+  }
+
+  /** A submitter's bond on a qledger-v1 rollup and when it unlocks (chain v3.2.8+). */
+  async getSubmitterBond(rollupId: string, submitter: string): Promise<SubmitterBondView> {
+    const body = await this.get(
+      `/qorechain/rdk/v1/submitter_bond/${encodeURIComponent(rollupId)}/${encodeURIComponent(submitter)}`,
+    );
+    return mapSubmitterBondView(body);
+  }
+
+  /**
+   * The key-encapsulation key `address` published (chain v3.2.5+), or
+   * `undefined` when it has none.
+   */
+  async getKemKey(address: string): Promise<KemKeyView | undefined> {
+    const body = await this.get(`/qorechain/pqc/v1/kem/${encodeURIComponent(address)}`);
+    if (body.found !== true) return undefined;
+    return mapKemKeyView(asRecord(body.key));
+  }
+
+  /**
+   * The recipients a post on private rollup `rollupId` must be sealed to: its
+   * members in order, each with its registered ML-KEM-1024 key, and the
+   * membership epoch. Throws if a member has no such key (the chain would
+   * refuse any envelope).
+   */
+  async getPrivateRollupRecipients(
+    rollupId: string,
+  ): Promise<{ epoch: number; recipients: { member: string; encapsulationKey: string }[] }> {
+    const rollup = await this.getRollup(rollupId);
+    if (rollup.privacy !== "encapsulated") throw new Error(`rollup ${rollupId} is not private`);
+    if (rollup.members.length === 0) throw new Error(`rollup ${rollupId} has no members yet`);
+    const recipients: { member: string; encapsulationKey: string }[] = [];
+    for (const member of rollup.members) {
+      const key = await this.getKemKey(member);
+      if (!key || key.algorithmId !== 2) throw new Error(`member ${member} has no ML-KEM-1024 key registered`);
+      recipients.push({ member, encapsulationKey: key.publicKey });
+    }
+    return { epoch: rollup.membersEpoch, recipients };
+  }
+
   /** Raw data-availability blob details (status, size, expiry). */
   async getBlob(rollupId: string, blobIndex: number | bigint): Promise<RawRecord> {
     return this.get(`/qorechain/rdk/v1/blob/${encodeURIComponent(rollupId)}/${blobIndex}`);
@@ -271,5 +350,34 @@ export class RestClient {
   /** A transaction by hash (the raw `/cosmos/tx/v1beta1/txs/{hash}` response). */
   async getTx(hash: string): Promise<RawRecord> {
     return this.get(`/cosmos/tx/v1beta1/txs/${encodeURIComponent(hash)}`);
+  }
+
+  /** The node's latest block height (`/cosmos/base/node/v1beta1/status`). */
+  async getLatestHeight(): Promise<number> {
+    const body = await this.get("/cosmos/base/node/v1beta1/status");
+    const h = Number(body.height ?? 0);
+    if (!Number.isFinite(h) || h <= 0) throw new Error("the node did not report its height");
+    return h;
+  }
+
+  /**
+   * Every transaction matching an event query (for example
+   * `rdk_data_posted.rollup_id='my-rollup'`), as raw `tx_responses`, oldest
+   * first. Needs a node with transaction indexing on.
+   */
+  async searchTxs(query: string, opts: { pageLimit?: number; maxPages?: number } = {}): Promise<RawRecord[]> {
+    const limit = opts.pageLimit ?? 100;
+    const maxPages = opts.maxPages ?? 50;
+    const out: RawRecord[] = [];
+    for (let page = 1; page <= maxPages; page++) {
+      const body = await this.get(
+        `/cosmos/tx/v1beta1/txs?query=${encodeURIComponent(query)}&page=${page}&limit=${limit}&order_by=ORDER_BY_ASC`,
+      );
+      const txs = asArray(body.tx_responses);
+      out.push(...txs);
+      const total = Number(body.total ?? 0);
+      if (txs.length < limit || (total > 0 && out.length >= total)) break;
+    }
+    return out;
   }
 }

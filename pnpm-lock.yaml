@@ -122,9 +122,15 @@ importers:
       '@cosmjs/stargate':
         specifier: ^0.39.0
         version: 0.39.0
+      '@noble/ciphers':
+        specifier: ^2.2.0
+        version: 2.2.0
       '@noble/hashes':
         specifier: ^1.8.0
         version: 1.8.0
+      '@noble/post-quantum':
+        specifier: ^0.6.1
+        version: 0.6.1
       '@qorechain/evm':
         specifier: ^0.8.0
         version: 0.8.0(viem@2.54.1(typescript@5.9.3))
@@ -1402,6 +1408,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'

@@ -115,7 +115,15 @@ export async function cmdCreate(ctx: CliContext, parsed: ParsedCli): Promise<num
   if (flagBool(parsed.flags, "dry-run")) {
     const addr = (await resolveSignerAddress(ctx)) ?? "qor1operator";
     const tx = RdkTxClient.fromClient(new MockTxClient(), addr);
-    await tx.createRollup({ rollupId: cfg.rollupId, profile: cfg.profile, vmType: cfg.vmType, stakeAmount: stake });
+    await tx.createRollup({
+      rollupId: cfg.rollupId,
+      profile: cfg.profile,
+      vmType: cfg.vmType,
+      stakeAmount: stake,
+      sequencing: cfg.sequencing,
+      executionVm: cfg.executionVm,
+      privacy: cfg.privacy,
+    });
     ctx.out.success("Dry run OK — would submit MsgCreateRollup (no broadcast).");
     if (ctx.json) ctx.out.json({ dryRun: true, rollupId: cfg.rollupId, cost });
     return 0;
@@ -133,6 +141,10 @@ export async function cmdCreate(ctx: CliContext, parsed: ParsedCli): Promise<num
     profile: msg.profile,
     vmType: msg.vmType,
     stakeAmount: msg.stakeAmount,
+    // Chain v3.2.8: an optimistic profile carries qledger-v1 and based sequencing.
+    sequencing: msg.sequencing,
+    executionVm: msg.executionVm,
+    privacy: msg.privacy,
   });
   const created = findRdkEvent((res.events ?? []) as RawEvent[], "rollup_created");
   ctx.out.success(`Created — tx ${res.transactionHash} (code ${res.code})`);

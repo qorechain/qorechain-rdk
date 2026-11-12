@@ -55,6 +55,33 @@ DEFAULT_RDK_PARAMS: Final[dict[str, object]] = {
 #: Default optimistic challenge bond, in uqor (1,000 QOR).
 DEFAULT_CHALLENGE_BOND_UQOR: Final = "1000000000"
 
+#: Protocol switches of the chain v3.2.7 and v3.2.8 RDK features, as ``x/pqc``
+#: reports them.
+RDK_FEATURES: Final[dict[str, str]] = {
+    "zk_verification_key": "rdk-zk-verification-key",
+    "post_rollup_data": "rdk-post-rollup-data",
+    "based_sequencing": "rdk-based-sequencing",
+    "optimistic_reexec": "rdk-optimistic-reexec",
+    "stark_statement": "rdk-stark-statement",
+    "private_rollups": "rdk-private-rollups",
+    "zk_canonical_inputs": "rdk-zk-canonical-inputs",
+    "max_batches_per_block": "rdk-max-batches-per-block",
+}
+
+#: Posted-data retention (chain v3.2.8): default 648,000 blocks; a set value is
+#: 100 to 25,920,000 blocks and at least the longest challenge window in
+#: force, counted as one block per second.
+DEFAULT_POSTED_DATA_RETENTION_BLOCKS: Final = 648_000
+MIN_POSTED_DATA_RETENTION_BLOCKS: Final = 100
+MAX_POSTED_DATA_RETENTION_BLOCKS: Final = 25_920_000
+
+#: Smallest ``MsgDepositToRollup`` amount, in uqor (1 QOR).
+MIN_ROLLUP_DEPOSIT_UQOR: Final = 1_000_000
+
+#: Default ``min_submitter_bond``, in uqor (1,000 QOR); read the live value
+#: from ``rdk.params()``.
+DEFAULT_MIN_SUBMITTER_BOND_UQOR: Final = 1_000_000_000
+
 __all__ = [
     "DISPLAY_DENOM",
     "BASE_DENOM",
@@ -65,4 +92,10 @@ __all__ = [
     "NETWORK_NAMES",
     "DEFAULT_RDK_PARAMS",
     "DEFAULT_CHALLENGE_BOND_UQOR",
+    "RDK_FEATURES",
+    "MIN_ROLLUP_DEPOSIT_UQOR",
+    "DEFAULT_MIN_SUBMITTER_BOND_UQOR",
+    "DEFAULT_POSTED_DATA_RETENTION_BLOCKS",
+    "MIN_POSTED_DATA_RETENTION_BLOCKS",
+    "MAX_POSTED_DATA_RETENTION_BLOCKS",
 ]

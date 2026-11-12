@@ -2,11 +2,13 @@
 //!
 //! These mirror the network's published profile table. The proof system for
 //! each profile is the one its settlement paradigm requires (optimistic ->
-//! fraud, zk -> snark, based -> none).
+//! fraud, zk -> snark, based -> none). The optimistic profiles (`nft`,
+//! `custom`) carry execution VM `qledger-v1` and `based` sequencing, which the
+//! chain requires of every new optimistic rollup from v3.2.8.
 
 use crate::config::{
-    DaBackend, GasModel, Profile, ProofSystem, RollupConfig, RollupConfigBuilder, Sequencer,
-    Settlement, VmType,
+    DaBackend, ExecutionVm, GasModel, Profile, ProofSystem, RollupConfig, RollupConfigBuilder,
+    Sequencer, SequencingMode, Settlement, VmType,
 };
 use crate::constants::{DEFAULT_CHALLENGE_BOND_UQOR, DEFAULT_CHALLENGE_WINDOW_SECS};
 
@@ -34,6 +36,10 @@ pub struct PresetDefaults {
     pub challenge_window_secs: Option<i64>,
     /// Optimistic challenge bond, in uqor.
     pub challenge_bond_uqor: Option<String>,
+    /// Chain v3.2.8+ sequencing (`based` on the optimistic profiles).
+    pub sequencing: Option<SequencingMode>,
+    /// Chain v3.2.8+ execution VM (`qledger-v1` on the optimistic profiles).
+    pub execution_vm: Option<ExecutionVm>,
 }
 
 /// The documented default fields for a profile.
@@ -50,6 +56,8 @@ pub fn preset_defaults(profile: Profile) -> PresetDefaults {
             max_tx_per_block: 10000,
             challenge_window_secs: None,
             challenge_bond_uqor: None,
+            sequencing: None,
+            execution_vm: None,
         },
         Profile::Gaming => PresetDefaults {
             settlement: Settlement::Based,
@@ -62,6 +70,8 @@ pub fn preset_defaults(profile: Profile) -> PresetDefaults {
             max_tx_per_block: 50000,
             challenge_window_secs: None,
             challenge_bond_uqor: None,
+            sequencing: None,
+            execution_vm: None,
         },
         Profile::Nft => PresetDefaults {
             settlement: Settlement::Optimistic,
@@ -74,6 +84,10 @@ pub fn preset_defaults(profile: Profile) -> PresetDefaults {
             max_tx_per_block: 5000,
             challenge_window_secs: Some(DEFAULT_CHALLENGE_WINDOW_SECS as i64),
             challenge_bond_uqor: Some(DEFAULT_CHALLENGE_BOND_UQOR.to_string()),
+            // From chain v3.2.8 a new optimistic rollup must run qledger-v1 and
+            // be based.
+            sequencing: Some(SequencingMode::Based),
+            execution_vm: Some(ExecutionVm::QledgerV1),
         },
         Profile::Enterprise => PresetDefaults {
             settlement: Settlement::Based,
@@ -86,6 +100,8 @@ pub fn preset_defaults(profile: Profile) -> PresetDefaults {
             max_tx_per_block: 20000,
             challenge_window_secs: None,
             challenge_bond_uqor: None,
+            sequencing: None,
+            execution_vm: None,
         },
         Profile::Custom => PresetDefaults {
             settlement: Settlement::Optimistic,
@@ -98,6 +114,10 @@ pub fn preset_defaults(profile: Profile) -> PresetDefaults {
             max_tx_per_block: 10000,
             challenge_window_secs: Some(DEFAULT_CHALLENGE_WINDOW_SECS as i64),
             challenge_bond_uqor: Some(DEFAULT_CHALLENGE_BOND_UQOR.to_string()),
+            // From chain v3.2.8 a new optimistic rollup must run qledger-v1 and
+            // be based.
+            sequencing: Some(SequencingMode::Based),
+            execution_vm: Some(ExecutionVm::QledgerV1),
         },
     }
 }
@@ -123,6 +143,9 @@ pub fn preset(profile: Profile) -> RollupConfigBuilder {
         challenge_bond_uqor: d.challenge_bond_uqor,
         max_da_blob_size: None,
         stake_amount_uqor: None,
+        sequencing: d.sequencing,
+        execution_vm: d.execution_vm,
+        privacy: None,
     };
     RollupConfigBuilder::new(config)
 }

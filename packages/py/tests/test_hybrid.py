@@ -377,3 +377,161 @@ def test_env_mnemonic_and_none(golden, keys):
     assert r.derivation == "legacy" and r.keypair == keys["legacy"]
     assert pqc_keypair_from_env(client, address, {}) is None
     assert pqc_keypair_from_env(client, address, {"QORE_PQC_SEED_HEX": " ", "QORE_MNEMONIC": ""}) is None
+
+
+# --------------------------------------------------------------------------- #
+# A keyless account registers its key first (chain v3.2.3+,
+# pqc-keyless-extension-closed): the extension no longer registers it.
+# --------------------------------------------------------------------------- #
+
+_REGISTER_V2 = "/qorechain.pqc.v1.MsgRegisterPQCKeyV2"
+
+
+def _keyless_client(golden, keys, transport):
+    h = golden["hybridTx"]
+    return RdkTxClient(
+        rest_url=REST,
+        chain_id=h["chainId"],
+        signer=keys["signer"],
+        transport=transport,
+        pqc_keypair=keys["canonical"],
+        include_pqc_public_key=True,
+        sign_bytes_version="v2",
+    )
+
+
+def _account_route(golden):
+    h = golden["hybridTx"]
+    return {
+        ("GET", "/cosmos/auth/v1beta1/accounts/"): {
+            "account": {"account_number": str(h["accountNumber"]), "sequence": str(h["sequence"])}
+        }
+    }
+
+
+def _decode_registration(tx: bytes):
+    from qorsdk.pqc_dx import build_register_pqc_key
+
+    raw = TxRaw.FromString(tx)
+    body = TxBody.FromString(raw.body_bytes)
+    assert [m.type_url for m in body.messages] == [_REGISTER_V2]
+    msg_cls = type(
+        build_register_pqc_key(sender="qor1x", dilithium_pubkey=b"\x01" * 2592, ecdsa_pubkey=b"").value
+    )
+    from cosmpy.protos.cosmos.tx.v1beta1.tx_pb2 import AuthInfo
+
+    return msg_cls.FromString(body.messages[0].value), AuthInfo.FromString(raw.auth_info_bytes)
+
+
+def test_keyless_client_registers_its_key_before_the_first_transaction(golden, keys):
+    from qorsdk.key_integrity import verify_proof_of_possession
+
+    h = golden["hybridTx"]
+    routes = _account_route(golden)
+    routes[("GET", "/cosmos/tx/v1beta1/txs/REG")] = {"tx_response": {"txhash": "REG", "code": 0}}
+    transport = MockTransport(
+        routes,
+        posts=[
+            {"tx_response": {"txhash": "REG", "code": 0, "raw_log": ""}},
+            {"tx_response": {"txhash": "REAL", "code": 0, "raw_log": ""}},
+        ],
+    )
+    client = _keyless_client(golden, keys, transport)
+    result = client.pause_rollup(rollup_id="roll-vectors", reason="", opts=_golden_opts(golden))
+    assert result.tx_hash == "REAL" and result.code == 0
+
+    reg_tx, real_tx = transport.posted_txs()
+    reg, auth = _decode_registration(reg_tx)
+    address = keys["signer"].address
+    assert reg.sender == address
+    assert reg.public_key == keys["canonical"].public_key
+    assert reg.algorithm_id == 1
+    assert reg.key_type == "hybrid"
+    assert verify_proof_of_possession(
+        chain_id=h["chainId"],
+        account=address,
+        public_key=keys["canonical"].public_key,
+        proof=reg.proof_of_possession,
+    )
+    assert auth.fee.gas_limit == 600000
+    assert [(c.denom, c.amount) for c in auth.fee.amount] == [("uqor", "90000")]
+
+    # The real transaction waits for the registration's inclusion and no longer
+    # embeds the key: it is exactly the v2 golden transaction.
+    methods = [(c["method"], c["url"].split(REST)[1]) for c in transport.calls]
+    assert methods.index(("GET", "/cosmos/tx/v1beta1/txs/REG")) < max(
+        i for i, m in enumerate(methods) if m == ("POST", "/cosmos/tx/v1beta1/txs")
+    )
+    assert real_tx == bytes.fromhex(h["v2"]["txRawHex"])
+
+    # The flag is cleared: the next transaction is sent on its own.
+    transport._posts.append({"tx_response": {"txhash": "NEXT", "code": 0}})
+    client.pause_rollup(rollup_id="roll-vectors", reason="", opts=_golden_opts(golden))
+    assert len(transport.posted_txs()) == 3
+
+
+def test_keyless_registration_accepts_already_registered(golden, keys):
+    h = golden["hybridTx"]
+    transport = MockTransport(
+        _account_route(golden),
+        posts=[
+            {"tx_response": {"txhash": "REG", "code": 7, "codespace": "pqc", "raw_log": "pqc account already registered"}},
+            {"tx_response": {"txhash": "REAL", "code": 0}},
+        ],
+    )
+    client = _keyless_client(golden, keys, transport)
+    result = client.pause_rollup(rollup_id="roll-vectors", reason="", opts=_golden_opts(golden))
+    assert result.tx_hash == "REAL"
+    reg_tx, real_tx = transport.posted_txs()
+    _decode_registration(reg_tx)
+    assert real_tx == bytes.fromhex(h["v2"]["txRawHex"])
+    # Nothing to wait for: the registration was refused, not included.
+    assert not any("/cosmos/tx/v1beta1/txs/" in c["url"] for c in transport.calls if c["method"] == "GET")
+
+
+def test_keyless_registration_failure_stops_before_the_real_transaction(golden, keys):
+    transport = MockTransport(
+        _account_route(golden),
+        posts=[{"tx_response": {"txhash": "REG", "code": 13, "codespace": "sdk", "raw_log": "insufficient fee"}}],
+    )
+    client = _keyless_client(golden, keys, transport)
+    with pytest.raises(RuntimeError, match=r"post-quantum key failed \(code 13\)"):
+        client.pause_rollup(rollup_id="roll-vectors", reason="", opts=_golden_opts(golden))
+    assert len(transport.posted_txs()) == 1
+
+    # A code 7 from another codespace is not "already registered".
+    transport = MockTransport(
+        _account_route(golden),
+        posts=[{"tx_response": {"txhash": "REG", "code": 7, "codespace": "sdk"}}],
+    )
+    with pytest.raises(RuntimeError, match=r"code 7"):
+        _keyless_client(golden, keys, transport).pause_rollup(
+            rollup_id="roll-vectors", reason="", opts=_golden_opts(golden)
+        )
+    assert len(transport.posted_txs()) == 1
+
+
+def test_keyless_registration_refused_in_block_raises(golden, keys):
+    routes = _account_route(golden)
+    routes[("GET", "/cosmos/tx/v1beta1/txs/REG")] = {
+        "tx_response": {"txhash": "REG", "code": 11, "codespace": "sdk", "raw_log": "out of gas"}
+    }
+    transport = MockTransport(routes, posts=[{"tx_response": {"txhash": "REG", "code": 0}}])
+    client = _keyless_client(golden, keys, transport)
+    with pytest.raises(RuntimeError, match=r"failed in block \(code 11\)"):
+        client.pause_rollup(rollup_id="roll-vectors", reason="", opts=_golden_opts(golden))
+    assert len(transport.posted_txs()) == 1
+
+
+def test_registration_only_messages_are_not_preceded_by_another_registration(golden, keys):
+    from qorsdk.pqc_dx import build_register_pqc_key
+    from qorrdk.tx.messages import EncodedMsg
+
+    reg = build_register_pqc_key(
+        sender=keys["signer"].address, dilithium_pubkey=keys["canonical"].public_key, ecdsa_pubkey=b""
+    )
+    transport = MockTransport(_account_route(golden), posts=[{"tx_response": {"txhash": "R", "code": 0}}])
+    client = _keyless_client(golden, keys, transport)
+    client.broadcast_messages([EncodedMsg(type_url=reg.type_url, value=reg.value.SerializeToString())])
+    (only,) = transport.posted_txs()
+    _decode_registration(only)

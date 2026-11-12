@@ -237,6 +237,7 @@ fn msg_proto_bytes_match_golden() {
         profile: "defi".to_string(),
         vm_type: "evm".to_string(),
         stake_amount: 10_000_000_000,
+        ..Default::default()
     }
     .to_msg();
     assert_eq!(
@@ -269,6 +270,7 @@ fn msg_proto_bytes_match_golden() {
         data_hash: vec![0x09, 0x09],
         proof: vec![0x08],
         withdrawals_root: vec![0x07, 0x07, 0x07],
+        ..Default::default()
     }
     .to_msg();
     assert_eq!(

@@ -5,8 +5,8 @@ describe("decodeRdkTxError", () => {
   it("names the rdk codes an operator meets, with what to do", () => {
     const vk = decodeRdkTxError({ code: 21, codespace: "rdk", rawLog: "x" });
     expect(vk.kind).toBe("verification_key_missing");
-    expect(vk.message).toMatch(/zk settlement cannot be used yet/);
-    expect(decodeRdkTxError({ code: 26, codespace: "rdk" }).hint).toMatch(/leave dataHash empty/);
+    expect(vk.message).toMatch(/MsgSetVerificationKey/);
+    expect(decodeRdkTxError({ code: 26, codespace: "rdk" }).hint).toMatch(/MsgPostRollupData/);
     expect(decodeRdkTxError({ code: 36, codespace: "rdk" }).kind).toBe("settlement_pending");
   });
 

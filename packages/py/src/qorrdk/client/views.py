@@ -6,7 +6,7 @@ Cosmos REST encodes 64-bit integers as strings; amounts that can be large
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from ..utils.bytes import bytes_to_hex, decode_wire_bytes
@@ -46,6 +46,10 @@ def _optional_str(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _str_list(value: Any) -> list:
+    return [str(v) for v in value] if isinstance(value, list) else []
+
+
 def _num(value: Any, fallback: int = 0) -> int:
     if value is None or value == "":
         return fallback
@@ -66,6 +70,14 @@ class ParamsView:
     max_da_blob_size: int
     blob_retention_blocks: int
     max_batches_per_block: int
+    #: Chain v3.2.8+ (effective values; ``None`` from an older node).
+    finalized_batch_retention_blocks: Optional[int] = None
+    max_posted_data_bytes: Optional[int] = None
+    max_posted_data_bytes_per_block: Optional[int] = None
+    posted_data_fee_per_byte: Optional[int] = None
+    posted_data_retention_blocks: Optional[int] = None
+    #: Bond a qledger-v1 batch submitter must hold, in uqor (v3.2.8+).
+    min_submitter_bond: Optional[str] = None
 
 
 @dataclass
@@ -95,10 +107,22 @@ class RollupView:
     challenge_bond: Optional[str] = None
     #: The rollup's proof system, e.g. ``"fraud"`` (chain v3.2.4+).
     proof_system: Optional[str] = None
-    #: Whether the rollup has a ZK verification key registered. No release
-    #: before the planned chain v3.2.7 can register one, so ``None`` (field not
-    #: served) means none: every zk batch is then refused.
+    #: Whether the rollup has a ZK verification key registered (chain v3.2.7+,
+    #: ``MsgSetVerificationKey``). ``None`` (field not served) means none: every
+    #: zk batch is then refused.
     has_verification_key: Optional[bool] = None
+    #: Chain v3.2.8+: ``"based"`` or ``""`` (the rollup's sequencer settles).
+    sequencing: str = ""
+    #: Chain v3.2.8+: ``"qledger-v1"`` or ``""``.
+    execution_vm: str = ""
+    #: Chain v3.2.8+: ``"encapsulated"`` or ``""``.
+    privacy: str = ""
+    #: Chain v3.2.8+: a private rollup's members, in envelope order.
+    members: list = field(default_factory=list)  # list[str]
+    #: Chain v3.2.8+: the membership epoch an envelope must carry.
+    members_epoch: int = 0
+    #: Chain v3.2.8+: uqor deposited into a qledger-v1 rollup and not withdrawn.
+    deposit_pool: str = "0"
 
 
 @dataclass
@@ -128,6 +152,77 @@ class BatchView:
     #: the field as true; :func:`transition_root_version_for_batch` otherwise
     #: decides by height.
     withdrawals_bound: bool = False
+    #: Chain v3.2.8+, based rollups: the inbox range the batch consumed (after
+    #: ``inbox_start``, up to ``inbox_end``).
+    inbox_start: int = 0
+    inbox_end: int = 0
+    #: Chain v3.2.8+: the stored ``withdrawals_root`` is the submitted root
+    #: reduced modulo the BLS12-381 scalar field (a Groth16 batch that binds
+    #: its withdrawals, settled with ``rdk-zk-canonical-inputs`` on). Compare a
+    #: tree root with it modulo r (:func:`~qorrdk.zk.withdrawals_root_matches`),
+    #: not byte for byte.
+    withdrawals_root_reduced: bool = False
+
+
+@dataclass
+class InboxView:
+    """A rollup's inbox (chain v3.2.8+). Hex fields are as the node serves them."""
+
+    rollup_id: str
+    sequencing: str
+    #: Sequence of the last post (0 = none yet).
+    head_sequence: int
+    head_acc: str
+    #: Where the next based batch starts.
+    consumed_sequence: int
+    consumed_acc: str
+    #: The range end ``range_data_hash`` is for.
+    range_end: int
+    #: The ``data_hash`` a based batch with ``inbox_end = range_end`` must
+    #: carry; empty when no longer retained.
+    range_data_hash: str
+
+
+@dataclass
+class PostedDataView:
+    """One posted-data commitment (chain v3.2.8+)."""
+
+    rollup_id: str
+    sequence: int
+    #: SHA-256 of the payload, as the node serves it.
+    data_hash: str
+    size: int
+    poster: str
+    #: The block whose transaction carries the payload.
+    height: int
+    inbox_acc: str
+    expires_at_height: int
+
+
+@dataclass
+class SubmitterBondView:
+    """A submitter's bond on a qledger-v1 rollup (chain v3.2.8+)."""
+
+    #: uqor; ``"0"`` when there is none.
+    amount: str
+    last_submit_time: int
+    #: Block time (Unix seconds) from which an unbond succeeds.
+    unbond_after: int
+    #: The submitter's batches on the rollup still waiting for finality
+    #: (chain v3.2.8+; at most 1,024).
+    pending: int = 0
+
+
+@dataclass
+class KemKeyView:
+    """A key-encapsulation key an address published (``x/pqc``, chain v3.2.5+)."""
+
+    address: str
+    algorithm_id: int
+    algorithm_name: str
+    #: The FIPS 203 encapsulation key, lowercase hex.
+    public_key: str
+    registered_height: int
 
 
 @dataclass
@@ -203,6 +298,67 @@ def map_params_view(raw: RawRecord) -> ParamsView:
         max_da_blob_size=_num(_pick(raw, "max_da_blob_size", "maxDaBlobSize")),
         blob_retention_blocks=_num(_pick(raw, "blob_retention_blocks", "blobRetentionBlocks")),
         max_batches_per_block=_num(_pick(raw, "max_batches_per_block", "maxBatchesPerBlock")),
+        finalized_batch_retention_blocks=_optional_num(
+            _pick(raw, "finalized_batch_retention_blocks", "finalizedBatchRetentionBlocks")
+        ),
+        max_posted_data_bytes=_optional_num(
+            _pick(raw, "max_posted_data_bytes", "maxPostedDataBytes")
+        ),
+        max_posted_data_bytes_per_block=_optional_num(
+            _pick(raw, "max_posted_data_bytes_per_block", "maxPostedDataBytesPerBlock")
+        ),
+        posted_data_fee_per_byte=_optional_num(
+            _pick(raw, "posted_data_fee_per_byte", "postedDataFeePerByte")
+        ),
+        posted_data_retention_blocks=_optional_num(
+            _pick(raw, "posted_data_retention_blocks", "postedDataRetentionBlocks")
+        ),
+        min_submitter_bond=_optional_str(_pick(raw, "min_submitter_bond", "minSubmitterBond")),
+    )
+
+
+def map_inbox_view(raw: RawRecord) -> InboxView:
+    return InboxView(
+        rollup_id=_str(_pick(raw, "rollup_id", "rollupId")),
+        sequencing=_str(_pick(raw, "sequencing")),
+        head_sequence=_num(_pick(raw, "head_sequence", "headSequence")),
+        head_acc=_str(_pick(raw, "head_acc", "headAcc")),
+        consumed_sequence=_num(_pick(raw, "consumed_sequence", "consumedSequence")),
+        consumed_acc=_str(_pick(raw, "consumed_acc", "consumedAcc")),
+        range_end=_num(_pick(raw, "range_end", "rangeEnd")),
+        range_data_hash=_str(_pick(raw, "range_data_hash", "rangeDataHash")),
+    )
+
+
+def map_posted_data_view(raw: RawRecord) -> PostedDataView:
+    return PostedDataView(
+        rollup_id=_str(_pick(raw, "rollup_id", "rollupId")),
+        sequence=_num(_pick(raw, "sequence")),
+        data_hash=_str(_pick(raw, "data_hash", "dataHash")),
+        size=_num(_pick(raw, "size")),
+        poster=_str(_pick(raw, "poster")),
+        height=_num(_pick(raw, "height")),
+        inbox_acc=_str(_pick(raw, "inbox_acc", "inboxAcc")),
+        expires_at_height=_num(_pick(raw, "expires_at_height", "expiresAtHeight")),
+    )
+
+
+def map_submitter_bond_view(raw: RawRecord) -> SubmitterBondView:
+    return SubmitterBondView(
+        amount=_str(_pick(raw, "amount"), "0"),
+        last_submit_time=_num(_pick(raw, "last_submit_time", "lastSubmitTime")),
+        unbond_after=_num(_pick(raw, "unbond_after", "unbondAfter")),
+        pending=_num(_pick(raw, "pending")),
+    )
+
+
+def map_kem_key_view(raw: RawRecord) -> KemKeyView:
+    return KemKeyView(
+        address=_str(_pick(raw, "address")),
+        algorithm_id=_num(_pick(raw, "algorithm_id", "algorithmId")),
+        algorithm_name=_str(_pick(raw, "algorithm_name", "algorithmName")),
+        public_key=_hex_bytes(_pick(raw, "public_key", "publicKey")),
+        registered_height=_num(_pick(raw, "registered_height", "registeredHeight")),
     )
 
 
@@ -227,6 +383,12 @@ def map_rollup_view(raw: RawRecord) -> RollupView:
         has_verification_key=(
             True if _pick(raw, "has_verification_key", "hasVerificationKey") is True else None
         ),
+        sequencing=_str(_pick(raw, "sequencing")),
+        execution_vm=_str(_pick(raw, "execution_vm", "executionVm")),
+        privacy=_str(_pick(raw, "privacy")),
+        members=_str_list(_pick(raw, "members")),
+        members_epoch=_num(_pick(raw, "members_epoch", "membersEpoch")),
+        deposit_pool=_str(_pick(raw, "deposit_pool", "depositPool"), "0"),
     )
 
 
@@ -245,6 +407,11 @@ def map_batch_view(raw: RawRecord) -> BatchView:
         withdrawals_root=_str(_pick(raw, "withdrawals_root", "withdrawalsRoot")),
         submitted_time=_num(_pick(raw, "submitted_time", "submittedTime")),
         withdrawals_bound=_pick(raw, "withdrawals_bound", "withdrawalsBound") is True,
+        inbox_start=_num(_pick(raw, "inbox_start", "inboxStart")),
+        inbox_end=_num(_pick(raw, "inbox_end", "inboxEnd")),
+        withdrawals_root_reduced=(
+            _pick(raw, "withdrawals_root_reduced", "withdrawalsRootReduced") is True
+        ),
     )
 
 
@@ -255,6 +422,14 @@ __all__ = [
     "BatchView",
     "AnchorView",
     "PqcAccountView",
+    "InboxView",
+    "PostedDataView",
+    "SubmitterBondView",
+    "KemKeyView",
+    "map_inbox_view",
+    "map_posted_data_view",
+    "map_submitter_bond_view",
+    "map_kem_key_view",
     "map_params_view",
     "map_rollup_view",
     "map_batch_view",

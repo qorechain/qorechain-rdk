@@ -18,6 +18,14 @@ public final class Views {
         public int maxDaBlobSize;
         public int blobRetentionBlocks;
         public int maxBatchesPerBlock;
+        /** Chain v3.2.8+ (effective values; {@code null} from an older node). */
+        public Long finalizedBatchRetentionBlocks;
+        public Long maxPostedDataBytes;
+        public Long maxPostedDataBytesPerBlock;
+        public Long postedDataFeePerByte;
+        public Long postedDataRetentionBlocks;
+        /** Bond a qledger-v1 batch submitter must hold, in uqor (v3.2.8+), or {@code null}. */
+        public String minSubmitterBond;
     }
 
     /** A rollup's configuration and status. */
@@ -47,11 +55,23 @@ public final class Views {
         /** The rollup's proof system, e.g. {@code fraud} (chain v3.2.4+), or {@code null}. */
         public String proofSystem;
         /**
-         * Whether the rollup has a ZK verification key registered. True only when the node serves
-         * the field as true. No release before the planned chain v3.2.7 can register one, so false
-         * (field not served) means none: every zk batch is then refused.
+         * Whether the rollup has a ZK verification key registered (chain v3.2.7+, {@code
+         * MsgSetVerificationKey}). True only when the node serves the field as true; false (field
+         * not served) means none: every zk batch is then refused.
          */
         public boolean hasVerificationKey;
+        /** Chain v3.2.8+: {@code "based"} or {@code ""} (the rollup's sequencer settles). */
+        public String sequencing = "";
+        /** Chain v3.2.8+: {@code "qledger-v1"} or {@code ""}. */
+        public String executionVm = "";
+        /** Chain v3.2.8+: {@code "encapsulated"} or {@code ""}. */
+        public String privacy = "";
+        /** Chain v3.2.8+: a private rollup's members, in envelope order. */
+        public List<String> members = new ArrayList<>();
+        /** Chain v3.2.8+: the membership epoch an envelope must carry. */
+        public long membersEpoch;
+        /** Chain v3.2.8+: uqor deposited into a qledger-v1 rollup and not withdrawn. */
+        public String depositPool = "0";
     }
 
     /** A settlement batch. */
@@ -85,6 +105,76 @@ public final class Views {
          * Transition.versionForBatch} otherwise decides by height.
          */
         public boolean withdrawalsBound;
+        /**
+         * Chain v3.2.8+, based rollups: the inbox range the batch consumed (after {@code
+         * inboxStart}, up to {@code inboxEnd}).
+         */
+        public long inboxStart;
+        public long inboxEnd;
+        /**
+         * Chain v3.2.8+: the stored {@code withdrawalsRoot} is the submitted root reduced modulo the
+         * BLS12-381 scalar field (a Groth16 batch that binds its withdrawals, settled with {@code
+         * rdk-zk-canonical-inputs} on). Compare a tree root with it modulo r ({@code
+         * Zk.withdrawalsRootMatches}), not byte for byte.
+         */
+        public boolean withdrawalsRootReduced;
+    }
+
+    /** A rollup's inbox (chain v3.2.8+). Hex fields are as the node serves them. */
+    public static final class InboxView {
+        public String rollupId = "";
+        public String sequencing = "";
+        /** Sequence of the last post (0 = none yet). */
+        public long headSequence;
+        public String headAcc = "";
+        /** Where the next based batch starts. */
+        public long consumedSequence;
+        public String consumedAcc = "";
+        /** The range end {@code rangeDataHash} is for. */
+        public long rangeEnd;
+        /**
+         * The {@code data_hash} a based batch with {@code inbox_end = rangeEnd} must carry; empty
+         * when no longer retained.
+         */
+        public String rangeDataHash = "";
+    }
+
+    /** One posted-data commitment (chain v3.2.8+). */
+    public static final class PostedDataView {
+        public String rollupId = "";
+        public long sequence;
+        /** SHA-256 of the payload, hex. */
+        public String dataHash = "";
+        public long size;
+        public String poster = "";
+        /** The block whose transaction carries the payload. */
+        public long height;
+        public String inboxAcc = "";
+        public long expiresAtHeight;
+    }
+
+    /** A submitter's bond on a qledger-v1 rollup (chain v3.2.8+). */
+    public static final class SubmitterBondView {
+        /** uqor; {@code "0"} when there is none. */
+        public String amount = "0";
+        public long lastSubmitTime;
+        /** Block time (Unix seconds) from which an unbond succeeds. */
+        public long unbondAfter;
+        /**
+         * The submitter's batches on the rollup still waiting for finality (chain v3.2.8+; at most
+         * 1,024).
+         */
+        public long pending;
+    }
+
+    /** A key-encapsulation key an address published ({@code x/pqc}, chain v3.2.5+). */
+    public static final class KemKeyView {
+        public String address = "";
+        public int algorithmId;
+        public String algorithmName = "";
+        /** The FIPS 203 encapsulation key, lowercase hex. */
+        public String publicKey = "";
+        public long registeredHeight;
     }
 
     /**
@@ -233,7 +323,67 @@ public final class Views {
         p.maxDaBlobSize = asNum(pick(raw, "max_da_blob_size", "maxDaBlobSize"), 0);
         p.blobRetentionBlocks = asNum(pick(raw, "blob_retention_blocks", "blobRetentionBlocks"), 0);
         p.maxBatchesPerBlock = asNum(pick(raw, "max_batches_per_block", "maxBatchesPerBlock"), 0);
+        p.finalizedBatchRetentionBlocks =
+                optLong(raw, "finalized_batch_retention_blocks", "finalizedBatchRetentionBlocks");
+        p.maxPostedDataBytes = optLong(raw, "max_posted_data_bytes", "maxPostedDataBytes");
+        p.maxPostedDataBytesPerBlock =
+                optLong(raw, "max_posted_data_bytes_per_block", "maxPostedDataBytesPerBlock");
+        p.postedDataFeePerByte = optLong(raw, "posted_data_fee_per_byte", "postedDataFeePerByte");
+        p.postedDataRetentionBlocks =
+                optLong(raw, "posted_data_retention_blocks", "postedDataRetentionBlocks");
+        Object bond = present(pick(raw, "min_submitter_bond", "minSubmitterBond"));
+        p.minSubmitterBond = bond == null ? null : asStr(bond, "");
         return p;
+    }
+
+    private static Long optLong(Map<String, Object> raw, String snake, String camel) {
+        Object v = present(pick(raw, snake, camel));
+        return v == null ? null : asLong(v, 0);
+    }
+
+    public static InboxView mapInboxView(Map<String, Object> raw) {
+        InboxView v = new InboxView();
+        v.rollupId = asStr(pick(raw, "rollup_id", "rollupId"), "");
+        v.sequencing = asStr(pick(raw, "sequencing"), "");
+        v.headSequence = asLong(pick(raw, "head_sequence", "headSequence"), 0);
+        v.headAcc = asStr(pick(raw, "head_acc", "headAcc"), "");
+        v.consumedSequence = asLong(pick(raw, "consumed_sequence", "consumedSequence"), 0);
+        v.consumedAcc = asStr(pick(raw, "consumed_acc", "consumedAcc"), "");
+        v.rangeEnd = asLong(pick(raw, "range_end", "rangeEnd"), 0);
+        v.rangeDataHash = asStr(pick(raw, "range_data_hash", "rangeDataHash"), "");
+        return v;
+    }
+
+    public static PostedDataView mapPostedDataView(Map<String, Object> raw) {
+        PostedDataView v = new PostedDataView();
+        v.rollupId = asStr(pick(raw, "rollup_id", "rollupId"), "");
+        v.sequence = asLong(pick(raw, "sequence"), 0);
+        v.dataHash = asStr(pick(raw, "data_hash", "dataHash"), "");
+        v.size = asLong(pick(raw, "size"), 0);
+        v.poster = asStr(pick(raw, "poster"), "");
+        v.height = asLong(pick(raw, "height"), 0);
+        v.inboxAcc = asStr(pick(raw, "inbox_acc", "inboxAcc"), "");
+        v.expiresAtHeight = asLong(pick(raw, "expires_at_height", "expiresAtHeight"), 0);
+        return v;
+    }
+
+    public static SubmitterBondView mapSubmitterBondView(Map<String, Object> raw) {
+        SubmitterBondView v = new SubmitterBondView();
+        v.amount = asStr(pick(raw, "amount"), "0");
+        v.lastSubmitTime = asLong(pick(raw, "last_submit_time", "lastSubmitTime"), 0);
+        v.unbondAfter = asLong(pick(raw, "unbond_after", "unbondAfter"), 0);
+        v.pending = asLong(pick(raw, "pending"), 0);
+        return v;
+    }
+
+    public static KemKeyView mapKemKeyView(Map<String, Object> raw) {
+        KemKeyView v = new KemKeyView();
+        v.address = asStr(pick(raw, "address"), "");
+        v.algorithmId = asNum(pick(raw, "algorithm_id", "algorithmId"), 0);
+        v.algorithmName = asStr(pick(raw, "algorithm_name", "algorithmName"), "");
+        v.publicKey = hexBytes(pick(raw, "public_key", "publicKey"));
+        v.registeredHeight = asLong(pick(raw, "registered_height", "registeredHeight"), 0);
+        return v;
     }
 
     public static RollupView mapRollupView(Map<String, Object> raw) {
@@ -259,6 +409,18 @@ public final class Views {
         r.proofSystem = proof == null ? null : asStr(proof, "");
         r.hasVerificationKey =
                 Boolean.TRUE.equals(pick(raw, "has_verification_key", "hasVerificationKey"));
+        r.sequencing = asStr(pick(raw, "sequencing"), "");
+        r.executionVm = asStr(pick(raw, "execution_vm", "executionVm"), "");
+        r.privacy = asStr(pick(raw, "privacy"), "");
+        Object members = pick(raw, "members");
+        r.members = new ArrayList<>();
+        if (members instanceof List) {
+            for (Object m : (List<?>) members) {
+                r.members.add(asStr(m, ""));
+            }
+        }
+        r.membersEpoch = asLong(pick(raw, "members_epoch", "membersEpoch"), 0);
+        r.depositPool = asStr(pick(raw, "deposit_pool", "depositPool"), "0");
         return r;
     }
 
@@ -308,6 +470,10 @@ public final class Views {
         b.withdrawalsRoot = asStr(pick(raw, "withdrawals_root", "withdrawalsRoot"), "");
         b.submittedTime = asLong(pick(raw, "submitted_time", "submittedTime"), 0);
         b.withdrawalsBound = Boolean.TRUE.equals(pick(raw, "withdrawals_bound", "withdrawalsBound"));
+        b.inboxStart = asLong(pick(raw, "inbox_start", "inboxStart"), 0);
+        b.inboxEnd = asLong(pick(raw, "inbox_end", "inboxEnd"), 0);
+        b.withdrawalsRootReduced =
+                Boolean.TRUE.equals(pick(raw, "withdrawals_root_reduced", "withdrawalsRootReduced"));
         return b;
     }
 }

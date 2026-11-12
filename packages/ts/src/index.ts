@@ -11,7 +11,7 @@
  */
 
 /** RDK package version. */
-export const VERSION = "0.8.0";
+export const VERSION = "0.9.0";
 
 // Network and module constants (documented defaults; read live values from the chain).
 export * from "./constants";
@@ -66,6 +66,12 @@ export * from "./transition";
 // Readable names for the rdk module's refusals.
 export * from "./errors";
 
+// Chain v3.2.8: canonical ZK public inputs, the rollup inbox, private-rollup envelopes.
+export * from "./zk";
+export * from "./inbox";
+export * from "./privpost";
+export * from "./qledger";
+
 // Lifecycle: rollup/batch state-machine awareness and challenge-window math.
 export * from "./lifecycle/state-machine";
 
@@ -78,7 +84,7 @@ export * from "./events/decode";
 // Read clients: REST, the qor_ JSON-RPC namespace, typed views, and the facade.
 export * from "./client/http";
 export * from "./client/views";
-export { RestClient, type RestClientOptions } from "./client/rest";
+export { RestClient, RestError, isRestNotFound, type RestClientOptions } from "./client/rest";
 export { QorClient, type QorClientOptions } from "./client/jsonrpc";
 export {
   RdkClient,

@@ -32,6 +32,16 @@ type ParamsView struct {
 	MaxDaBlobSize          int
 	BlobRetentionBlocks    int
 	MaxBatchesPerBlock     int
+
+	// Chain v3.2.8+ (effective values; nil from an older node).
+	FinalizedBatchRetentionBlocks *uint64
+	MaxPostedDataBytes            *uint64
+	MaxPostedDataBytesPerBlock    *uint64
+	PostedDataFeePerByte          *uint64
+	PostedDataRetentionBlocks     *uint64
+	// MinSubmitterBond is the bond a qledger-v1 batch submitter must hold, in
+	// uqor (chain v3.2.8+); "" from an older node.
+	MinSubmitterBond string
 }
 
 // RollupView holds a rollup's configuration and status.
@@ -60,10 +70,25 @@ type RollupView struct {
 	// ProofSystem is the rollup's proof system, e.g. "fraud" (chain v3.2.4+).
 	ProofSystem string
 	// HasVerificationKey reports whether the rollup has a ZK verification key
-	// registered. It is true only when the node serves the field as true. No
-	// release before the planned chain v3.2.7 can register one, so absent means
-	// none: every zk batch is then refused.
+	// registered (chain v3.2.7+, MsgSetVerificationKey). It is true only when
+	// the node serves the field as true; absent means none, and every zk batch
+	// is then refused.
 	HasVerificationKey bool
+	// Sequencing is "based" or "" (the rollup's sequencer settles), chain
+	// v3.2.8+.
+	Sequencing string
+	// ExecutionVm is "qledger-v1" or "", chain v3.2.8+.
+	ExecutionVm string
+	// Privacy is "encapsulated" or "", chain v3.2.8+.
+	Privacy string
+	// Members are a private rollup's members, in envelope order (chain v3.2.8+).
+	Members []string
+	// MembersEpoch is the membership epoch an envelope must carry (chain
+	// v3.2.8+).
+	MembersEpoch uint64
+	// DepositPool is the uqor deposited into a qledger-v1 rollup and not
+	// withdrawn (chain v3.2.8+); "0" when there is none.
+	DepositPool string
 }
 
 // BatchView holds a settlement batch.
@@ -91,6 +116,73 @@ type BatchView struct {
 	// serves the field as true; TransitionRootVersionForBatch otherwise decides
 	// by height.
 	WithdrawalsBound bool
+	// InboxStart and InboxEnd are the inbox range a based rollup's batch
+	// consumed: the posts after InboxStart, up to InboxEnd (chain v3.2.8+).
+	InboxStart uint64
+	InboxEnd   uint64
+	// WithdrawalsRootReduced reports that the stored WithdrawalsRoot is the
+	// submitted root reduced modulo the BLS12-381 scalar field (chain v3.2.8+:
+	// a Groth16 batch that binds its withdrawals, settled with
+	// rdk-zk-canonical-inputs on). Compare a tree root with it modulo r
+	// (WithdrawalsRootMatches), not byte for byte.
+	WithdrawalsRootReduced bool
+}
+
+// InboxView is a rollup's inbox (chain v3.2.8+). Hex fields are as the node
+// serves them.
+type InboxView struct {
+	RollupID   string
+	Sequencing string
+	// HeadSequence is the sequence of the last post (0 = none yet).
+	HeadSequence uint64
+	HeadAcc      string
+	// ConsumedSequence is where the next based batch starts.
+	ConsumedSequence uint64
+	ConsumedAcc      string
+	// RangeEnd is the range end RangeDataHash is for.
+	RangeEnd uint64
+	// RangeDataHash is the data_hash a based batch with InboxEnd = RangeEnd
+	// must carry; empty when no longer retained.
+	RangeDataHash string
+}
+
+// PostedDataView is one posted-data commitment (chain v3.2.8+).
+type PostedDataView struct {
+	RollupID string
+	Sequence uint64
+	// DataHash is SHA-256 of the payload.
+	DataHash string
+	Size     uint64
+	Poster   string
+	// Height is the block whose transaction carries the payload.
+	Height          uint64
+	InboxAcc        string
+	ExpiresAtHeight uint64
+}
+
+// SubmitterBondView is a submitter's bond on a qledger-v1 rollup (chain
+// v3.2.8+).
+type SubmitterBondView struct {
+	// Amount is in uqor; "0" when there is none.
+	Amount         string
+	LastSubmitTime int64
+	// UnbondAfter is the block time (Unix seconds) from which an unbond
+	// succeeds.
+	UnbondAfter int64
+	// Pending is the number of the submitter's batches on the rollup still
+	// waiting for finality (chain v3.2.8+; at most 1,024).
+	Pending uint64
+}
+
+// KemKeyView is a key-encapsulation key an address published (x/pqc, chain
+// v3.2.5+).
+type KemKeyView struct {
+	Address       string
+	AlgorithmID   int
+	AlgorithmName string
+	// PublicKey is the FIPS 203 encapsulation key, lowercase hex.
+	PublicKey        string
+	RegisteredHeight uint64
 }
 
 // AnchorView holds a subsidiary-layer state anchor committed to the Main Chain
@@ -192,6 +284,64 @@ func MapParamsView(raw map[string]any) ParamsView {
 		MaxDaBlobSize:          asNum(pick(raw, "max_da_blob_size", "maxDaBlobSize"), 0),
 		BlobRetentionBlocks:    asNum(pick(raw, "blob_retention_blocks", "blobRetentionBlocks"), 0),
 		MaxBatchesPerBlock:     asNum(pick(raw, "max_batches_per_block", "maxBatchesPerBlock"), 0),
+
+		FinalizedBatchRetentionBlocks: optionalU64(pick(raw, "finalized_batch_retention_blocks", "finalizedBatchRetentionBlocks")),
+		MaxPostedDataBytes:            optionalU64(pick(raw, "max_posted_data_bytes", "maxPostedDataBytes")),
+		MaxPostedDataBytesPerBlock:    optionalU64(pick(raw, "max_posted_data_bytes_per_block", "maxPostedDataBytesPerBlock")),
+		PostedDataFeePerByte:          optionalU64(pick(raw, "posted_data_fee_per_byte", "postedDataFeePerByte")),
+		PostedDataRetentionBlocks:     optionalU64(pick(raw, "posted_data_retention_blocks", "postedDataRetentionBlocks")),
+		MinSubmitterBond:              asStr(pick(raw, "min_submitter_bond", "minSubmitterBond"), ""),
+	}
+}
+
+// MapInboxView maps a raw inbox payload to an InboxView.
+func MapInboxView(raw map[string]any) InboxView {
+	return InboxView{
+		RollupID:         asStr(pick(raw, "rollup_id", "rollupId"), ""),
+		Sequencing:       asStr(pick(raw, "sequencing"), ""),
+		HeadSequence:     asU64(pick(raw, "head_sequence", "headSequence"), 0),
+		HeadAcc:          asStr(pick(raw, "head_acc", "headAcc"), ""),
+		ConsumedSequence: asU64(pick(raw, "consumed_sequence", "consumedSequence"), 0),
+		ConsumedAcc:      asStr(pick(raw, "consumed_acc", "consumedAcc"), ""),
+		RangeEnd:         asU64(pick(raw, "range_end", "rangeEnd"), 0),
+		RangeDataHash:    asStr(pick(raw, "range_data_hash", "rangeDataHash"), ""),
+	}
+}
+
+// MapPostedDataView maps a raw posted-data payload to a PostedDataView.
+func MapPostedDataView(raw map[string]any) PostedDataView {
+	return PostedDataView{
+		RollupID:        asStr(pick(raw, "rollup_id", "rollupId"), ""),
+		Sequence:        asU64(pick(raw, "sequence"), 0),
+		DataHash:        asStr(pick(raw, "data_hash", "dataHash"), ""),
+		Size:            asU64(pick(raw, "size"), 0),
+		Poster:          asStr(pick(raw, "poster"), ""),
+		Height:          asU64(pick(raw, "height"), 0),
+		InboxAcc:        asStr(pick(raw, "inbox_acc", "inboxAcc"), ""),
+		ExpiresAtHeight: asU64(pick(raw, "expires_at_height", "expiresAtHeight"), 0),
+	}
+}
+
+// MapSubmitterBondView maps a raw submitter-bond payload to a
+// SubmitterBondView.
+func MapSubmitterBondView(raw map[string]any) SubmitterBondView {
+	return SubmitterBondView{
+		Amount:         asStr(pick(raw, "amount"), "0"),
+		LastSubmitTime: asI64(pick(raw, "last_submit_time", "lastSubmitTime"), 0),
+		UnbondAfter:    asI64(pick(raw, "unbond_after", "unbondAfter"), 0),
+		Pending:        asU64(pick(raw, "pending"), 0),
+	}
+}
+
+// MapKemKeyView maps a raw KEM key payload to a KemKeyView, normalizing the
+// key to lowercase hex.
+func MapKemKeyView(raw map[string]any) KemKeyView {
+	return KemKeyView{
+		Address:          asStr(pick(raw, "address"), ""),
+		AlgorithmID:      asNum(pick(raw, "algorithm_id", "algorithmId"), 0),
+		AlgorithmName:    asStr(pick(raw, "algorithm_name", "algorithmName"), ""),
+		PublicKey:        hexWireBytes(asStr(pick(raw, "public_key", "publicKey"), "")),
+		RegisteredHeight: asU64(pick(raw, "registered_height", "registeredHeight"), 0),
 	}
 }
 
@@ -216,7 +366,27 @@ func MapRollupView(raw map[string]any) RollupView {
 		ChallengeBond:      asStr(pick(raw, "challenge_bond", "challengeBond"), ""),
 		ProofSystem:        asStr(pick(raw, "proof_system", "proofSystem"), ""),
 		HasVerificationKey: pick(raw, "has_verification_key", "hasVerificationKey") == true,
+
+		Sequencing:   asStr(pick(raw, "sequencing"), ""),
+		ExecutionVm:  asStr(pick(raw, "execution_vm", "executionVm"), ""),
+		Privacy:      asStr(pick(raw, "privacy"), ""),
+		Members:      asStringList(pick(raw, "members")),
+		MembersEpoch: asU64(pick(raw, "members_epoch", "membersEpoch"), 0),
+		DepositPool:  asStr(pick(raw, "deposit_pool", "depositPool"), "0"),
 	}
+}
+
+// asStringList reads a JSON array as strings; anything else is empty.
+func asStringList(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		return []string{}
+	}
+	out := make([]string, 0, len(arr))
+	for _, item := range arr {
+		out = append(out, asStr(item, ""))
+	}
+	return out
 }
 
 // optionalU64 is nil when the node did not send the field.
@@ -248,6 +418,11 @@ func MapBatchView(raw map[string]any) BatchView {
 		SubmittedTime:   int64(asU64(pick(raw, "submitted_time", "submittedTime"), 0)),
 
 		WithdrawalsBound: pick(raw, "withdrawals_bound", "withdrawalsBound") == true,
+
+		InboxStart: asU64(pick(raw, "inbox_start", "inboxStart"), 0),
+		InboxEnd:   asU64(pick(raw, "inbox_end", "inboxEnd"), 0),
+
+		WithdrawalsRootReduced: pick(raw, "withdrawals_root_reduced", "withdrawalsRootReduced") == true,
 	}
 }
 
@@ -533,6 +708,100 @@ func (c *RestClient) GetLatestBatch(ctx context.Context, rollupID string) (Batch
 	return MapBatchView(body), nil
 }
 
+// GetInbox reads a rollup's inbox (chain v3.2.8+): head, consumed position,
+// and the data_hash a based batch ending at inboxEnd must carry (0 = the head).
+func (c *RestClient) GetInbox(ctx context.Context, rollupID string, inboxEnd uint64) (InboxView, error) {
+	path := "/qorechain/rdk/v1/inbox/" + url.PathEscape(rollupID)
+	if inboxEnd > 0 {
+		path += "?inbox_end=" + strconv.FormatUint(inboxEnd, 10)
+	}
+	body, err := c.get(ctx, path)
+	if err != nil {
+		return InboxView{}, err
+	}
+	if r := pick(body, "inbox"); r != nil {
+		return MapInboxView(asRecord(r)), nil
+	}
+	return MapInboxView(body), nil
+}
+
+// GetPostedData reads one posted-data commitment (chain v3.2.8+). The payload
+// is in the transaction at its Height.
+func (c *RestClient) GetPostedData(ctx context.Context, rollupID string, sequence uint64) (PostedDataView, error) {
+	body, err := c.get(ctx, fmt.Sprintf("/qorechain/rdk/v1/posted_data/%s/%d", url.PathEscape(rollupID), sequence))
+	if err != nil {
+		return PostedDataView{}, err
+	}
+	if r := pick(body, "posted_data", "postedData"); r != nil {
+		return MapPostedDataView(asRecord(r)), nil
+	}
+	return MapPostedDataView(body), nil
+}
+
+// GetSubmitterBond reads a submitter's bond on a qledger-v1 rollup and when it
+// unlocks (chain v3.2.8+).
+func (c *RestClient) GetSubmitterBond(ctx context.Context, rollupID, submitter string) (SubmitterBondView, error) {
+	body, err := c.get(ctx, "/qorechain/rdk/v1/submitter_bond/"+url.PathEscape(rollupID)+"/"+url.PathEscape(submitter))
+	if err != nil {
+		return SubmitterBondView{}, err
+	}
+	return MapSubmitterBondView(body), nil
+}
+
+// GetKemKey reads the key-encapsulation key address published (chain
+// v3.2.5+). It returns nil when the address has none.
+func (c *RestClient) GetKemKey(ctx context.Context, address string) (*KemKeyView, error) {
+	body, err := c.get(ctx, "/qorechain/pqc/v1/kem/"+url.PathEscape(address))
+	if err != nil {
+		return nil, err
+	}
+	if body["found"] != true {
+		return nil, nil
+	}
+	view := MapKemKeyView(asRecord(body["key"]))
+	return &view, nil
+}
+
+// PrivateRollupRecipients are the recipients a post on a private rollup must
+// be sealed to, and the membership epoch to seal at.
+type PrivateRollupRecipients struct {
+	Epoch      uint64
+	Recipients []EnvelopeRecipient
+}
+
+// GetPrivateRollupRecipients reads a private rollup's members, in order, each
+// with its registered ML-KEM-1024 key, and the membership epoch: what
+// SealEnvelope needs. It errors when the rollup is not private, has no members,
+// or a member has no ML-KEM-1024 key (the chain would refuse any envelope).
+func (c *RestClient) GetPrivateRollupRecipients(ctx context.Context, rollupID string) (PrivateRollupRecipients, error) {
+	rollup, err := c.GetRollup(ctx, rollupID)
+	if err != nil {
+		return PrivateRollupRecipients{}, err
+	}
+	if rollup.Privacy != string(PrivacyEncapsulated) {
+		return PrivateRollupRecipients{}, fmt.Errorf("rollup %s is not private", rollupID)
+	}
+	if len(rollup.Members) == 0 {
+		return PrivateRollupRecipients{}, fmt.Errorf("rollup %s has no members yet", rollupID)
+	}
+	out := PrivateRollupRecipients{Epoch: rollup.MembersEpoch}
+	for _, member := range rollup.Members {
+		key, err := c.GetKemKey(ctx, member)
+		if err != nil {
+			return PrivateRollupRecipients{}, err
+		}
+		if key == nil || key.AlgorithmID != MlKem1024AlgorithmID {
+			return PrivateRollupRecipients{}, fmt.Errorf("member %s has no ML-KEM-1024 key registered", member)
+		}
+		ek, err := HexToBytes(key.PublicKey)
+		if err != nil {
+			return PrivateRollupRecipients{}, fmt.Errorf("member %s: %w", member, err)
+		}
+		out.Recipients = append(out.Recipients, EnvelopeRecipient{Member: member, EncapsulationKey: ek})
+	}
+	return out, nil
+}
+
 // GetBlob reads raw data-availability blob details.
 func (c *RestClient) GetBlob(ctx context.Context, rollupID string, blobIndex uint64) (map[string]any, error) {
 	return c.get(ctx, fmt.Sprintf("/qorechain/rdk/v1/blob/%s/%d", url.PathEscape(rollupID), blobIndex))
@@ -662,6 +931,58 @@ func (c *RestClient) GetAllBalances(ctx context.Context, address string) ([]Bala
 // GetTx reads a transaction by hash (the raw response).
 func (c *RestClient) GetTx(ctx context.Context, hash string) (map[string]any, error) {
 	return c.get(ctx, "/cosmos/tx/v1beta1/txs/"+url.PathEscape(hash))
+}
+
+// GetLatestHeight reads the node's latest block height
+// (/cosmos/base/node/v1beta1/status).
+func (c *RestClient) GetLatestHeight(ctx context.Context) (uint64, error) {
+	body, err := c.get(ctx, "/cosmos/base/node/v1beta1/status")
+	if err != nil {
+		return 0, err
+	}
+	h := asU64(pick(body, "height"), 0)
+	if h == 0 {
+		return 0, fmt.Errorf("the node did not report its height")
+	}
+	return h, nil
+}
+
+// SearchTxsOptions configures SearchTxs.
+type SearchTxsOptions struct {
+	// PageLimit is the page size (default 100).
+	PageLimit int
+	// MaxPages bounds the pages read (default 50).
+	MaxPages int
+}
+
+// SearchTxs reads every transaction matching an event query (for example
+// rdk_data_posted.rollup_id='my-rollup'), as raw tx_responses, oldest first.
+// Needs a node with transaction indexing on.
+func (c *RestClient) SearchTxs(ctx context.Context, query string, opts ...SearchTxsOptions) ([]map[string]any, error) {
+	limit, maxPages := 100, 50
+	if len(opts) > 0 {
+		if opts[0].PageLimit > 0 {
+			limit = opts[0].PageLimit
+		}
+		if opts[0].MaxPages > 0 {
+			maxPages = opts[0].MaxPages
+		}
+	}
+	out := []map[string]any{}
+	for page := 1; page <= maxPages; page++ {
+		body, err := c.get(ctx, fmt.Sprintf("/cosmos/tx/v1beta1/txs?query=%s&page=%d&limit=%d&order_by=ORDER_BY_ASC",
+			url.QueryEscape(query), page, limit))
+		if err != nil {
+			return nil, err
+		}
+		txs := asArray(pick(body, "tx_responses", "txResponses"))
+		out = append(out, txs...)
+		total := asU64(pick(body, "total"), 0)
+		if len(txs) < limit || (total > 0 && uint64(len(out)) >= total) {
+			break
+		}
+	}
+	return out, nil
 }
 
 // BroadcastTxBytes broadcasts TxRaw bytes via the REST txs endpoint in

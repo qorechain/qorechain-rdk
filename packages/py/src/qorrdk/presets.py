@@ -2,7 +2,9 @@
 
 These mirror the network's published profile table. The proof system for each
 profile is the one its settlement paradigm requires (optimistic -> fraud,
-zk -> snark, based -> none).
+zk -> snark, based -> none). The optimistic profiles (``nft``, ``custom``) carry
+``execution_vm="qledger-v1"`` and ``sequencing="based"``, which the chain
+requires of every new optimistic rollup from v3.2.8.
 """
 
 from __future__ import annotations
@@ -61,6 +63,9 @@ PRESET_DEFAULTS: dict[ProfileName, dict] = {
         "max_tx_per_block": 5000,
         "challenge_window_secs": _DEFAULT_CHALLENGE_WINDOW,
         "challenge_bond_uqor": DEFAULT_CHALLENGE_BOND_UQOR,
+        # From chain v3.2.8 a new optimistic rollup must run qledger-v1 and be based.
+        "execution_vm": "qledger-v1",
+        "sequencing": "based",
     },
     ProfileName.ENTERPRISE: {
         "profile": ProfileName.ENTERPRISE,
@@ -85,6 +90,9 @@ PRESET_DEFAULTS: dict[ProfileName, dict] = {
         "max_tx_per_block": 10000,
         "challenge_window_secs": _DEFAULT_CHALLENGE_WINDOW,
         "challenge_bond_uqor": DEFAULT_CHALLENGE_BOND_UQOR,
+        # From chain v3.2.8 a new optimistic rollup must run qledger-v1 and be based.
+        "execution_vm": "qledger-v1",
+        "sequencing": "based",
     },
 }
 

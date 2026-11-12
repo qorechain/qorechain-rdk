@@ -27,6 +27,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import time
 from dataclasses import dataclass
 from typing import Any, Optional, Protocol, runtime_checkable
 
@@ -44,7 +45,9 @@ from cosmpy.protos.cosmos.tx.v1beta1.tx_pb2 import (
     TxRaw,
 )
 
+from qorsdk.key_integrity import sign_proof_of_possession
 from qorsdk.pqc import PqcKeypair
+from qorsdk.pqc_dx import build_register_pqc_key
 from qorsdk.signbytes import (
     SignBytesResolver,
     default_sign_bytes_resolver,
@@ -52,10 +55,16 @@ from qorsdk.signbytes import (
 )
 from qorsdk.tx import BuiltTx, build_hybrid_tx
 
-from ..rules import rollup_id_error, withdrawal_errors, withdrawals_root_error
+from ..rules import data_hash_error, rollup_id_error, withdrawal_errors, withdrawals_root_error
 from ..accounts.wallet import Signer
 from ..client.http import Transport, default_transport
-from ..enums import RollupStatus
+from ..client.rest import RestClient
+from ..config.validate import rollup_mode_errors
+from ..constants import DEFAULT_MIN_SUBMITTER_BOND_UQOR, MIN_ROLLUP_DEPOSIT_UQOR, RDK_FEATURES
+from ..enums import MAX_ROLLUP_MEMBERS, PAUSED_PROOF_SYSTEMS, RollupStatus
+from ..utils.bytes import to_bytes
+from ..zk import is_data_hash_chain_bound, zk_public_input_errors
+from ..qledger.batch import is_http_not_found, qledger_batch_errors
 from ..lifecycle.state_machine import assert_rollup_action
 from . import messages as msgs
 from .messages import EncodedMsg
@@ -140,6 +149,40 @@ class SignAndBroadcastBackend(Protocol):
         ...
 
 
+#: The settlement and proof system the chain derives from each preset profile.
+_PROFILE_SETTLEMENT = {
+    "defi": ("zk", "snark"),
+    "gaming": ("based", "none"),
+    "nft": ("optimistic", "fraud"),
+    "enterprise": ("based", "none"),
+    "custom": ("optimistic", "fraud"),
+}
+
+#: The length of an ML-KEM-1024 encapsulation key.
+_ML_KEM_1024_KEY_SIZE = 1568
+
+#: Messages an account without a registered post-quantum key may send on their
+#: own (the chain's registration-only rule, ``pqc-keyless-extension-closed``).
+_PQC_REGISTRATION_TYPES = frozenset(
+    {
+        "/qorechain.pqc.v1.MsgRegisterPQCKey",
+        "/qorechain.pqc.v1.MsgRegisterPQCKeyV2",
+        "/qorechain.pqc.v1.MsgMigratePQCKey",
+    }
+)
+#: The ML-DSA-87 algorithm id in the chain's PQC registry.
+_ML_DSA_87_ALGORITHM_ID = 1
+#: The pqc codespace's "key already registered" refusal.
+_PQC_ALREADY_REGISTERED_CODE = 7
+#: The fixed fee of the key registration sent ahead of a keyless account's
+#: first transaction.
+_PQC_REGISTRATION_GAS = 600000
+_PQC_REGISTRATION_FEE_UQOR = "90000"
+#: How long to wait for the registration to be included in a block.
+_PQC_REGISTRATION_TIMEOUT_S = 60.0
+_PQC_REGISTRATION_POLL_S = 1.0
+
+
 class RdkTxClient:
     """Builds, signs, and broadcasts ``rdk`` transactions over REST.
 
@@ -155,8 +198,12 @@ class RdkTxClient:
       It must already be registered on chain unless ``include_pqc_public_key``
       is set. :func:`~qorrdk.accounts.resolve_pqc_keypair` and
       :func:`~qorrdk.accounts.pqc_keypair_from_env` find the right one.
-    - ``include_pqc_public_key``: embed the public key in the extension so the
-      chain registers it on first use. Defaults to ``False``.
+    - ``include_pqc_public_key``: the key is not registered yet. Since chain
+      v3.2.3 a key carried in the signature extension is no longer registered
+      on first use, and an account without a key may send only a key
+      registration. So before the first transaction the client sends a
+      ``MsgRegisterPQCKeyV2`` (with a proof of possession) on its own, waits
+      for it to be included, then clears this flag. Defaults to ``False``.
     - ``sign_bytes_version``: ``"auto"`` (the default) asks the network over
       ``rest_url`` which hybrid sign-bytes form it verifies; ``"v1"`` / ``"v2"``
       force a form.
@@ -437,12 +484,91 @@ class RdkTxClient:
         """Sign and broadcast ``encoded`` messages in ``BROADCAST_MODE_SYNC``."""
         if self._backend is not None:
             return self._backend.sign_and_broadcast(encoded, opts)
-        account_number, sequence = self.fetch_account(self.address)
         if self._pqc_keypair is None:
+            account_number, sequence = self.fetch_account(self.address)
             tx_bytes = self.sign_tx(
                 encoded, account_number=account_number, sequence=sequence, opts=opts
             )
             return self._post_tx(tx_bytes)
+        # Since chain v3.2.3 (``pqc-keyless-extension-closed``) a key carried in
+        # the signature extension is no longer registered on first use: an
+        # account without a registered key may send only a registration.
+        # Register it in a transaction of its own first, then send ``encoded``.
+        if self._include_pqc_public_key and not all(
+            m.type_url in _PQC_REGISTRATION_TYPES for m in encoded
+        ):
+            self._register_pqc_key()
+        return self._broadcast_hybrid(encoded, opts)
+
+    def _register_pqc_key(self) -> BroadcastResult:
+        """Register this client's ML-DSA-87 key with ``MsgRegisterPQCKeyV2``.
+
+        The registration carries the key's proof of possession and a fixed fee.
+        A refusal as "already registered" (pqc code 7) is accepted. On success
+        the client waits for the transaction to be included in a block, so the
+        next transaction sees the key. Afterwards the key is no longer embedded
+        in the signature extension.
+        """
+        keypair = self._pqc_keypair
+        assert keypair is not None
+        proof = sign_proof_of_possession(
+            chain_id=self._chain_id,
+            account=self.address,
+            keypair=keypair,
+            algorithm_id=_ML_DSA_87_ALGORITHM_ID,
+        )
+        reg = build_register_pqc_key(
+            sender=self.address,
+            dilithium_pubkey=keypair.public_key,
+            ecdsa_pubkey=b"",
+            key_type="hybrid",
+            proof_of_possession=proof,
+        )
+        encoded = [EncodedMsg(type_url=reg.type_url, value=reg.value.SerializeToString())]
+        fee = TxOptions(
+            gas_limit=_PQC_REGISTRATION_GAS,
+            fee_amount=_PQC_REGISTRATION_FEE_UQOR,
+            fee_denom=_FEE_DENOM,
+        )
+        result = self._broadcast_hybrid(encoded, fee)
+        if not _is_ok_or_already_registered(result.code, result.raw):
+            raise RuntimeError(
+                f"registering this account's post-quantum key failed "
+                f"(code {result.code}): {result.raw_log}"
+            )
+        if result.code == 0:
+            self._wait_for_inclusion(result.tx_hash)
+        self._include_pqc_public_key = False
+        return result
+
+    def _wait_for_inclusion(self, tx_hash: str) -> None:
+        """Wait until ``tx_hash`` is in a block and check it was not refused."""
+        deadline = time.monotonic() + _PQC_REGISTRATION_TIMEOUT_S
+        path = f"{self._rest}/cosmos/tx/v1beta1/txs/{tx_hash}"
+        while True:
+            resp = self._transport("GET", path, {"accept": "application/json"}, None)
+            if resp.ok:
+                body = resp.json() or {}
+                tx = body.get("tx_response", body)
+                code = int(tx.get("code", 0))
+                if not _is_ok_or_already_registered(code, tx):
+                    raise RuntimeError(
+                        f"registering this account's post-quantum key failed in block "
+                        f"(code {code}): {tx.get('raw_log', '')}"
+                    )
+                return
+            if time.monotonic() >= deadline:
+                raise RuntimeError(
+                    f"the post-quantum key registration {tx_hash} was not included within "
+                    f"{_PQC_REGISTRATION_TIMEOUT_S:.0f}s"
+                )
+            time.sleep(_PQC_REGISTRATION_POLL_S)
+
+    def _broadcast_hybrid(
+        self, encoded: list[EncodedMsg], opts: Optional[TxOptions]
+    ) -> BroadcastResult:
+        """Sign hybrid with the account's current state and broadcast."""
+        account_number, sequence = self.fetch_account(self.address)
 
         # Hybrid: sign with the resolved form. With "auto", a refusal of the
         # post-quantum signature means the cached answer went stale (the network
@@ -507,27 +633,60 @@ class RdkTxClient:
         profile: str,
         vm_type: str,
         stake_amount,
+        verification_key=None,
+        sequencing: str = "",
+        execution_vm: str = "",
+        privacy: str = "",
         opts: Optional[TxOptions] = None,
     ) -> BroadcastResult:
         """Create a rollup. The client's address is the creator.
 
         Raises before broadcasting if ``rollup_id`` breaks the chain's id
         grammar (enforced at creation from v3.2.2), since the chain would refuse
-        it only after the creation fee had been paid.
+        it only after the creation fee had been paid. From chain v3.2.8 the
+        ``sequencing`` / ``execution_vm`` / ``privacy`` combination is checked
+        against the profile's settlement the same way (a new optimistic rollup,
+        ``nft`` or ``custom``, needs ``execution_vm="qledger-v1"`` and
+        ``sequencing="based"``). ``verification_key`` (chain v3.2.7+)
+        registers a zk rollup's key at creation.
         """
         id_error = rollup_id_error(rollup_id)
         if id_error:
             raise ValueError(f'rollup_id "{rollup_id}" {id_error}')
+        profile_value = str(getattr(profile, "value", profile))
+        preset = _PROFILE_SETTLEMENT.get(profile_value)
+        if preset is not None:
+            errors = rollup_mode_errors(
+                settlement=preset[0],
+                proof_system=preset[1],
+                sequencing=sequencing,
+                execution_vm=execution_vm,
+                privacy=privacy,
+            )
+            if errors:
+                raise ValueError(
+                    f'rollup "{rollup_id}" would be refused: ' + "; ".join(errors)
+                )
         msg = msgs.create_rollup_msg(
             msgs.CreateRollupInput(
                 creator=self.address,
                 rollup_id=rollup_id,
-                profile=str(getattr(profile, "value", profile)),
+                profile=profile_value,
                 vm_type=str(getattr(vm_type, "value", vm_type)),
                 stake_amount=stake_amount,
+                verification_key=verification_key,
+                sequencing=str(getattr(sequencing, "value", sequencing) or ""),
+                execution_vm=str(getattr(execution_vm, "value", execution_vm) or ""),
+                privacy=str(getattr(privacy, "value", privacy) or ""),
             )
         )
         return self.broadcast_messages([msg], opts)
+
+    def _rest_client(self) -> Optional[RestClient]:
+        """A read client over this client's REST URL, when it has one."""
+        if self._backend is not None or not self._rest:
+            return None
+        return RestClient(self._rest, self._transport)
 
     def submit_batch(
         self, inp: "msgs.SubmitBatchInput | dict", opts: Optional[TxOptions] = None
@@ -536,13 +695,98 @@ class RdkTxClient:
 
         Raises before broadcasting if ``withdrawals_root`` is neither empty nor
         32 bytes, which the chain refuses from v3.2.5 only after the fee has
-        been paid.
+        been paid. When the client reads the network (it has a REST URL), it
+        also checks what the chain would refuse after the fee: a based rollup's
+        ``inbox_end``, a native-DA ``data_hash``, and (chain v3.2.8) canonical
+        ZK public inputs and the paused STARK settlement. On a qledger-v1
+        rollup it also checks the batch admission rules (bond, pending
+        batches, range size, retained end, fresh-post and checkpoint stops).
         """
         data = _coerce(inp, msgs.SubmitBatchInput, sequencer=self.address)
         root_error = withdrawals_root_error(data.withdrawals_root)
         if root_error:
             raise ValueError(f"cannot submit batch {data.batch_index}: {root_error}")
+        rest = self._rest_client()
+        if rest is not None:
+            self._check_batch_against_rollup(rest, data, self.address)
         return self.broadcast_messages([msgs.submit_batch_msg(data)], opts)
+
+    @staticmethod
+    def _check_batch_against_rollup(
+        rest: RestClient, data: "msgs.SubmitBatchInput", submitter: str
+    ) -> None:
+        def fail(why: str) -> ValueError:
+            return ValueError(f"cannot submit batch {data.batch_index}: {why}")
+
+        rollup = rest.get_rollup(data.rollup_id)
+        based = rollup.sequencing == "based"
+        inbox_end = 0 if data.inbox_end is None else int(data.inbox_end)
+        has_data_hash = bool(data.data_hash) and len(to_bytes(data.data_hash)) > 0
+        if based and inbox_end == 0:
+            raise fail(
+                "the rollup is based: set inbox_end and carry the inbox range commitment "
+                "as data_hash"
+            )
+        if not based and inbox_end != 0:
+            raise fail("inbox_end must be 0 on a rollup that is not based")
+        if not based and has_data_hash:
+            posted = rest.is_protocol_feature_enabled(RDK_FEATURES["post_rollup_data"])
+            err = data_hash_error(
+                rollup.da_backend, data.data_hash, posted_data_enabled=posted
+            )
+            if err:
+                raise fail(err)
+        if rollup.execution_vm == "qledger-v1":
+            # Chain v3.2.8 admission rules for qledger-v1 batches.
+            params = rest.get_params()
+            bond = rest.get_submitter_bond(data.rollup_id, submitter)
+            inbox = rest.get_inbox(data.rollup_id)
+            head = inbox.head_sequence
+
+            def retained(x: int) -> bool:
+                return x == head or rest.get_inbox(data.rollup_id, x).range_data_hash != ""
+
+            next_retained: Optional[bool] = None
+            next_height: Optional[int] = None
+            if inbox_end < head:
+                try:
+                    next_height = rest.get_posted_data(data.rollup_id, inbox_end + 1).height
+                    next_retained = True
+                except RuntimeError as err:
+                    if not is_http_not_found(err):
+                        raise
+                    next_retained = False
+            errors = qledger_batch_errors(
+                consumed=inbox.consumed_sequence,
+                head=head,
+                end=inbox_end,
+                bond=bond.amount,
+                min_bond=params.min_submitter_bond or DEFAULT_MIN_SUBMITTER_BOND_UQOR,
+                pending=bond.pending,
+                end_retained=inbox_end <= head and retained(inbox_end),
+                next_retained=next_retained,
+                next_height=next_height,
+                inclusion_height=rest.get_latest_height() + 2,
+            )
+            if errors:
+                raise fail("; ".join(errors))
+        if rollup.settlement_mode == "zk":
+            if (rollup.proof_system or "") in PAUSED_PROOF_SYSTEMS:
+                if rest.is_protocol_feature_enabled(RDK_FEATURES["stark_statement"]):
+                    raise fail(
+                        "STARK settlement is paused on the network; governance can move the "
+                        "rollup to a Groth16 key"
+                    )
+            elif rest.is_protocol_feature_enabled(RDK_FEATURES["zk_canonical_inputs"]):
+                errors = zk_public_input_errors(
+                    state_root=data.state_root,
+                    prev_state_root=data.prev_state_root,
+                    data_hash=data.data_hash,
+                    withdrawals_root=data.withdrawals_root,
+                    data_hash_bound=is_data_hash_chain_bound(rollup, data.data_hash),
+                )
+                if errors:
+                    raise fail("; ".join(errors))
 
     def challenge_batch(
         self, inp: "msgs.ChallengeBatchInput | dict", opts: Optional[TxOptions] = None
@@ -604,6 +848,111 @@ class RdkTxClient:
         )
         return self.broadcast_messages([msg], opts)
 
+    def set_verification_key(
+        self,
+        *,
+        rollup_id: str,
+        verification_key,
+        proof_system: str = "",
+        opts: Optional[TxOptions] = None,
+    ) -> BroadcastResult:
+        """Register or replace the rollup's ZK verification key (chain v3.2.7+).
+        The client's address must be the creator, and only before the first
+        batch. ``proof_system="stark"`` is refused from v3.2.8."""
+        ps = str(getattr(proof_system, "value", proof_system) or "")
+        if ps in PAUSED_PROOF_SYSTEMS:
+            raise ValueError(
+                "STARK keys are refused by the chain from v3.2.8; register a snark (Groth16) key"
+            )
+        msg = msgs.set_verification_key_msg(
+            msgs.SetVerificationKeyInput(
+                creator=self.address,
+                rollup_id=rollup_id,
+                verification_key=verification_key,
+                proof_system=ps,
+            )
+        )
+        return self.broadcast_messages([msg], opts)
+
+    def post_rollup_data(
+        self, *, rollup_id: str, data, opts: Optional[TxOptions] = None
+    ) -> BroadcastResult:
+        """Post rollup data on chain (chain v3.2.8+). ``data`` is bytes or a
+        hex string. The ``MsgPostRollupDataResponse`` carries the inbox sequence
+        and SHA-256; on a private rollup ``data`` must be an envelope
+        (:func:`~qorrdk.privpost.seal_envelope`). The poster pays
+        ``posted_data_fee_per_byte`` per billable byte (at least 1 KiB) on top
+        of gas."""
+        if len(to_bytes(data)) == 0:
+            raise ValueError("data cannot be empty")
+        msg = msgs.post_rollup_data_msg(poster=self.address, rollup_id=rollup_id, data=data)
+        return self.broadcast_messages([msg], opts)
+
+    def deposit_to_rollup(
+        self, *, rollup_id: str, account, amount, opts: Optional[TxOptions] = None
+    ) -> BroadcastResult:
+        """Deposit uqor into a qledger-v1 rollup, crediting the 32-byte L2
+        ``account`` through the rollup's inbox (chain v3.2.8+). At least 1 QOR."""
+        acct = to_bytes(account)
+        if len(acct) != 32 or not any(acct):
+            raise ValueError("account must be a non-zero 32-byte qledger-v1 account id")
+        if int(amount) < MIN_ROLLUP_DEPOSIT_UQOR:
+            raise ValueError(f"a deposit is at least {MIN_ROLLUP_DEPOSIT_UQOR} uqor (1 QOR)")
+        msg = msgs.deposit_to_rollup_msg(
+            depositor=self.address, rollup_id=rollup_id, account=acct, amount=amount
+        )
+        return self.broadcast_messages([msg], opts)
+
+    def bond_rollup_submitter(
+        self, *, rollup_id: str, amount, opts: Optional[TxOptions] = None
+    ) -> BroadcastResult:
+        """Add to this client's submitter bond on a qledger-v1 rollup (chain v3.2.8+)."""
+        if int(amount) <= 0:
+            raise ValueError("amount must be positive")
+        msg = msgs.bond_rollup_submitter_msg(
+            submitter=self.address, rollup_id=rollup_id, amount=amount
+        )
+        return self.broadcast_messages([msg], opts)
+
+    def unbond_rollup_submitter(
+        self, *, rollup_id: str, opts: Optional[TxOptions] = None
+    ) -> BroadcastResult:
+        """Withdraw this client's whole submitter bond, a full challenge window
+        after its last batch (chain v3.2.8+)."""
+        msg = msgs.unbond_rollup_submitter_msg(submitter=self.address, rollup_id=rollup_id)
+        return self.broadcast_messages([msg], opts)
+
+    def set_rollup_members(
+        self, *, rollup_id: str, members, opts: Optional[TxOptions] = None
+    ) -> BroadcastResult:
+        """Set a private rollup's member list (chain v3.2.8+). The client's
+        address must be the creator; each member needs a registered
+        ML-KEM-1024 key. Starts a new membership epoch."""
+        members = list(members)
+        if len(members) == 0 or len(members) > MAX_ROLLUP_MEMBERS:
+            raise ValueError(f"a private rollup has 1 to {MAX_ROLLUP_MEMBERS} members")
+        if len(set(members)) != len(members):
+            raise ValueError("a member is listed twice")
+        msg = msgs.set_rollup_members_msg(
+            creator=self.address, rollup_id=rollup_id, members=members
+        )
+        return self.broadcast_messages([msg], opts)
+
+    def register_kem_key(
+        self, *, public_key, opts: Optional[TxOptions] = None
+    ) -> BroadcastResult:
+        """Publish this client's ML-KEM-1024 encapsulation key in the chain's
+        KEM registry (chain v3.2.5+), so a private rollup can list it as a
+        member. Derive the key pair with
+        :func:`~qorrdk.privpost.kem_keypair_from_seed` and keep the seed secret."""
+        pk = to_bytes(public_key)
+        if len(pk) != _ML_KEM_1024_KEY_SIZE:
+            raise ValueError(
+                f"an ML-KEM-1024 key is {_ML_KEM_1024_KEY_SIZE} bytes, got {len(pk)}"
+            )
+        msg = msgs.register_kem_key_msg(sender=self.address, public_key=pk)
+        return self.broadcast_messages([msg], opts)
+
     def execute_withdrawal(
         self, inp: "msgs.ExecuteWithdrawalInput | dict", opts: Optional[TxOptions] = None
     ) -> BroadcastResult:
@@ -625,6 +974,14 @@ class RdkTxClient:
         if errors:
             raise ValueError("withdrawal would be refused by the chain: " + "; ".join(errors))
         return self.broadcast_messages([msgs.execute_withdrawal_msg(data)], opts)
+
+
+def _is_ok_or_already_registered(code: int, raw: Any) -> bool:
+    """Code 0, or the pqc codespace's "already registered" (7)."""
+    if code == 0:
+        return True
+    codespace = raw.get("codespace", "") if isinstance(raw, dict) else ""
+    return code == _PQC_ALREADY_REGISTERED_CODE and codespace in ("", "pqc")
 
 
 def _coerce(inp, cls, **injected):

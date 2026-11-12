@@ -1,6 +1,10 @@
 import { rollupIdError } from "../rules";
 import {
   DA_BACKENDS,
+  EXECUTION_VMS,
+  PAUSED_PROOF_SYSTEMS,
+  ROLLUP_PRIVACY_MODES,
+  SEQUENCING_MODES,
   GAS_MODELS,
   PROOF_SYSTEMS,
   SEQUENCER_MODES,
@@ -77,6 +81,18 @@ export function validateRollupConfig(config: RollupConfig): ValidationResult {
     );
   }
 
+  // STARK settlement is refused by the chain from v3.2.8.
+  if (PAUSED_PROOF_SYSTEMS.includes(config.proofSystem)) {
+    errors.push(
+      `proof system "${config.proofSystem}" is paused on the network: the chain refuses STARK keys and ` +
+        "STARK batches until it verifies a real rollup statement; use snark (Groth16)",
+    );
+  }
+
+  // Sequencing, execution VM and privacy (chain v3.2.8+), mirroring the
+  // chain's RollupConfig.Validate and its create-time rule.
+  errors.push(...rollupModeErrors(config));
+
   // Based settlement requires the based sequencer mode.
   if (requiresBasedSequencer(config.settlement) && config.sequencer !== "based") {
     errors.push('based settlement requires the "based" sequencer mode');
@@ -122,4 +138,69 @@ export function assertValidRollupConfig(config: RollupConfig): void {
   if (!result.valid) {
     throw new RollupConfigError(result.errors);
   }
+}
+
+/**
+ * The chain's v3.2.8 rules for `sequencing`, `executionVm` and `privacy` on a
+ * new rollup. Returns every violation (empty when the combination is accepted).
+ *
+ * - A new optimistic rollup needs `executionVm: "qledger-v1"` and
+ *   `sequencing: "based"`.
+ * - `sequencing: "based"` is allowed for zk with snark, based settlement, and
+ *   optimistic with qledger-v1.
+ * - `executionVm: "qledger-v1"` needs optimistic settlement, based sequencing,
+ *   and no privacy.
+ * - `privacy: "encapsulated"` needs zk settlement with snark.
+ */
+export function rollupModeErrors(config: {
+  settlement: string;
+  proofSystem: string;
+  sequencing?: string;
+  executionVm?: string;
+  privacy?: string;
+}): string[] {
+  const errors: string[] = [];
+  const sequencing = config.sequencing ?? "";
+  const executionVm = config.executionVm ?? "";
+  const privacy = config.privacy ?? "";
+  if (!(SEQUENCING_MODES as readonly string[]).includes(sequencing)) {
+    errors.push(`sequencing "${sequencing}" is not valid (want "based" or empty)`);
+  }
+  if (!(EXECUTION_VMS as readonly string[]).includes(executionVm)) {
+    errors.push(`executionVm "${executionVm}" is not valid (want "qledger-v1" or empty)`);
+  }
+  if (!(ROLLUP_PRIVACY_MODES as readonly string[]).includes(privacy)) {
+    errors.push(`privacy "${privacy}" is not valid (want "encapsulated" or empty)`);
+  }
+  if (config.settlement === "optimistic" && executionVm === "") {
+    errors.push(
+      'from chain v3.2.8 a new optimistic rollup needs executionVm "qledger-v1" and sequencing "based" ' +
+        "(its fraud proof re-executes the batch)",
+    );
+  }
+  if (sequencing === "based") {
+    const eligible =
+      (config.settlement === "zk" && config.proofSystem === "snark") ||
+      config.settlement === "based" ||
+      (config.settlement === "optimistic" && executionVm === "qledger-v1");
+    if (!eligible) {
+      errors.push(
+        `settlement ${config.settlement} with proof system ${config.proofSystem} cannot use based sequencing ` +
+          "(zk with snark, based settlement, or optimistic with qledger-v1 only)",
+      );
+    }
+  }
+  if (executionVm === "qledger-v1") {
+    if (config.settlement !== "optimistic") {
+      errors.push(`executionVm qledger-v1 needs optimistic settlement, not ${config.settlement}`);
+    }
+    if (sequencing !== "based") {
+      errors.push('executionVm qledger-v1 needs sequencing "based": its batches consume the inbox');
+    }
+    if (privacy !== "") errors.push("a qledger-v1 rollup cannot be private: a fraud proof re-executes plaintext");
+  }
+  if (privacy === "encapsulated" && !(config.settlement === "zk" && config.proofSystem === "snark")) {
+    errors.push(`a private rollup must be zk with a snark (Groth16) key, not ${config.settlement}/${config.proofSystem}`);
+  }
+  return errors;
 }

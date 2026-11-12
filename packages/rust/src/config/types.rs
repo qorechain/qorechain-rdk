@@ -1,8 +1,28 @@
 //! The resolved rollup configuration struct and the create-message input.
 
-use serde::{Deserialize, Serialize};
+use std::fmt::Display;
+use std::str::FromStr;
 
-use super::enums::{DaBackend, GasModel, Profile, ProofSystem, Sequencer, Settlement, VmType};
+use serde::{Deserialize, Deserializer, Serialize};
+
+use super::enums::{
+    DaBackend, ExecutionVm, GasModel, Profile, ProofSystem, RollupPrivacy, Sequencer,
+    SequencingMode, Settlement, VmType,
+};
+
+/// Read an optional wire enum, treating `""` (the chain's "unset") as `None`.
+fn empty_as_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr,
+    T::Err: Display,
+{
+    let raw: Option<String> = Option::deserialize(deserializer)?;
+    match raw.as_deref() {
+        None | Some("") => Ok(None),
+        Some(v) => v.parse().map(Some).map_err(serde::de::Error::custom),
+    }
+}
 
 /// Mode-specific sequencer parameters. Which fields apply depends on the
 /// sequencer mode: `dedicated` uses `sequencer_address`, `shared` uses
@@ -103,6 +123,30 @@ pub struct RollupConfig {
     /// Stake committed at creation, in uqor. Required to build a create message.
     #[serde(rename = "stakeAmountUqor", skip_serializing_if = "Option::is_none")]
     pub stake_amount_uqor: Option<String>,
+    /// Chain v3.2.8+: based sequencing (sent on the wire). Not the same as
+    /// `sequencer`, which is descriptive and has no effect on chain.
+    #[serde(
+        default,
+        deserialize_with = "empty_as_none",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub sequencing: Option<SequencingMode>,
+    /// Chain v3.2.8+: `qledger-v1`, required for every new optimistic rollup.
+    #[serde(
+        rename = "executionVm",
+        default,
+        deserialize_with = "empty_as_none",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub execution_vm: Option<ExecutionVm>,
+    /// Chain v3.2.8+: `encapsulated` for a private rollup (zk with a Groth16
+    /// key).
+    #[serde(
+        default,
+        deserialize_with = "empty_as_none",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub privacy: Option<RollupPrivacy>,
 }
 
 /// Inputs for an on-chain `MsgCreateRollup`, as the kit submits them.
@@ -118,4 +162,10 @@ pub struct CreateRollupMsgInput {
     pub vm_type: VmType,
     /// Stake committed at creation, in uqor.
     pub stake_amount: String,
+    /// Chain v3.2.8+: based sequencing.
+    pub sequencing: Option<SequencingMode>,
+    /// Chain v3.2.8+: the execution VM (`qledger-v1`).
+    pub execution_vm: Option<ExecutionVm>,
+    /// Chain v3.2.8+: the privacy mode (`encapsulated`).
+    pub privacy: Option<RollupPrivacy>,
 }

@@ -22,6 +22,22 @@ export interface CreateRollupInput {
   profile: string;
   vmType: string;
   stakeAmount: Numeric;
+  /** Chain v3.2.7+: register the zk verification key at creation (see `setVerificationKeyMsg`). */
+  verificationKey?: Bytes;
+  /**
+   * Chain v3.2.8+: `"based"` orders the rollup's transactions by their
+   * inclusion on the chain (anyone posts, every batch consumes the inbox).
+   * Allowed for zk (snark), based settlement, and qledger-v1 optimistic rollups.
+   */
+  sequencing?: "" | "based";
+  /**
+   * Chain v3.2.8+: `"qledger-v1"`, the execution model the chain re-executes in
+   * a fraud proof. **Required for every new optimistic rollup** (`nft`,
+   * `custom`), together with `sequencing: "based"`.
+   */
+  executionVm?: "" | "qledger-v1";
+  /** Chain v3.2.8+: `"encapsulated"` for a private rollup (zk with a Groth16 key only). */
+  privacy?: "" | "encapsulated";
 }
 
 export interface SubmitBatchInput {
@@ -48,6 +64,12 @@ export interface SubmitBatchInput {
   anchorSignature?: Bytes;
   /** The validator-set commitment covered by `anchorSignature`. */
   validatorSetHash?: Bytes;
+  /**
+   * Chain v3.2.8+, based rollups only: the inbox sequence of the last post this
+   * batch consumes. `dataHash` must then be the inbox range commitment
+   * (`inboxRangeHash`, or `RestClient.getInbox(rollupId, inboxEnd)`).
+   */
+  inboxEnd?: Numeric;
 }
 
 export interface ChallengeBatchInput {
@@ -97,6 +119,10 @@ export function createRollupMsg(input: CreateRollupInput): EncodeObject {
       profile: input.profile,
       vmType: vmTypeWireValue(input.vmType),
       stakeAmount: big(input.stakeAmount),
+      verificationKey: input.verificationKey ? toBytes(input.verificationKey) : EMPTY,
+      sequencing: input.sequencing ?? "",
+      executionVm: input.executionVm ?? "",
+      privacy: input.privacy ?? "",
     }),
   };
 }
@@ -116,6 +142,7 @@ export function submitBatchMsg(input: SubmitBatchInput): EncodeObject {
       withdrawalsRoot: input.withdrawalsRoot ? toBytes(input.withdrawalsRoot) : EMPTY,
       anchorSignature: input.anchorSignature ? toBytes(input.anchorSignature) : EMPTY,
       validatorSetHash: input.validatorSetHash ? toBytes(input.validatorSetHash) : EMPTY,
+      inboxEnd: input.inboxEnd === undefined ? 0n : big(input.inboxEnd),
     }),
   };
 }
@@ -187,6 +214,145 @@ export function executeWithdrawalMsg(input: ExecuteWithdrawalInput): EncodeObjec
       denom: input.denom,
       amount: big(input.amount),
       proof: (input.proof ?? []).map(toBytes),
+    }),
+  };
+}
+
+// --- chain v3.2.7+ -----------------------------------------------------------
+
+export interface SetVerificationKeyInput {
+  creator: string;
+  rollupId: string;
+  /** Groth16 BLS12-381 verifying key, gnark binary encoding, four public inputs. */
+  verificationKey: Bytes;
+  /** `"snark"`; empty keeps the rollup's proof system. `"stark"` is refused from v3.2.8. */
+  proofSystem?: string;
+}
+
+export function setVerificationKeyMsg(input: SetVerificationKeyInput): EncodeObject {
+  return {
+    typeUrl: codecs.MsgSetVerificationKey.typeUrl,
+    value: codecs.MsgSetVerificationKey.fromPartial({
+      creator: input.creator,
+      rollupId: input.rollupId,
+      verificationKey: toBytes(input.verificationKey),
+      proofSystem: input.proofSystem ?? "",
+    }),
+  };
+}
+
+/** Governance only: put this message in a proposal; `authority` is the gov module account. */
+export function updateVerificationKeyMsg(input: {
+  authority: string;
+  rollupId: string;
+  verificationKey: Bytes;
+  proofSystem?: string;
+}): EncodeObject {
+  return {
+    typeUrl: codecs.MsgUpdateVerificationKey.typeUrl,
+    value: codecs.MsgUpdateVerificationKey.fromPartial({
+      authority: input.authority,
+      rollupId: input.rollupId,
+      verificationKey: toBytes(input.verificationKey),
+      proofSystem: input.proofSystem ?? "",
+    }),
+  };
+}
+
+// --- chain v3.2.8+ -----------------------------------------------------------
+
+export function postRollupDataMsg(input: { poster: string; rollupId: string; data: Bytes }): EncodeObject {
+  return {
+    typeUrl: codecs.MsgPostRollupData.typeUrl,
+    value: codecs.MsgPostRollupData.fromPartial({
+      poster: input.poster,
+      rollupId: input.rollupId,
+      data: toBytes(input.data),
+    }),
+  };
+}
+
+/** Governance only: `sequencing` is `"based"` or `""`. */
+export function setRollupSequencingMsg(input: {
+  authority: string;
+  rollupId: string;
+  sequencing: "" | "based";
+}): EncodeObject {
+  return {
+    typeUrl: codecs.MsgSetRollupSequencing.typeUrl,
+    value: codecs.MsgSetRollupSequencing.fromPartial({
+      authority: input.authority,
+      rollupId: input.rollupId,
+      sequencing: input.sequencing,
+    }),
+  };
+}
+
+export function depositToRollupMsg(input: {
+  depositor: string;
+  rollupId: string;
+  /** The 32-byte qledger-v1 account id to credit. */
+  account: Bytes;
+  amount: Numeric;
+}): EncodeObject {
+  return {
+    typeUrl: codecs.MsgDepositToRollup.typeUrl,
+    value: codecs.MsgDepositToRollup.fromPartial({
+      depositor: input.depositor,
+      rollupId: input.rollupId,
+      account: toBytes(input.account),
+      amount: big(input.amount),
+    }),
+  };
+}
+
+export function bondRollupSubmitterMsg(input: {
+  submitter: string;
+  rollupId: string;
+  amount: Numeric;
+}): EncodeObject {
+  return {
+    typeUrl: codecs.MsgBondRollupSubmitter.typeUrl,
+    value: codecs.MsgBondRollupSubmitter.fromPartial({
+      submitter: input.submitter,
+      rollupId: input.rollupId,
+      amount: big(input.amount),
+    }),
+  };
+}
+
+export function unbondRollupSubmitterMsg(input: { submitter: string; rollupId: string }): EncodeObject {
+  return {
+    typeUrl: codecs.MsgUnbondRollupSubmitter.typeUrl,
+    value: codecs.MsgUnbondRollupSubmitter.fromPartial({
+      submitter: input.submitter,
+      rollupId: input.rollupId,
+    }),
+  };
+}
+
+export function setRollupMembersMsg(input: { creator: string; rollupId: string; members: string[] }): EncodeObject {
+  return {
+    typeUrl: codecs.MsgSetRollupMembers.typeUrl,
+    value: codecs.MsgSetRollupMembers.fromPartial({
+      creator: input.creator,
+      rollupId: input.rollupId,
+      members: [...input.members],
+    }),
+  };
+}
+
+/** ML-KEM-1024's id in the chain's algorithm registry. */
+export const ML_KEM_1024_ALGORITHM_ID = 2;
+
+/** Publish an ML-KEM-1024 encapsulation key (1568 bytes) in the chain's KEM registry. */
+export function registerKemKeyMsg(input: { sender: string; publicKey: Bytes; algorithmId?: number }): EncodeObject {
+  return {
+    typeUrl: codecs.MsgRegisterKEMKey.typeUrl,
+    value: codecs.MsgRegisterKEMKey.fromPartial({
+      sender: input.sender,
+      algorithmId: input.algorithmId ?? ML_KEM_1024_ALGORITHM_ID,
+      publicKey: toBytes(input.publicKey),
     }),
   };
 }

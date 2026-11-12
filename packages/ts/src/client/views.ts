@@ -42,6 +42,14 @@ export interface ParamsView {
   maxDaBlobSize: number;
   blobRetentionBlocks: number;
   maxBatchesPerBlock: number;
+  /** Chain v3.2.8+ (effective values; `undefined` from an older node). */
+  finalizedBatchRetentionBlocks?: number;
+  maxPostedDataBytes?: number;
+  maxPostedDataBytesPerBlock?: number;
+  postedDataFeePerByte?: number;
+  postedDataRetentionBlocks?: number;
+  /** Bond a qledger-v1 batch submitter must hold, in uqor (v3.2.8+). */
+  minSubmitterBond?: string;
 }
 
 /** A rollup's configuration and status. */
@@ -76,11 +84,23 @@ export interface RollupView {
   /** The rollup's proof system (e.g. `fraud`, `snark`), when exposed (v3.2.4+). */
   proofSystem?: string;
   /**
-   * Whether the rollup has a ZK verification key registered. No release before
-   * the planned chain v3.2.7 can register one, so `undefined` (field not served)
-   * means none: every zk batch is then refused.
+   * Whether the rollup has a ZK verification key registered (chain v3.2.7+,
+   * `MsgSetVerificationKey`). `undefined` (field not served) means none: every
+   * zk batch is then refused.
    */
   hasVerificationKey?: boolean;
+  /** Chain v3.2.8+: `"based"` or `""` (the rollup's sequencer settles). */
+  sequencing: string;
+  /** Chain v3.2.8+: `"qledger-v1"` or `""`. */
+  executionVm: string;
+  /** Chain v3.2.8+: `"encapsulated"` or `""`. */
+  privacy: string;
+  /** Chain v3.2.8+: a private rollup's members, in envelope order. */
+  members: string[];
+  /** Chain v3.2.8+: the membership epoch an envelope must carry. */
+  membersEpoch: number;
+  /** Chain v3.2.8+: uqor deposited into a qledger-v1 rollup and not withdrawn. */
+  depositPool: string;
 }
 
 /** A settlement batch. */
@@ -114,6 +134,77 @@ export interface BatchView {
    * the block-count window. Read when the node exposes it.
    */
   submittedTime: number;
+  /** Chain v3.2.8+, based rollups: the inbox range the batch consumed (after `inboxStart`, up to `inboxEnd`). */
+  inboxStart: number;
+  inboxEnd: number;
+  /**
+   * Chain v3.2.8+: the stored `withdrawalsRoot` is the submitted root reduced
+   * modulo the BLS12-381 scalar field (a Groth16 batch that binds its
+   * withdrawals, settled with `rdk-zk-canonical-inputs` on). Compare a tree
+   * root with it modulo r (`withdrawalsRootMatches`), not byte for byte.
+   */
+  withdrawalsRootReduced: boolean;
+}
+
+/** A rollup's inbox (chain v3.2.8+). Hex fields are as the node serves them. */
+export interface InboxView {
+  rollupId: string;
+  sequencing: string;
+  /** Sequence of the last post (0 = none yet). */
+  headSequence: number;
+  headAcc: string;
+  /** Where the next based batch starts. */
+  consumedSequence: number;
+  consumedAcc: string;
+  /** The range end `rangeDataHash` is for. */
+  rangeEnd: number;
+  /** The `data_hash` a based batch with `inbox_end = rangeEnd` must carry; empty when no longer retained. */
+  rangeDataHash: string;
+}
+
+/** One posted-data commitment (chain v3.2.8+). */
+export interface PostedDataView {
+  rollupId: string;
+  sequence: number;
+  /** SHA-256 of the payload, hex. */
+  dataHash: string;
+  size: number;
+  poster: string;
+  /** The block whose transaction carries the payload. */
+  height: number;
+  inboxAcc: string;
+  expiresAtHeight: number;
+}
+
+/** A key-encapsulation key an address published (`x/pqc`, chain v3.2.5+). */
+export interface KemKeyView {
+  address: string;
+  algorithmId: number;
+  algorithmName: string;
+  /** The FIPS 203 encapsulation key, lowercase hex. */
+  publicKey: string;
+  registeredHeight: number;
+}
+
+export function mapKemKeyView(raw: RawRecord): KemKeyView {
+  return {
+    address: str(pick(raw, "address")),
+    algorithmId: num(pick(raw, "algorithm_id", "algorithmId")),
+    algorithmName: str(pick(raw, "algorithm_name", "algorithmName")),
+    publicKey: hexBytes(pick(raw, "public_key", "publicKey")),
+    registeredHeight: num(pick(raw, "registered_height", "registeredHeight")),
+  };
+}
+
+/** A submitter's bond on a qledger-v1 rollup (chain v3.2.8+). */
+export interface SubmitterBondView {
+  /** uqor; `"0"` when there is none. */
+  amount: string;
+  lastSubmitTime: number;
+  /** Block time (Unix seconds) from which an unbond succeeds. */
+  unbondAfter: number;
+  /** The submitter's batches on the rollup still waiting for finality (chain v3.2.8+; at most 1,024). */
+  pending: number;
 }
 
 /**
@@ -177,6 +268,55 @@ export function mapParamsView(raw: RawRecord): ParamsView {
     maxDaBlobSize: num(pick(raw, "max_da_blob_size", "maxDaBlobSize")),
     blobRetentionBlocks: num(pick(raw, "blob_retention_blocks", "blobRetentionBlocks")),
     maxBatchesPerBlock: num(pick(raw, "max_batches_per_block", "maxBatchesPerBlock")),
+    finalizedBatchRetentionBlocks: optNum(raw, "finalized_batch_retention_blocks", "finalizedBatchRetentionBlocks"),
+    maxPostedDataBytes: optNum(raw, "max_posted_data_bytes", "maxPostedDataBytes"),
+    maxPostedDataBytesPerBlock: optNum(raw, "max_posted_data_bytes_per_block", "maxPostedDataBytesPerBlock"),
+    postedDataFeePerByte: optNum(raw, "posted_data_fee_per_byte", "postedDataFeePerByte"),
+    postedDataRetentionBlocks: optNum(raw, "posted_data_retention_blocks", "postedDataRetentionBlocks"),
+    minSubmitterBond: (() => {
+      const v = pick(raw, "min_submitter_bond", "minSubmitterBond");
+      return v === undefined || v === null || v === "" ? undefined : String(v);
+    })(),
+  };
+}
+
+function optNum(raw: RawRecord, snake: string, camel: string): number | undefined {
+  const v = pick(raw, snake, camel);
+  return v === undefined || v === null || v === "" ? undefined : num(v);
+}
+
+export function mapInboxView(raw: RawRecord): InboxView {
+  return {
+    rollupId: str(pick(raw, "rollup_id", "rollupId")),
+    sequencing: str(pick(raw, "sequencing")),
+    headSequence: num(pick(raw, "head_sequence", "headSequence")),
+    headAcc: str(pick(raw, "head_acc", "headAcc")),
+    consumedSequence: num(pick(raw, "consumed_sequence", "consumedSequence")),
+    consumedAcc: str(pick(raw, "consumed_acc", "consumedAcc")),
+    rangeEnd: num(pick(raw, "range_end", "rangeEnd")),
+    rangeDataHash: str(pick(raw, "range_data_hash", "rangeDataHash")),
+  };
+}
+
+export function mapPostedDataView(raw: RawRecord): PostedDataView {
+  return {
+    rollupId: str(pick(raw, "rollup_id", "rollupId")),
+    sequence: num(pick(raw, "sequence")),
+    dataHash: str(pick(raw, "data_hash", "dataHash")),
+    size: num(pick(raw, "size")),
+    poster: str(pick(raw, "poster")),
+    height: num(pick(raw, "height")),
+    inboxAcc: str(pick(raw, "inbox_acc", "inboxAcc")),
+    expiresAtHeight: num(pick(raw, "expires_at_height", "expiresAtHeight")),
+  };
+}
+
+export function mapSubmitterBondView(raw: RawRecord): SubmitterBondView {
+  return {
+    amount: str(pick(raw, "amount"), "0"),
+    lastSubmitTime: num(pick(raw, "last_submit_time", "lastSubmitTime")),
+    unbondAfter: num(pick(raw, "unbond_after", "unbondAfter")),
+    pending: num(pick(raw, "pending")),
   };
 }
 
@@ -208,6 +348,15 @@ export function mapRollupView(raw: RawRecord): RollupView {
       return v === undefined || v === null || v === "" ? undefined : String(v);
     })(),
     hasVerificationKey: pick(raw, "has_verification_key", "hasVerificationKey") === true ? true : undefined,
+    sequencing: str(pick(raw, "sequencing")),
+    executionVm: str(pick(raw, "execution_vm", "executionVm")),
+    privacy: str(pick(raw, "privacy")),
+    members: (() => {
+      const v = pick(raw, "members");
+      return Array.isArray(v) ? v.map(String) : [];
+    })(),
+    membersEpoch: num(pick(raw, "members_epoch", "membersEpoch")),
+    depositPool: str(pick(raw, "deposit_pool", "depositPool"), "0"),
   };
 }
 
@@ -226,5 +375,8 @@ export function mapBatchView(raw: RawRecord): BatchView {
     withdrawalsRoot: str(pick(raw, "withdrawals_root", "withdrawalsRoot")),
     withdrawalsBound: pick(raw, "withdrawals_bound", "withdrawalsBound") === true ? true : undefined,
     submittedTime: num(pick(raw, "submitted_time", "submittedTime")),
+    inboxStart: num(pick(raw, "inbox_start", "inboxStart")),
+    inboxEnd: num(pick(raw, "inbox_end", "inboxEnd")),
+    withdrawalsRootReduced: pick(raw, "withdrawals_root_reduced", "withdrawalsRootReduced") === true,
   };
 }

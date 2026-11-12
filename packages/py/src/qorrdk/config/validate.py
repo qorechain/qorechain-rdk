@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import re
+from typing import Optional
 from dataclasses import dataclass, field
 
 from ..rules import rollup_id_error
 from ..enums import (
     DA_BACKENDS,
+    EXECUTION_VMS,
     GAS_MODELS,
+    PAUSED_PROOF_SYSTEMS,
     PROOF_SYSTEMS,
+    ROLLUP_PRIVACY_MODES,
     SEQUENCER_MODES,
+    SEQUENCING_MODES,
     SETTLEMENT_PARADIGMS,
     is_vm_type,
 )
@@ -106,6 +111,26 @@ def validate_rollup_config(config: RollupConfig) -> ValidationResult:
             f'"{settlement}" settlement (expected one of: {expected})'
         )
 
+    # STARK settlement is refused by the chain from v3.2.8.
+    if proof_system in PAUSED_PROOF_SYSTEMS:
+        errors.append(
+            f'proof system "{proof_system}" is paused on the network: the chain refuses '
+            "STARK keys and STARK batches until it verifies a real rollup statement; "
+            "use snark (Groth16)"
+        )
+
+    # Sequencing, execution VM and privacy (chain v3.2.8+), mirroring the
+    # chain's RollupConfig.Validate and its create-time rule.
+    errors.extend(
+        rollup_mode_errors(
+            settlement=settlement,
+            proof_system=proof_system,
+            sequencing=config.sequencing,
+            execution_vm=config.execution_vm,
+            privacy=config.privacy,
+        )
+    )
+
     # Based settlement requires the based sequencer mode.
     if (
         settlement in SETTLEMENT_PARADIGMS
@@ -151,7 +176,77 @@ def assert_valid_rollup_config(config: RollupConfig) -> None:
         raise RollupConfigError(result.errors)
 
 
+def rollup_mode_errors(
+    *,
+    settlement: object,
+    proof_system: object,
+    sequencing: Optional[object] = None,
+    execution_vm: Optional[object] = None,
+    privacy: Optional[object] = None,
+) -> list[str]:
+    """The chain's v3.2.8 rules for ``sequencing``, ``execution_vm`` and
+    ``privacy`` on a new rollup. Returns every violation (empty when the
+    combination is accepted).
+
+    - A new optimistic rollup needs ``execution_vm="qledger-v1"`` and
+      ``sequencing="based"``.
+    - ``sequencing="based"`` is allowed for zk with snark, based settlement,
+      and optimistic with qledger-v1.
+    - ``execution_vm="qledger-v1"`` needs optimistic settlement, based
+      sequencing, and no privacy.
+    - ``privacy="encapsulated"`` needs zk settlement with snark.
+    """
+    errors: list[str] = []
+    settlement = _val(settlement)
+    proof_system = _val(proof_system)
+    sequencing = _val(sequencing) or ""
+    execution_vm = _val(execution_vm) or ""
+    privacy = _val(privacy) or ""
+    if sequencing not in SEQUENCING_MODES:
+        errors.append(f'sequencing "{sequencing}" is not valid (want "based" or empty)')
+    if execution_vm not in EXECUTION_VMS:
+        errors.append(f'execution_vm "{execution_vm}" is not valid (want "qledger-v1" or empty)')
+    if privacy not in ROLLUP_PRIVACY_MODES:
+        errors.append(f'privacy "{privacy}" is not valid (want "encapsulated" or empty)')
+    if settlement == "optimistic" and execution_vm == "":
+        errors.append(
+            'from chain v3.2.8 a new optimistic rollup needs execution_vm "qledger-v1" and '
+            'sequencing "based" (its fraud proof re-executes the batch)'
+        )
+    if sequencing == "based":
+        eligible = (
+            (settlement == "zk" and proof_system == "snark")
+            or settlement == "based"
+            or (settlement == "optimistic" and execution_vm == "qledger-v1")
+        )
+        if not eligible:
+            errors.append(
+                f"settlement {settlement} with proof system {proof_system} cannot use based "
+                "sequencing (zk with snark, based settlement, or optimistic with qledger-v1 only)"
+            )
+    if execution_vm == "qledger-v1":
+        if settlement != "optimistic":
+            errors.append(
+                f"execution_vm qledger-v1 needs optimistic settlement, not {settlement}"
+            )
+        if sequencing != "based":
+            errors.append(
+                'execution_vm qledger-v1 needs sequencing "based": its batches consume the inbox'
+            )
+        if privacy != "":
+            errors.append(
+                "a qledger-v1 rollup cannot be private: a fraud proof re-executes plaintext"
+            )
+    if privacy == "encapsulated" and not (settlement == "zk" and proof_system == "snark"):
+        errors.append(
+            "a private rollup must be zk with a snark (Groth16) key, not "
+            f"{settlement}/{proof_system}"
+        )
+    return errors
+
+
 __all__ = [
+    "rollup_mode_errors",
     "ValidationResult",
     "validate_rollup_config",
     "assert_valid_rollup_config",

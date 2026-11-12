@@ -67,7 +67,14 @@ public final class Enums {
         }
     }
 
-    /** The proof a settlement batch carries. */
+    /**
+     * The proof a settlement batch carries.
+     *
+     * <p>{@code STARK} stays so rollups created before can be read, but the chain refuses STARK
+     * settlement from v3.2.8: a STARK key cannot be set and a STARK rollup's batches are refused
+     * until the chain verifies a real rollup statement. New rollups use {@code SNARK} (see {@link
+     * #PAUSED_PROOF_SYSTEMS}).
+     */
     public enum ProofSystem {
         FRAUD("fraud"),
         SNARK("snark"),
@@ -93,6 +100,43 @@ public final class Enums {
             return null;
         }
     }
+
+    /** Proof systems the chain currently refuses for new rollups and new batches. */
+    public static final List<ProofSystem> PAUSED_PROOF_SYSTEMS = List.of(ProofSystem.STARK);
+
+    /** Whether the chain currently refuses {@code proofSystem} (a wire value) for new rollups and batches. */
+    public static boolean isPausedProofSystem(String proofSystem) {
+        ProofSystem p = ProofSystem.fromWire(proofSystem);
+        return p != null && PAUSED_PROOF_SYSTEMS.contains(p);
+    }
+
+    /**
+     * Based sequencing (chain v3.2.8+): anyone posts data, the order is inclusion on the chain, and
+     * every batch consumes the inbox. The empty string means the rollup's sequencer settles.
+     */
+    public static final String SEQUENCING_BASED = "based";
+
+    /** How a rollup's transactions are ordered (chain v3.2.8+): {@code ""} or {@code "based"}. */
+    public static final List<String> SEQUENCING_MODES = List.of("", SEQUENCING_BASED);
+
+    /**
+     * The execution model the chain re-executes in an optimistic fraud proof (chain v3.2.8+): a
+     * uqor account ledger with signed transfers and withdrawals. Every new optimistic rollup needs
+     * it.
+     */
+    public static final String EXECUTION_VM_QLEDGER_V1 = "qledger-v1";
+
+    /** Execution VMs (chain v3.2.8+): {@code ""} or {@code "qledger-v1"}. */
+    public static final List<String> EXECUTION_VMS = List.of("", EXECUTION_VM_QLEDGER_V1);
+
+    /** Rollup privacy (chain v3.2.8+): posts are ML-KEM-1024 envelopes to the members. */
+    public static final String PRIVACY_ENCAPSULATED = "encapsulated";
+
+    /** Rollup privacy modes (chain v3.2.8+): {@code ""} or {@code "encapsulated"}. */
+    public static final List<String> ROLLUP_PRIVACY_MODES = List.of("", PRIVACY_ENCAPSULATED);
+
+    /** Most members a private rollup can have. */
+    public static final int MAX_ROLLUP_MEMBERS = 32;
 
     /** Where rollup data is made available. */
     public enum DABackend {

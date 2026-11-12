@@ -244,8 +244,8 @@ pub struct ResolvedPqcKeypair {
     /// The chain already holds this key for the account.
     pub registered: bool,
     /// Pass this as `include_pqc_public_key` to the tx client: true when the
-    /// account has no key on chain yet, so the first hybrid transaction
-    /// registers it.
+    /// account has no key on chain yet, so the client registers it in a
+    /// transaction of its own before the first hybrid transaction.
     pub include_pqc_public_key: bool,
 }
 
@@ -272,7 +272,8 @@ impl std::fmt::Debug for ResolvedPqcKeypair {
 /// derives both and returns whichever the chain has registered.
 ///
 /// - If the account has **no** key registered, it returns the canonical key
-///   with `include_pqc_public_key: true`, so the first transaction registers it.
+///   with `include_pqc_public_key: true`, so the tx client registers it before
+///   the first transaction.
 /// - If the account has a key that **neither** derivation produces, it fails:
 ///   the key was registered from another secret, and guessing would only cost a
 ///   refused transaction. Supply that keypair explicitly instead.

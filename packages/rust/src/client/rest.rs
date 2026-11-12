@@ -9,9 +9,14 @@ use thiserror::Error;
 
 use super::http::{default_transport, HttpError, HttpRequest, Method, SharedTransport};
 use super::views::{
-    map_anchor_view, map_batch_view, map_params_view, map_pqc_account_view, map_rollup_view,
-    AnchorView, BatchView, ParamsView, PqcAccountView, RollupView,
+    map_anchor_view, map_batch_view, map_inbox_view, map_kem_key_view, map_params_view,
+    map_posted_data_view, map_pqc_account_view, map_rollup_view, map_submitter_bond_view,
+    AnchorView, BatchView, InboxView, KemKeyView, ParamsView, PostedDataView, PqcAccountView,
+    RollupView, SubmitterBondView,
 };
+use crate::privpost::{EnvelopeRecipient, PrivateRollupRecipients, RecipientsError};
+use crate::tx::messages::ML_KEM_1024_ALGORITHM_ID;
+use crate::utils::bytes::hex_to_bytes;
 
 /// A REST client error.
 #[derive(Debug, Clone, Error)]
@@ -280,6 +285,99 @@ impl RestClient {
         Ok(h.max(0))
     }
 
+    /// A rollup's inbox (chain v3.2.8+): head, consumed position, and the
+    /// `data_hash` a based batch ending at `inbox_end` must carry (0 = the
+    /// head).
+    pub fn get_inbox(&self, rollup_id: &str, inbox_end: u64) -> Result<InboxView, RestError> {
+        let q = if inbox_end > 0 {
+            format!("?inbox_end={inbox_end}")
+        } else {
+            String::new()
+        };
+        let body = self.get(&format!(
+            "/qorechain/rdk/v1/inbox/{}{q}",
+            urlencode(rollup_id)
+        ))?;
+        Ok(map_inbox_view(Self::obj_or(&body, &["inbox"])))
+    }
+
+    /// One posted-data commitment (chain v3.2.8+). The payload is in the
+    /// transaction at `height`.
+    pub fn get_posted_data(
+        &self,
+        rollup_id: &str,
+        sequence: u64,
+    ) -> Result<PostedDataView, RestError> {
+        let body = self.get(&format!(
+            "/qorechain/rdk/v1/posted_data/{}/{}",
+            urlencode(rollup_id),
+            sequence
+        ))?;
+        Ok(map_posted_data_view(Self::obj_or(
+            &body,
+            &["posted_data", "postedData"],
+        )))
+    }
+
+    /// A submitter's bond on a qledger-v1 rollup and when it unlocks (chain
+    /// v3.2.8+).
+    pub fn get_submitter_bond(
+        &self,
+        rollup_id: &str,
+        submitter: &str,
+    ) -> Result<SubmitterBondView, RestError> {
+        let body = self.get(&format!(
+            "/qorechain/rdk/v1/submitter_bond/{}/{}",
+            urlencode(rollup_id),
+            urlencode(submitter)
+        ))?;
+        Ok(map_submitter_bond_view(&body))
+    }
+
+    /// The key-encapsulation key `address` published (chain v3.2.5+), or
+    /// `None` when it has none.
+    pub fn get_kem_key(&self, address: &str) -> Result<Option<KemKeyView>, RestError> {
+        let body = self.get(&format!("/qorechain/pqc/v1/kem/{}", urlencode(address)))?;
+        if body.get("found") != Some(&Value::Bool(true)) {
+            return Ok(None);
+        }
+        Ok(Some(map_kem_key_view(
+            body.get("key").unwrap_or(&Value::Null),
+        )))
+    }
+
+    /// The recipients a post on private rollup `rollup_id` must be sealed to:
+    /// its members in order, each with its registered ML-KEM-1024 key, and the
+    /// membership epoch. Fails if a member has no such key (the chain would
+    /// refuse any envelope).
+    pub fn get_private_rollup_recipients(
+        &self,
+        rollup_id: &str,
+    ) -> Result<PrivateRollupRecipients, RecipientsError> {
+        let rollup = self.get_rollup(rollup_id)?;
+        if rollup.privacy != "encapsulated" {
+            return Err(RecipientsError::NotPrivate(rollup_id.to_string()));
+        }
+        if rollup.members.is_empty() {
+            return Err(RecipientsError::NoMembers(rollup_id.to_string()));
+        }
+        let mut recipients = Vec::with_capacity(rollup.members.len());
+        for member in &rollup.members {
+            let key = self
+                .get_kem_key(member)?
+                .filter(|k| k.algorithm_id == i64::from(ML_KEM_1024_ALGORITHM_ID))
+                .ok_or_else(|| RecipientsError::NoKemKey(member.clone()))?;
+            recipients.push(EnvelopeRecipient {
+                member: member.clone(),
+                encapsulation_key: hex_to_bytes(&key.public_key).unwrap_or_default(),
+            });
+        }
+        Ok(PrivateRollupRecipients {
+            epoch: rollup.members_epoch,
+            recipients,
+        })
+    }
+
     /// Raw data-availability blob details (status, size, expiry).
     pub fn get_blob(&self, rollup_id: &str, blob_index: u64) -> Result<Value, RestError> {
         self.get(&format!(
@@ -408,6 +506,63 @@ impl RestClient {
     /// A transaction by hash (the raw `/cosmos/tx/v1beta1/txs/{hash}` response).
     pub fn get_tx(&self, hash: &str) -> Result<Value, RestError> {
         self.get(&format!("/cosmos/tx/v1beta1/txs/{}", urlencode(hash)))
+    }
+
+    /// The node's latest block height (`/cosmos/base/node/v1beta1/status`).
+    pub fn get_latest_height(&self) -> Result<u64, RestError> {
+        let body = self.get("/cosmos/base/node/v1beta1/status")?;
+        let h = match body.get("height") {
+            Some(Value::String(s)) => s.parse().unwrap_or(0),
+            Some(Value::Number(n)) => n.as_u64().unwrap_or(0),
+            _ => 0,
+        };
+        if h == 0 {
+            return Err(RestError::Json(
+                "the node did not report its height".to_string(),
+            ));
+        }
+        Ok(h)
+    }
+
+    /// Every transaction matching an event query (for example
+    /// `rdk_data_posted.rollup_id='my-rollup'`), as raw `tx_responses`, oldest
+    /// first (pages of 100, at most 50 pages). Needs a node with transaction
+    /// indexing on.
+    pub fn search_txs(&self, query: &str) -> Result<Vec<Value>, RestError> {
+        self.search_txs_with(query, 100, 50)
+    }
+
+    /// [`RestClient::search_txs`] with an explicit page size and page limit.
+    pub fn search_txs_with(
+        &self,
+        query: &str,
+        page_limit: u32,
+        max_pages: u32,
+    ) -> Result<Vec<Value>, RestError> {
+        let limit = page_limit.max(1);
+        let mut out = Vec::new();
+        for page in 1..=max_pages {
+            let body = self.get(&format!(
+                "/cosmos/tx/v1beta1/txs?query={}&page={page}&limit={limit}&order_by=ORDER_BY_ASC",
+                urlencode(query)
+            ))?;
+            let txs = body
+                .get("tx_responses")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let got = txs.len();
+            out.extend(txs);
+            let total: usize = match body.get("total") {
+                Some(Value::String(s)) => s.parse().unwrap_or(0),
+                Some(Value::Number(n)) => n.as_u64().unwrap_or(0) as usize,
+                _ => 0,
+            };
+            if got < limit as usize || (total > 0 && out.len() >= total) {
+                break;
+            }
+        }
+        Ok(out)
     }
 }
 

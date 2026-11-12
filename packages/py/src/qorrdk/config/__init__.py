@@ -24,6 +24,7 @@ from .types import CreateRollupMsgInput, RollupConfig, SequencerParams
 from .validate import (
     ValidationResult,
     assert_valid_rollup_config,
+    rollup_mode_errors,
     validate_rollup_config,
 )
 
@@ -40,6 +41,7 @@ __all__ = [
     "ValidationResult",
     "validate_rollup_config",
     "assert_valid_rollup_config",
+    "rollup_mode_errors",
     "Endpoints",
     "NetworkConfig",
     "NETWORKS",

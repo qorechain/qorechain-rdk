@@ -43,7 +43,7 @@ export const RDK_ERRORS: Readonly<Record<number, RdkErrorInfo>> = {
   21: {
     kind: "verification_key_missing",
     message: "ZK verification key not configured for the rollup",
-    hint: "no chain release up to v3.2.5 can register a verification key, so zk settlement cannot be used yet",
+    hint: "register one with MsgSetVerificationKey (chain v3.2.7+) before the rollup's first batch",
   },
   22: { kind: "stark_not_supported", message: "STARK verification is not available for this rollup" },
   23: { kind: "proof_verify_failed", message: "ZK proof verification failed" },
@@ -52,7 +52,7 @@ export const RDK_ERRORS: Readonly<Record<number, RdkErrorInfo>> = {
   26: {
     kind: "data_unavailable",
     message: "no DA blob matches the batch's data hash",
-    hint: "leave dataHash empty on native or both data availability: no transaction posts a blob",
+    hint: "post the data with MsgPostRollupData (chain v3.2.8+) and carry its SHA-256, or leave data_hash empty",
   },
   27: { kind: "batch_not_finalized", message: "withdrawals need a finalized batch" },
   28: { kind: "withdrawal_already_done", message: "withdrawal already executed" },
@@ -76,6 +76,47 @@ export const RDK_ERRORS: Readonly<Record<number, RdkErrorInfo>> = {
     message: "the rollup has a batch that is not settled yet",
     hint: "a rollup cannot be stopped, and cannot take more than 4096 waiting batches, while batches are unsettled",
   },
+  37: { kind: "verification_key_disabled", message: "verification key registration is not enabled at this height" },
+  38: { kind: "invalid_verification_key", message: "invalid ZK verification key" },
+  39: {
+    kind: "verification_key_locked",
+    message: "the verification key can only be changed by governance after the first batch",
+  },
+  40: { kind: "batch_limit_reached", message: "the rollup reached max_batches_per_block in this block" },
+  41: { kind: "rollup_data_disabled", message: "rollup data posting is not enabled at this height" },
+  42: { kind: "rollup_data_too_large", message: "rollup data exceeds the per-message limit", hint: "see max_posted_data_bytes" },
+  43: { kind: "rollup_data_block_full", message: "the rollup data limit for this block is reached", hint: "retry in a later block" },
+  44: { kind: "based_sequencing_disabled", message: "based sequencing is not enabled at this height" },
+  45: {
+    kind: "based_sequencing_unsupported",
+    message: "based sequencing is not available for this rollup",
+    hint: "zk (snark), based settlement and qledger-v1 optimistic rollups only",
+  },
+  46: {
+    kind: "invalid_inbox_range",
+    message: "the batch does not match the rollup inbox",
+    hint: "data_hash must be the inbox range commitment up to inbox_end; inbox_end must be 0 on a rollup that is not based",
+  },
+  47: { kind: "rollup_mode_disabled", message: "this rollup mode is not enabled at this height" },
+  48: {
+    kind: "invalid_rollup_mode",
+    message: "invalid rollup execution or privacy mode",
+    hint: "a new optimistic rollup needs execution_vm qledger-v1 and based sequencing; a private rollup must be zk with a Groth16 key",
+  },
+  49: { kind: "submitter_bond_required", message: "submitter bond required", hint: "bond at least min_submitter_bond first" },
+  50: {
+    kind: "submitter_bond_locked",
+    message: "the submitter bond is still locked",
+    hint: "a full challenge window must pass after the submitter's last batch",
+  },
+  51: { kind: "fraud_not_proven", message: "the fraud proof does not show the batch invalid" },
+  52: {
+    kind: "stark_statement_unsupported",
+    message: "this STARK verification key proves no rollup statement",
+    hint: "STARK settlement is paused; use a Groth16 (snark) key",
+  },
+  53: { kind: "invalid_envelope", message: "the post is not a valid envelope to the rollup's members" },
+  54: { kind: "deposit_pool_not_empty", message: "the rollup still holds user deposits" },
 };
 
 /** {@link decodeTxError}, plus the `rdk` codespace. */

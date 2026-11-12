@@ -238,6 +238,7 @@ type mockRest struct {
 	planV2    bool   // whether the v2 sign-bytes upgrade is applied
 	broadcast [][]byte
 	responses []string // broadcast responses, in order (default: code 0)
+	txLookups []string // tx-by-hash responses, in order ("" or none left: 404)
 	paths     []string
 }
 
@@ -274,6 +275,15 @@ func (m *mockRest) Do(req *http.Request) (*http.Response, error) {
 			return reply(200, r)
 		}
 		return reply(200, `{"tx_response":{"code":0,"txhash":"ABC"}}`)
+	case strings.HasPrefix(path, "/cosmos/tx/v1beta1/txs/"):
+		if len(m.txLookups) > 0 {
+			r := m.txLookups[0]
+			m.txLookups = m.txLookups[1:]
+			if r != "" {
+				return reply(200, r)
+			}
+		}
+		return reply(404, `{"code":5,"message":"tx not found"}`)
 	}
 	return reply(404, `{}`)
 }

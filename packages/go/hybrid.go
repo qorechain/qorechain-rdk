@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	pqc "github.com/qorechain/qorechain-pqc/go"
 	sdkaccounts "github.com/qorechain/qorechain-sdk/packages/go/qorechain/accounts"
 	"github.com/qorechain/qorechain-sdk/packages/go/qorechain/authenticator"
+	sdkmessages "github.com/qorechain/qorechain-sdk/packages/go/qorechain/messages"
 	sdkpqc "github.com/qorechain/qorechain-sdk/packages/go/qorechain/pqc"
 	"github.com/qorechain/qorechain-sdk/packages/go/qorechain/signbytes"
 	sdktx "github.com/qorechain/qorechain-sdk/packages/go/qorechain/tx"
@@ -46,8 +48,13 @@ type HybridOptions struct {
 	// IncludePqcPublicKey is set. ResolvePqcKeypair / PqcKeypairFromEnv find the
 	// right one.
 	PqcKeypair PqcKeypair
-	// IncludePqcPublicKey embeds the ML-DSA-87 public key in the extension so
-	// the chain registers it on first use. Defaults to false.
+	// IncludePqcPublicKey marks a key that is not registered on chain yet.
+	// Since chain v3.2.3 a key carried in the extension is no longer registered
+	// on first use, so Broadcast first sends a MsgRegisterPQCKeyV2 (with a
+	// proof of possession) in a transaction of its own at the given sequence,
+	// waits for it to be committed, clears this flag, and then sends the
+	// messages at the next sequence. Re-read the account sequence before the
+	// following transaction. Defaults to false.
 	IncludePqcPublicKey bool
 	// SignBytesVersion is the hybrid sign-bytes form to sign. Empty or
 	// SignBytesAuto asks the network over the tx client's REST client (v1 or v2
@@ -169,12 +176,29 @@ func (c *RdkTxClient) buildHybrid(messages []Msg, p TxParams, version SignBytesV
 	}, nil
 }
 
-// broadcastHybrid signs hybrid and broadcasts. When the form was resolved
-// automatically and the chain refuses the transaction as a hybrid-signature
-// failure, the form is resolved again bypassing the cache and, if the network
-// now names a different one, the transaction is re-signed and broadcast once
-// more.
+// broadcastHybrid signs hybrid and broadcasts. When IncludePqcPublicKey is set
+// and messages are not registrations themselves, the key is registered first
+// (registerPqcKey) and messages follow at the next sequence. When the form was
+// resolved automatically and the chain refuses the transaction as a
+// hybrid-signature failure, the form is resolved again bypassing the cache and,
+// if the network now names a different one, the transaction is re-signed and
+// broadcast once more.
 func (c *RdkTxClient) broadcastHybrid(ctx context.Context, messages []Msg, p TxParams) (map[string]any, error) {
+	if c.Hybrid.IncludePqcPublicKey && !isPqcRegistrationOnly(messages) {
+		consumed, err := c.registerPqcKey(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		c.Hybrid.IncludePqcPublicKey = false
+		if consumed {
+			p.Sequence++
+		}
+	}
+	return c.signAndBroadcastHybrid(ctx, messages, p)
+}
+
+// signAndBroadcastHybrid is one hybrid broadcast, with the sign-bytes retry.
+func (c *RdkTxClient) signAndBroadcastHybrid(ctx context.Context, messages []Msg, p TxParams) (map[string]any, error) {
 	built, err := c.BuildTx(ctx, messages, p)
 	if err != nil {
 		return nil, err
@@ -192,6 +216,145 @@ func (c *RdkTxClient) broadcastHybrid(ctx context.Context, messages []Msg, p TxP
 		return nil, err
 	}
 	return c.Rest.BroadcastTxBytes(ctx, rebuilt.TxRaw)
+}
+
+// --- first-use key registration (chain v3.2.3+) ---
+
+const (
+	// pqcAlgorithmMLDSA87 is ML-DSA-87's id in the chain's algorithm registry.
+	pqcAlgorithmMLDSA87 = sdkpqc.AlgorithmDilithium5
+	// pqcKeyTypeHybrid is the key type of a classical plus post-quantum account.
+	pqcKeyTypeHybrid = "hybrid"
+	// pqcAlreadyRegisteredCode is the pqc codespace's "key already registered".
+	pqcAlreadyRegisteredCode = 7
+	// pqcRegistrationGas and pqcRegistrationFeeUqor are the registration
+	// transaction's fixed fee.
+	pqcRegistrationGas     = 600000
+	pqcRegistrationFeeUqor = "90000"
+)
+
+// How long registerPqcKey waits for the registration to land in a block. The
+// chain checks the next transaction against committed state, so it must not
+// be sent before then. Variables so tests can shorten them.
+var (
+	pqcRegistrationPollInterval = time.Second
+	pqcRegistrationTimeout      = 90 * time.Second
+)
+
+// isPqcRegistrationOnly reports whether every message is a post-quantum key
+// registration, the only transaction a keyless account may send (the chain's
+// txIsRegistrationOnly).
+func isPqcRegistrationOnly(messages []Msg) bool {
+	if len(messages) == 0 {
+		return false
+	}
+	for _, m := range messages {
+		switch m.TypeURL() {
+		case TypeURLMsgRegisterPQCKey, TypeURLMsgRegisterPQCKeyV2, TypeURLMsgMigratePQCKey:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// PqcRegistrationMsg builds the MsgRegisterPQCKeyV2 that registers keypair for
+// sender on chainID: algorithm ML-DSA-87, key type "hybrid", and the key's
+// proof of possession. It refuses a key the chain would refuse (empty or
+// degenerate).
+func PqcRegistrationMsg(chainID, sender string, keypair PqcKeypair) (MsgRegisterPQCKeyV2, error) {
+	if err := sdkmessages.ValidateRegisteredPQCKey(pqcKeyTypeHybrid, keypair.PublicKey); err != nil {
+		return MsgRegisterPQCKeyV2{}, fmt.Errorf("cannot register the post-quantum key: %w", err)
+	}
+	pop, err := sdkmessages.SignProofOfPossession(chainID, sender, keypair)
+	if err != nil {
+		return MsgRegisterPQCKeyV2{}, fmt.Errorf("cannot sign the proof of possession: %w", err)
+	}
+	return MsgRegisterPQCKeyV2{
+		Sender:            sender,
+		PublicKey:         keypair.PublicKey,
+		AlgorithmID:       pqcAlgorithmMLDSA87,
+		KeyType:           pqcKeyTypeHybrid,
+		ProofOfPossession: pop,
+	}, nil
+}
+
+// registerPqcKey registers the client's post-quantum key in a transaction of
+// its own, signed at p.Sequence with the key embedded, and waits for it to be
+// committed. Since chain v3.2.3 (pqc-keyless-extension-closed) a key carried in
+// the signature extension is no longer registered on first use: an account
+// without a registered key may send only a registration, and anything else is
+// refused (pqc code 8). "Already registered" (pqc code 7) is accepted. It
+// reports whether the registration used up the sequence.
+func (c *RdkTxClient) registerPqcKey(ctx context.Context, p TxParams) (bool, error) {
+	reg, err := PqcRegistrationMsg(c.ChainID, c.Account.Address, c.Hybrid.PqcKeypair)
+	if err != nil {
+		return false, err
+	}
+	regParams := TxParams{
+		Sequence:      p.Sequence,
+		AccountNumber: p.AccountNumber,
+		Fee:           Fee{Amount: []Coin{{Denom: BaseDenom, Amount: pqcRegistrationFeeUqor}}, GasLimit: pqcRegistrationGas},
+	}
+	res, err := c.signAndBroadcastHybrid(ctx, []Msg{reg}, regParams)
+	if err != nil {
+		return false, fmt.Errorf("registering this account's post-quantum key failed: %w", err)
+	}
+	code, codespace, rawLog, hash := txResponseResult(res)
+	if code != 0 {
+		// Refused at admission: nothing was committed, the sequence is unused.
+		if isPqcAlreadyRegistered(code, codespace) {
+			return false, nil
+		}
+		return false, fmt.Errorf("registering this account's post-quantum key failed (code %d): %s", code, rawLog)
+	}
+	committed, err := c.waitForTx(ctx, hash)
+	if err != nil {
+		return false, fmt.Errorf("registering this account's post-quantum key: %w", err)
+	}
+	code, codespace, rawLog, _ = txResponseResult(committed)
+	if code != 0 && !isPqcAlreadyRegistered(code, codespace) {
+		return false, fmt.Errorf("registering this account's post-quantum key failed (code %d): %s", code, rawLog)
+	}
+	return true, nil
+}
+
+// isPqcAlreadyRegistered reports whether a result is the pqc module's "key
+// already registered".
+func isPqcAlreadyRegistered(code uint64, codespace string) bool {
+	return code == pqcAlreadyRegisteredCode && (codespace == "pqc" || codespace == "")
+}
+
+// txResponseResult reads the code, codespace, raw log and hash of a broadcast or
+// tx query response.
+func txResponseResult(res map[string]any) (code uint64, codespace, rawLog, hash string) {
+	r := asRecord(pick(res, "tx_response", "txResponse"))
+	if len(r) == 0 {
+		r = res
+	}
+	return asU64(pick(r, "code"), 0), asStr(pick(r, "codespace"), ""), asStr(pick(r, "raw_log", "rawLog"), ""), asStr(pick(r, "txhash", "txHash"), "")
+}
+
+// waitForTx polls the REST tx endpoint until hash is in a block.
+func (c *RdkTxClient) waitForTx(ctx context.Context, hash string) (map[string]any, error) {
+	if hash == "" {
+		return nil, fmt.Errorf("the broadcast response carries no transaction hash")
+	}
+	ctx, cancel := context.WithTimeout(ctx, pqcRegistrationTimeout)
+	defer cancel()
+	for {
+		res, err := c.Rest.GetTx(ctx, hash)
+		if err == nil {
+			if r := asRecord(pick(res, "tx_response", "txResponse")); len(r) > 0 {
+				return res, nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("transaction %s was not committed in time: %w", hash, ctx.Err())
+		case <-time.After(pqcRegistrationPollInterval):
+		}
+	}
 }
 
 // isHybridRejection reports whether a broadcast response is the chain refusing
@@ -259,7 +422,7 @@ type ResolvedPqcKeypair struct {
 	// Registered is true when the chain already holds this key for the account.
 	Registered bool
 	// IncludePqcPublicKey is true when the account has no key on chain yet, so
-	// the first hybrid transaction must carry (and so register) it.
+	// the first hybrid broadcast registers it first.
 	IncludePqcPublicKey bool
 }
 
@@ -281,7 +444,7 @@ func (r ResolvedPqcKeypair) HybridOptions() HybridOptions {
 // and returns whichever the chain has registered.
 //
 //   - If the account has no key registered, it returns the canonical key with
-//     IncludePqcPublicKey set, so the first transaction registers it.
+//     IncludePqcPublicKey set, so the first broadcast registers it first.
 //   - If the account has a key that neither derivation produces, it returns an
 //     error: the key was registered from another secret, and guessing would only
 //     cost a refused transaction. Supply that keypair explicitly instead.

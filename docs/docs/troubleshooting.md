@@ -17,7 +17,9 @@ anything is submitted. The most common mismatches:
   the `based` sequencer mode. Set both to `based` (or start from the `gaming` /
   `enterprise` preset).
 - **A proof system that does not match the settlement.** `optimistic` → `fraud`,
-  `zk` → `snark` | `stark`, `based` / `sovereign` → `none`.
+  `zk` → `snark` (`stark` is paused), `based` / `sovereign` → `none`. A new
+  `optimistic` rollup also needs `executionVm: "qledger-v1"` and
+  `sequencing: "based"`.
 
 Inspect the specific problems without throwing:
 

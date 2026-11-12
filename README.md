@@ -16,15 +16,25 @@ developer-facing front door for launching rollups on the network.
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | Available (v0.8.0) |
-| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.8.0) |
-| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.8.0) |
-| `qorechain-rdk` (Python) | Python | Available on PyPI (v0.8.0) |
-| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.8.0) |
-| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.8.0) |
-| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.8.0) |
+| `@qorechain/rdk` | TypeScript | Available (v0.9.0) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.9.0) |
+| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.9.0) |
+| `qorechain-rdk` (Python) | Python | Available on PyPI (v0.9.0) |
+| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.9.0) |
+| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.9.0) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.9.0) |
 
 ## What's new
+
+**0.9.0**: support for QoreChain v3.2.8 (live on the testnet) in all five
+languages: rollup data posting, rollups ordered by the chain (based
+sequencing), qledger-v1 optimistic rollups whose fraud proofs the chain checks
+by re-running the batch (with a full executor, batch planner and fraud-proof
+builder), private rollups with ML-KEM-1024 envelopes, canonical ZK public
+inputs, and the verification-key messages of v3.2.7. Also fixed: a new
+account's first transaction is now preceded by its post-quantum key
+registration (the chain has required it since v3.2.3), and TypeScript "auto"
+fees now price the hybrid signature.
 
 **0.8.0** — the Python, Go, Rust and Java clients sign hybrid, as both networks
 require, through each language's QoreChain SDK; before, only their reads worked
@@ -107,7 +117,7 @@ data lives, and which runtime it exposes.
 | Paradigm | Finality | Proofs | Notes |
 | --- | --- | --- | --- |
 | `optimistic` | Delayed (challenge window) | Interactive fraud proofs | Default 7-day window with a challenge bond |
-| `zk` | Instant on a valid proof | SNARK or STARK | On-chain verification gates finalization |
+| `zk` | Instant on a valid proof | SNARK (STARK paused) | On-chain verification gates finalization |
 | `based` | ~2 blocks | None | Host-chain proposers sequence; requires the `based` sequencer mode |
 | `sovereign` | The rollup's own consensus | None | Self-sequenced, no proofs or challenges |
 
@@ -118,9 +128,9 @@ data lives, and which runtime it exposes.
 
 ### Proof systems
 
-`fraud` (optimistic), `snark` and `stark` (zk), and `none` (based / sovereign).
+`fraud` (optimistic), `snark` (zk; `stark` is paused on the network), and `none` (based / sovereign).
 The RDK enforces the compatibility matrix before anything is submitted:
-optimistic → fraud, zk → snark | stark, based → none, sovereign → none.
+optimistic → fraud, zk → snark, based → none, sovereign → none.
 
 ### Data availability
 
@@ -148,7 +158,7 @@ advisory service is unavailable.
 
 ## Quickstart (TypeScript)
 
-> The TypeScript package is published at v0.8.0 (`npm i @qorechain/rdk`).
+> The TypeScript package is published at v0.9.0 (`npm i @qorechain/rdk`).
 
 ```sh
 npm install @qorechain/rdk

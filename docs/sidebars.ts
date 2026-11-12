@@ -34,6 +34,7 @@ const sidebars: SidebarsConfig = {
         "guides/settlement-receipts",
         "guides/multi-vm",
         "guides/watchtower",
+        "guides/rollup-data",
       ],
     },
     {

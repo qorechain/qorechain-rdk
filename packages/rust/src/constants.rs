@@ -78,3 +78,52 @@ impl Network {
         }
     }
 }
+
+// Protocol switches of the chain v3.2.7 and v3.2.8 RDK features, as `x/pqc`
+// reports them (`RestClient::is_protocol_feature_enabled`).
+
+/// Verification-key registration (`MsgSetVerificationKey`, chain v3.2.7).
+pub const FEATURE_RDK_ZK_VERIFICATION_KEY: &str = "rdk-zk-verification-key";
+/// Posted rollup data and the rollup inbox (`MsgPostRollupData`).
+pub const FEATURE_RDK_POST_ROLLUP_DATA: &str = "rdk-post-rollup-data";
+/// Based sequencing.
+pub const FEATURE_RDK_BASED_SEQUENCING: &str = "rdk-based-sequencing";
+/// Optimistic fraud proofs that re-execute a qledger-v1 batch.
+pub const FEATURE_RDK_OPTIMISTIC_REEXEC: &str = "rdk-optimistic-reexec";
+/// STARK settlement paused until the chain verifies a rollup statement.
+pub const FEATURE_RDK_STARK_STATEMENT: &str = "rdk-stark-statement";
+/// Private (encapsulated) rollups.
+pub const FEATURE_RDK_PRIVATE_ROLLUPS: &str = "rdk-private-rollups";
+/// Canonical ZK public inputs (no reduction into the scalar field).
+pub const FEATURE_RDK_ZK_CANONICAL_INPUTS: &str = "rdk-zk-canonical-inputs";
+/// The per-rollup `max_batches_per_block` limit.
+pub const FEATURE_RDK_MAX_BATCHES_PER_BLOCK: &str = "rdk-max-batches-per-block";
+
+/// Every chain v3.2.7 / v3.2.8 RDK protocol switch.
+pub const RDK_FEATURES: &[&str] = &[
+    FEATURE_RDK_ZK_VERIFICATION_KEY,
+    FEATURE_RDK_POST_ROLLUP_DATA,
+    FEATURE_RDK_BASED_SEQUENCING,
+    FEATURE_RDK_OPTIMISTIC_REEXEC,
+    FEATURE_RDK_STARK_STATEMENT,
+    FEATURE_RDK_PRIVATE_ROLLUPS,
+    FEATURE_RDK_ZK_CANONICAL_INPUTS,
+    FEATURE_RDK_MAX_BATCHES_PER_BLOCK,
+];
+
+/// Default posted-data retention, in blocks (chain v3.2.8). A value set by
+/// governance is [`MIN_POSTED_DATA_RETENTION_BLOCKS`] to
+/// [`MAX_POSTED_DATA_RETENTION_BLOCKS`] and at least the longest challenge
+/// window in force, counted as one block per second.
+pub const DEFAULT_POSTED_DATA_RETENTION_BLOCKS: u64 = 648_000;
+/// Smallest posted-data retention, in blocks.
+pub const MIN_POSTED_DATA_RETENTION_BLOCKS: u64 = 100;
+/// Largest posted-data retention, in blocks.
+pub const MAX_POSTED_DATA_RETENTION_BLOCKS: u64 = 25_920_000;
+
+/// Smallest `MsgDepositToRollup` amount, in uqor (1 QOR).
+pub const MIN_ROLLUP_DEPOSIT_UQOR: u64 = 1_000_000;
+
+/// Default `min_submitter_bond`, in uqor (1,000 QOR; documented default). Read
+/// the live value from `rdk params()`.
+pub const DEFAULT_MIN_SUBMITTER_BOND_UQOR: u64 = 1_000_000_000;

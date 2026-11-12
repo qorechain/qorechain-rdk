@@ -10,7 +10,8 @@ import {
 describe("settlement → proof compatibility matrix", () => {
   it("maps each settlement to exactly its allowed proofs", () => {
     expect(validProofSystems("optimistic")).toEqual(["fraud"]);
-    expect(validProofSystems("zk")).toEqual(["snark", "stark"]);
+    // STARK settlement is refused by the chain from v3.2.8.
+    expect(validProofSystems("zk")).toEqual(["snark"]);
     expect(validProofSystems("based")).toEqual(["none"]);
     expect(validProofSystems("sovereign")).toEqual(["none"]);
   });
@@ -19,7 +20,6 @@ describe("settlement → proof compatibility matrix", () => {
     const allowed = new Set([
       "optimistic:fraud",
       "zk:snark",
-      "zk:stark",
       "based:none",
       "sovereign:none",
     ]);

@@ -3,6 +3,7 @@ package rdk
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -62,6 +63,16 @@ type RollupConfig struct {
 	// StakeAmountUqor is the stake committed at creation, in uqor. Required to
 	// build a create message.
 	StakeAmountUqor string `json:"stakeAmountUqor,omitempty"`
+	// Sequencing is "based" for based sequencing (chain v3.2.8+, sent on the
+	// wire). Not the same as Sequencer, which is descriptive and has no effect
+	// on chain.
+	Sequencing SequencingMode `json:"sequencing,omitempty"`
+	// ExecutionVm is "qledger-v1", required for every new optimistic rollup
+	// (chain v3.2.8+).
+	ExecutionVm ExecutionVm `json:"executionVm,omitempty"`
+	// Privacy is "encapsulated" for a private rollup (chain v3.2.8+, zk with a
+	// Groth16 key).
+	Privacy RollupPrivacy `json:"privacy,omitempty"`
 }
 
 // CreateRollupMsgInput holds the inputs for an on-chain MsgCreateRollup, as the
@@ -72,18 +83,45 @@ type CreateRollupMsgInput struct {
 	Profile     Profile
 	VmType      VmType
 	StakeAmount string
+	// Chain v3.2.8+ modes, carried into the message (see RollupConfig).
+	Sequencing  SequencingMode
+	ExecutionVm ExecutionVm
+	Privacy     RollupPrivacy
+}
+
+// ToCreateRollupInput converts the builder's create inputs to the message
+// builder's input, parsing the stake. Every field, the chain v3.2.8 modes
+// included, is carried through to MsgCreateRollup.
+func (in CreateRollupMsgInput) ToCreateRollupInput() (CreateRollupInput, error) {
+	stake, err := strconv.ParseInt(in.StakeAmount, 10, 64)
+	if err != nil || stake <= 0 {
+		return CreateRollupInput{}, &RollupConfigError{Errors: []string{
+			fmt.Sprintf("stake amount %q is not a positive integer (uqor)", in.StakeAmount),
+		}}
+	}
+	return CreateRollupInput{
+		Creator:     in.Creator,
+		RollupID:    in.RollupID,
+		Profile:     string(in.Profile),
+		VmType:      string(in.VmType),
+		StakeAmount: stake,
+		Sequencing:  string(in.Sequencing),
+		ExecutionVm: string(in.ExecutionVm),
+		Privacy:     string(in.Privacy),
+	}, nil
 }
 
 // SettlementProofMatrix is the settlement -> proof-system compatibility matrix
 // enforced by the chain:
 //
 //   - optimistic -> fraud
-//   - zk         -> snark | stark
+//   - zk         -> snark (stark is refused from chain v3.2.8, see
+//     PausedProofSystems)
 //   - based      -> none
 //   - sovereign  -> none
 var SettlementProofMatrix = map[SettlementParadigm][]ProofSystem{
 	SettlementOptimistic: {ProofFraud},
-	SettlementZK:         {ProofSnark, ProofStark},
+	SettlementZK:         {ProofSnark},
 	SettlementBased:      {ProofNone},
 	SettlementSovereign:  {ProofNone},
 }
@@ -197,6 +235,25 @@ func ValidateRollupConfig(config RollupConfig) ValidationResult {
 		))
 	}
 
+	// STARK settlement is refused by the chain from v3.2.8.
+	if contains(PausedProofSystems, config.ProofSystem) {
+		errs = append(errs, fmt.Sprintf(
+			"proof system %q is paused on the network: the chain refuses STARK keys and "+
+				"STARK batches until it verifies a real rollup statement; use snark (Groth16)",
+			config.ProofSystem,
+		))
+	}
+
+	// Sequencing, execution VM and privacy (chain v3.2.8+), mirroring the
+	// chain's own config validation and its create-time rule.
+	errs = append(errs, RollupModeErrors(RollupModeInput{
+		Settlement:  string(config.Settlement),
+		ProofSystem: string(config.ProofSystem),
+		Sequencing:  string(config.Sequencing),
+		ExecutionVm: string(config.ExecutionVm),
+		Privacy:     string(config.Privacy),
+	})...)
+
 	// Based settlement requires the based sequencer mode.
 	if RequiresBasedSequencer(config.Settlement) && config.Sequencer != SequencerBased {
 		errs = append(errs, `based settlement requires the "based" sequencer mode`)
@@ -237,4 +294,76 @@ func AssertValidRollupConfig(config RollupConfig) error {
 		return &RollupConfigError{Errors: result.Errors}
 	}
 	return nil
+}
+
+// RollupModeInput is what RollupModeErrors judges.
+type RollupModeInput struct {
+	Settlement  string
+	ProofSystem string
+	Sequencing  string
+	ExecutionVm string
+	Privacy     string
+}
+
+// RollupModeErrors lists the chain v3.2.8 rules a new rollup's sequencing,
+// execution VM and privacy break (nil when the combination is accepted):
+//
+//   - A new optimistic rollup needs ExecutionVm "qledger-v1" and Sequencing
+//     "based".
+//   - Sequencing "based" is allowed for zk with snark, based settlement, and
+//     optimistic with qledger-v1.
+//   - ExecutionVm "qledger-v1" needs optimistic settlement, based sequencing,
+//     and no privacy.
+//   - Privacy "encapsulated" needs zk settlement with snark.
+func RollupModeErrors(in RollupModeInput) []string {
+	var errs []string
+	if !contains(SequencingModes, SequencingMode(in.Sequencing)) {
+		errs = append(errs, fmt.Sprintf(`sequencing %q is not valid (want "based" or empty)`, in.Sequencing))
+	}
+	if !contains(ExecutionVms, ExecutionVm(in.ExecutionVm)) {
+		errs = append(errs, fmt.Sprintf(`executionVm %q is not valid (want "qledger-v1" or empty)`, in.ExecutionVm))
+	}
+	if !contains(RollupPrivacyModes, RollupPrivacy(in.Privacy)) {
+		errs = append(errs, fmt.Sprintf(`privacy %q is not valid (want "encapsulated" or empty)`, in.Privacy))
+	}
+	optimistic := in.Settlement == string(SettlementOptimistic)
+	zkSnark := in.Settlement == string(SettlementZK) && in.ProofSystem == string(ProofSnark)
+	qledger := in.ExecutionVm == string(ExecutionVmQLedgerV1)
+	if optimistic && in.ExecutionVm == "" {
+		errs = append(errs, `from chain v3.2.8 a new optimistic rollup needs executionVm "qledger-v1" and sequencing "based" `+
+			"(its fraud proof re-executes the batch)")
+	}
+	if in.Sequencing == string(SequencingBased) {
+		eligible := zkSnark || in.Settlement == string(SettlementBased) || (optimistic && qledger)
+		if !eligible {
+			errs = append(errs, fmt.Sprintf("settlement %s with proof system %s cannot use based sequencing "+
+				"(zk with snark, based settlement, or optimistic with qledger-v1 only)", in.Settlement, in.ProofSystem))
+		}
+	}
+	if qledger {
+		if !optimistic {
+			errs = append(errs, fmt.Sprintf("executionVm qledger-v1 needs optimistic settlement, not %s", in.Settlement))
+		}
+		if in.Sequencing != string(SequencingBased) {
+			errs = append(errs, `executionVm qledger-v1 needs sequencing "based": its batches consume the inbox`)
+		}
+		if in.Privacy != "" {
+			errs = append(errs, "a qledger-v1 rollup cannot be private: a fraud proof re-executes plaintext")
+		}
+	}
+	if in.Privacy == string(PrivacyEncapsulated) && !zkSnark {
+		errs = append(errs, fmt.Sprintf("a private rollup must be zk with a snark (Groth16) key, not %s/%s",
+			in.Settlement, in.ProofSystem))
+	}
+	return errs
+}
+
+// profileSettlement is the settlement and proof system the chain derives from
+// each preset profile.
+var profileSettlement = map[string][2]string{
+	string(ProfileDefi):       {string(SettlementZK), string(ProofSnark)},
+	string(ProfileGaming):     {string(SettlementBased), string(ProofNone)},
+	string(ProfileNFT):        {string(SettlementOptimistic), string(ProofFraud)},
+	string(ProfileEnterprise): {string(SettlementBased), string(ProofNone)},
+	string(ProfileCustom):     {string(SettlementOptimistic), string(ProofFraud)},
 }

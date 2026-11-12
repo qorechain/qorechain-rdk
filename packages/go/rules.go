@@ -1,6 +1,9 @@
 package rdk
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Client-side copies of rules the chain enforces, so a transaction the chain
 // would refuse is caught before a fee is paid. The chain checks both in the
@@ -93,6 +96,19 @@ func preflightMessages(messages []Msg) error {
 			if e := RollupIDError(v.RollupID); e != "" {
 				return &RollupConfigError{Errors: []string{fmt.Sprintf("rollupId %q %s", v.RollupID, e)}}
 			}
+			// Chain v3.2.8 mode rules: checked against the profile's settlement
+			// when the profile is a preset, so a refused combination costs no fee.
+			if ps, ok := profileSettlement[v.Profile]; ok {
+				errs := RollupModeErrors(RollupModeInput{
+					Settlement: ps[0], ProofSystem: ps[1],
+					Sequencing: v.Sequencing, ExecutionVm: v.ExecutionVm, Privacy: v.Privacy,
+				})
+				if len(errs) > 0 {
+					return &RollupConfigError{Errors: []string{
+						fmt.Sprintf("rollup %q would be refused: %s", v.RollupID, strings.Join(errs, "; ")),
+					}}
+				}
+			}
 		case MsgSubmitBatch:
 			if e := WithdrawalsRootError(v.WithdrawalsRoot); e != "" {
 				return &RollupConfigError{Errors: []string{fmt.Sprintf("cannot submit batch %d: %s", v.BatchIndex, e)}}
@@ -101,25 +117,64 @@ func preflightMessages(messages []Msg) error {
 			if errs := WithdrawalErrors(v); len(errs) > 0 {
 				return &RollupConfigError{Errors: append([]string{"withdrawal would be refused by the chain"}, errs...)}
 			}
+		case MsgSetVerificationKey:
+			if e := setVerificationKeyError(v.ProofSystem); e != "" {
+				return &RollupConfigError{Errors: []string{e}}
+			}
+		case MsgPostRollupData:
+			if e := postRollupDataError(v.Data); e != "" {
+				return &RollupConfigError{Errors: []string{e}}
+			}
+		case MsgDepositToRollup:
+			if e := depositToRollupError(v.Account, v.Amount); e != "" {
+				return &RollupConfigError{Errors: []string{e}}
+			}
+		case MsgBondRollupSubmitter:
+			if e := bondRollupSubmitterError(v.Amount); e != "" {
+				return &RollupConfigError{Errors: []string{e}}
+			}
+		case MsgSetRollupMembers:
+			if e := setRollupMembersError(v.Members); e != "" {
+				return &RollupConfigError{Errors: []string{e}}
+			}
+		case MsgRegisterKEMKey:
+			if v.AlgorithmID == MlKem1024AlgorithmID {
+				if e := registerKEMKeyError(v.PublicKey); e != "" {
+					return &RollupConfigError{Errors: []string{e}}
+				}
+			}
 		}
 	}
 	return nil
 }
 
+// DataHashOptions configures DataHashError.
+type DataHashOptions struct {
+	// PostedDataEnabled is the chain's rdk-post-rollup-data switch (chain
+	// v3.2.8): a native-DA data_hash may then name a retained post.
+	PostedDataEnabled bool
+}
+
 // DataHashError says why a batch with dataHash would be refused for a rollup on
-// daBackend, or returns "" if the chain accepts it.
+// daBackend, or returns "" if the chain may accept it.
 //
 // On a "native" or "both" rollup the chain accepts a non-empty data_hash only
-// when a matching blob is stored on chain, and no transaction stores one: the
-// batch is refused as data unavailable. Leave it empty there; the batch's state
-// roots and proof still bind it. ("celestia" is not checked by the chain, and
-// is not active on the network.)
-func DataHashError(daBackend string, dataHash []byte) string {
+// when it names data the chain holds: from chain v3.2.8 a retained
+// MsgPostRollupData post (data_hash = SHA-256 of the payload, see
+// PostedDataHash). Before v3.2.8 no transaction stored such data, so the batch
+// is always refused there; pass DataHashOptions{PostedDataEnabled: true} (the
+// rdk-post-rollup-data switch) to allow it. ("celestia" is not checked by the
+// chain, and is not active on the network.) A based rollup's batch is judged
+// by its inbox range instead; see InboxRangeHash.
+func DataHashError(daBackend string, dataHash []byte, opts ...DataHashOptions) string {
 	if len(dataHash) == 0 || (daBackend != "native" && daBackend != "both") {
 		return ""
 	}
+	if len(opts) > 0 && opts[0].PostedDataEnabled {
+		return ""
+	}
 	return "data_hash must be empty on a rollup with " + daBackend + " data availability: no transaction " +
-		"stores a data-availability blob on chain, so the chain refuses a batch that claims one"
+		"stores a data-availability blob on chain before v3.2.8, so the chain refuses a batch that claims one"
 }
 
 // WithdrawalsRootError says why a batch's WithdrawalsRoot would be refused, or

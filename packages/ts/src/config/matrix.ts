@@ -4,13 +4,13 @@ import type { ProofSystem, SettlementParadigm } from "./enums";
  * The settlement → proof-system compatibility matrix enforced by the chain:
  *
  * - `optimistic` → `fraud`
- * - `zk` → `snark` | `stark`
+ * - `zk` → `snark` (`stark` is refused from chain v3.2.8, see `PAUSED_PROOF_SYSTEMS`)
  * - `based` → `none`
  * - `sovereign` → `none`
  */
 export const SETTLEMENT_PROOF_MATRIX: Record<SettlementParadigm, readonly ProofSystem[]> = {
   optimistic: ["fraud"],
-  zk: ["snark", "stark"],
+  zk: ["snark"],
   based: ["none"],
   sovereign: ["none"],
 };

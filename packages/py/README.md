@@ -45,7 +45,7 @@ pqc = pqc_keypair_from_env(client, signer.address)
 tx = client.connect_tx(
     signer,
     pqc_keypair=pqc.keypair,
-    include_pqc_public_key=pqc.include_pqc_public_key,  # True: registers the key on first use
+    include_pqc_public_key=pqc.include_pqc_public_key,  # True: registers the key first
     sign_bytes_version="auto",  # or force "v1" / "v2"
 )
 tx.pause_rollup(rollup_id="my-rollup", reason="maintenance")
@@ -55,7 +55,10 @@ tx.pause_rollup(rollup_id="my-rollup", reason="maintenance")
 pick the key the chain actually has registered for the account: the canonical
 address-bound derivation (`shake256("qorechain:pqc:v1|" + address + "|" +
 mnemonic)`) or the legacy one. An account with no key yet gets the canonical
-key, embedded in the first transaction so the chain registers it. A key on
+key, and the client registers it (`MsgRegisterPQCKeyV2` with a proof of
+possession, in a transaction of its own) before its first transaction: since
+chain v3.2.3 a key carried in the signature extension is not registered on
+first use. A key on
 chain that neither derivation (nor `QORE_PQC_SEED_HEX`) produces is an error,
 never a guess. With `sign_bytes_version="auto"` the client asks the network's
 REST endpoint which hybrid sign-bytes form it verifies (`v1` / `v2`); a direct

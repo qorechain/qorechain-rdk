@@ -52,3 +52,29 @@ export const DEFAULT_RDK_PARAMS = {
 
 /** Default optimistic challenge bond, in uqor (1,000 QOR). */
 export const DEFAULT_CHALLENGE_BOND_UQOR = "1000000000";
+
+/** Protocol switches of the chain v3.2.7 and v3.2.8 RDK features, as `x/pqc` reports them. */
+export const RDK_FEATURES = {
+  zkVerificationKey: "rdk-zk-verification-key",
+  postRollupData: "rdk-post-rollup-data",
+  basedSequencing: "rdk-based-sequencing",
+  optimisticReexec: "rdk-optimistic-reexec",
+  starkStatement: "rdk-stark-statement",
+  privateRollups: "rdk-private-rollups",
+  zkCanonicalInputs: "rdk-zk-canonical-inputs",
+  maxBatchesPerBlock: "rdk-max-batches-per-block",
+} as const;
+
+/**
+ * Posted-data retention (chain v3.2.8): default 648,000 blocks; a set value is
+ * 100 to 25,920,000 blocks and at least the longest challenge window in force,
+ * counted as one block per second.
+ */
+export const DEFAULT_POSTED_DATA_RETENTION_BLOCKS = 648_000;
+export const MIN_POSTED_DATA_RETENTION_BLOCKS = 100;
+export const MAX_POSTED_DATA_RETENTION_BLOCKS = 25_920_000;
+
+/** Smallest `MsgDepositToRollup` amount, in uqor (1 QOR). */
+export const MIN_ROLLUP_DEPOSIT_UQOR = 1_000_000n;
+/** Default `min_submitter_bond`, in uqor (1,000 QOR); read the live value from `rdk.params()`. */
+export const DEFAULT_MIN_SUBMITTER_BOND_UQOR = 1_000_000_000n;

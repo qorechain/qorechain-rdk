@@ -66,6 +66,9 @@ export class RollupConfigBuilder {
       profile: this.config.profile,
       vmType: this.config.vmType,
       stakeAmount,
+      ...(this.config.sequencing ? { sequencing: this.config.sequencing } : {}),
+      ...(this.config.executionVm ? { executionVm: this.config.executionVm } : {}),
+      ...(this.config.privacy ? { privacy: this.config.privacy } : {}),
     };
   }
 }

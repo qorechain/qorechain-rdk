@@ -20,9 +20,8 @@ class ConfigTest {
     @Test
     void matrixMatchesChainRules() {
         assertEquals(List.of(ProofSystem.FRAUD), Matrix.validProofSystems(SettlementParadigm.OPTIMISTIC));
-        assertEquals(
-                List.of(ProofSystem.SNARK, ProofSystem.STARK),
-                Matrix.validProofSystems(SettlementParadigm.ZK));
+        // STARK settlement is refused by the chain from v3.2.8.
+        assertEquals(List.of(ProofSystem.SNARK), Matrix.validProofSystems(SettlementParadigm.ZK));
         assertEquals(List.of(ProofSystem.NONE), Matrix.validProofSystems(SettlementParadigm.BASED));
         assertEquals(List.of(ProofSystem.NONE), Matrix.validProofSystems(SettlementParadigm.SOVEREIGN));
 
@@ -42,7 +41,7 @@ class ConfigTest {
     @Test
     void validateRejectsAnIncompatibleProofPair() {
         RollupConfig config = Presets.defi(c -> c.rollupId = "bad").get();
-        config.proofSystem = ProofSystem.FRAUD; // zk settlement requires snark|stark
+        config.proofSystem = ProofSystem.FRAUD; // zk settlement requires snark
         ValidationResult r = Validate.validateRollupConfig(config);
         assertFalse(r.valid);
         assertTrue(r.errors.stream().anyMatch(e -> e.contains("not compatible")));

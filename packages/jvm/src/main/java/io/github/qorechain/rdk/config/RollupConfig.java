@@ -51,6 +51,15 @@ public class RollupConfig {
     public Integer maxDaBlobSize;
     /** Stake committed at creation, in uqor. Required to build a create message. */
     public String stakeAmountUqor;
+    /**
+     * Chain v3.2.8+: {@code "based"} sequencing (sent on the wire), or null/empty. Not the same as
+     * {@code sequencer}, which is descriptive and has no effect on chain.
+     */
+    public String sequencing;
+    /** Chain v3.2.8+: {@code "qledger-v1"}, required for every new optimistic rollup. */
+    public String executionVm;
+    /** Chain v3.2.8+: {@code "encapsulated"} for a private rollup (zk with a Groth16 key). */
+    public String privacy;
 
     public RollupConfig() {}
 
@@ -72,6 +81,9 @@ public class RollupConfig {
         c.challengeBondUqor = challengeBondUqor;
         c.maxDaBlobSize = maxDaBlobSize;
         c.stakeAmountUqor = stakeAmountUqor;
+        c.sequencing = sequencing;
+        c.executionVm = executionVm;
+        c.privacy = privacy;
         return c;
     }
 }

@@ -106,6 +106,11 @@ wire_enum! {
 
 wire_enum! {
     /// The proof a settlement batch carries.
+    ///
+    /// `Stark` stays so rollups created before can be read, but the chain
+    /// refuses STARK settlement from v3.2.8: a STARK key cannot be set and a
+    /// STARK rollup's batches are refused until the chain verifies a real
+    /// rollup statement. New rollups use `Snark` (see [`PAUSED_PROOF_SYSTEMS`]).
     ProofSystem, "proof system", PROOF_SYSTEMS => {
         Fraud => "fraud",
         Snark => "snark",
@@ -113,6 +118,47 @@ wire_enum! {
         None => "none",
     }
 }
+
+/// Proof systems the chain currently refuses for new rollups and new batches.
+pub const PAUSED_PROOF_SYSTEMS: &[ProofSystem] = &[ProofSystem::Stark];
+
+/// Whether `proof_system` (a wire string) is paused on the network.
+pub fn is_proof_system_paused(proof_system: &str) -> bool {
+    PAUSED_PROOF_SYSTEMS
+        .iter()
+        .any(|p| p.as_str() == proof_system)
+}
+
+wire_enum! {
+    /// How a rollup's transactions are ordered (chain v3.2.8+). Unset (`""` on
+    /// the wire): the rollup's sequencer settles. `Based`: anyone posts data,
+    /// the order is inclusion on the chain, and every batch consumes the inbox
+    /// in order. Not the same as [`Sequencer`], which is descriptive and has no
+    /// effect on chain.
+    SequencingMode, "sequencing mode", SEQUENCING_MODES => {
+        Based => "based",
+    }
+}
+
+wire_enum! {
+    /// The execution model the chain re-executes in an optimistic fraud proof
+    /// (chain v3.2.8+). `qledger-v1` is a uqor account ledger with signed
+    /// transfers and withdrawals; every new optimistic rollup needs it.
+    ExecutionVm, "execution VM", EXECUTION_VMS => {
+        QledgerV1 => "qledger-v1",
+    }
+}
+
+wire_enum! {
+    /// Rollup privacy (chain v3.2.8+): `encapsulated` posts are ML-KEM-1024
+    /// envelopes to the members.
+    RollupPrivacy, "rollup privacy mode", ROLLUP_PRIVACY_MODES => {
+        Encapsulated => "encapsulated",
+    }
+}
+
+/// Most members a private rollup can have.
+pub const MAX_ROLLUP_MEMBERS: usize = 32;
 
 wire_enum! {
     /// Where rollup data is made available.

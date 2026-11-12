@@ -38,7 +38,7 @@ export async function connectOperator(client: RdkClient): Promise<RdkTxClient> {
     return client.connectTx(signer, { gasPrice: GAS_PRICE });
   }
   if (!pqc.registered) {
-    console.log(`Registering your post-quantum key (${pqc.derivation}) with this transaction.`);
+    console.log(`Registering your post-quantum key (${pqc.derivation}) first, in a transaction of its own.`);
   }
   return client.connectTx(signer, {
     gasPrice: GAS_PRICE,

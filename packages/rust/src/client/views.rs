@@ -61,6 +61,19 @@ pub struct ParamsView {
     pub blob_retention_blocks: i64,
     /// Maximum settlement batches accepted per block.
     pub max_batches_per_block: i64,
+    /// Chain v3.2.8+ (effective values; `None` from an older node): blocks a
+    /// finalized batch is kept.
+    pub finalized_batch_retention_blocks: Option<i64>,
+    /// Chain v3.2.8+: largest `MsgPostRollupData` payload, in bytes.
+    pub max_posted_data_bytes: Option<i64>,
+    /// Chain v3.2.8+: posted bytes allowed per block.
+    pub max_posted_data_bytes_per_block: Option<i64>,
+    /// Chain v3.2.8+: fee per billable posted byte, in uqor.
+    pub posted_data_fee_per_byte: Option<i64>,
+    /// Chain v3.2.8+: blocks a post's commitment is retained.
+    pub posted_data_retention_blocks: Option<i64>,
+    /// Chain v3.2.8+: bond a qledger-v1 batch submitter must hold, in uqor.
+    pub min_submitter_bond: Option<String>,
 }
 
 /// A rollup's configuration and status.
@@ -101,11 +114,24 @@ pub struct RollupView {
     pub challenge_bond: Option<String>,
     /// The rollup's proof system, e.g. `fraud` (chain v3.2.4+).
     pub proof_system: Option<String>,
-    /// Whether the rollup has a ZK verification key registered. True only when
-    /// the node serves the field as true. No release before the planned chain
-    /// v3.2.7 can register one, so a node that does not serve it means none:
-    /// every zk batch is then refused.
+    /// Whether the rollup has a ZK verification key registered (chain v3.2.7+,
+    /// `MsgSetVerificationKey`). True only when the node serves the field as
+    /// true; a node that does not serve it means none: every zk batch is then
+    /// refused.
     pub has_verification_key: bool,
+    /// Chain v3.2.8+: `"based"` or `""` (the rollup's sequencer settles).
+    pub sequencing: String,
+    /// Chain v3.2.8+: `"qledger-v1"` or `""`.
+    pub execution_vm: String,
+    /// Chain v3.2.8+: `"encapsulated"` or `""`.
+    pub privacy: String,
+    /// Chain v3.2.8+: a private rollup's members, in envelope order.
+    pub members: Vec<String>,
+    /// Chain v3.2.8+: the membership epoch an envelope must carry.
+    pub members_epoch: i64,
+    /// Chain v3.2.8+: uqor deposited into a qledger-v1 rollup and not
+    /// withdrawn. `"0"` from an older node.
+    pub deposit_pool: String,
 }
 
 /// A settlement batch.
@@ -144,6 +170,89 @@ pub struct BatchView {
     /// field as true; `transition_root_version_for_batch` otherwise decides by
     /// height.
     pub withdrawals_bound: bool,
+    /// Chain v3.2.8+, based rollups: the inbox range the batch consumed (after
+    /// `inbox_start`, up to `inbox_end`).
+    pub inbox_start: i64,
+    /// See `inbox_start`.
+    pub inbox_end: i64,
+    /// Chain v3.2.8+: the stored `withdrawals_root` is the submitted root
+    /// reduced modulo the BLS12-381 scalar field (a Groth16 batch that binds
+    /// its withdrawals, settled with `rdk-zk-canonical-inputs` on). Compare a
+    /// tree root with it modulo r ([`crate::zk::withdrawals_root_matches`]),
+    /// not byte for byte.
+    pub withdrawals_root_reduced: bool,
+}
+
+/// A rollup's inbox (chain v3.2.8+). Hash fields are as the node serves them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InboxView {
+    /// The rollup id.
+    pub rollup_id: String,
+    /// The rollup's sequencing.
+    pub sequencing: String,
+    /// Sequence of the last post (0 = none yet).
+    pub head_sequence: i64,
+    /// The accumulator at the head.
+    pub head_acc: String,
+    /// Where the next based batch starts.
+    pub consumed_sequence: i64,
+    /// The accumulator at the consumed position.
+    pub consumed_acc: String,
+    /// The range end `range_data_hash` is for.
+    pub range_end: i64,
+    /// The `data_hash` a based batch with `inbox_end = range_end` must carry;
+    /// empty when no longer retained.
+    pub range_data_hash: String,
+}
+
+/// One posted-data commitment (chain v3.2.8+).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostedDataView {
+    /// The rollup id.
+    pub rollup_id: String,
+    /// The inbox sequence.
+    pub sequence: i64,
+    /// SHA-256 of the payload, as the node serves it.
+    pub data_hash: String,
+    /// Payload size, in bytes.
+    pub size: i64,
+    /// The poster address.
+    pub poster: String,
+    /// The block whose transaction carries the payload.
+    pub height: i64,
+    /// The inbox accumulator after this post.
+    pub inbox_acc: String,
+    /// The height the commitment expires at.
+    pub expires_at_height: i64,
+}
+
+/// A submitter's bond on a qledger-v1 rollup (chain v3.2.8+).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubmitterBondView {
+    /// uqor; `"0"` when there is none.
+    pub amount: String,
+    /// Block time (Unix seconds) of the submitter's last batch.
+    pub last_submit_time: i64,
+    /// Block time (Unix seconds) from which an unbond succeeds.
+    pub unbond_after: i64,
+    /// The submitter's batches on the rollup still waiting for finality
+    /// (chain v3.2.8+; at most 1,024).
+    pub pending: i64,
+}
+
+/// A key-encapsulation key an address published (`x/pqc`, chain v3.2.5+).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KemKeyView {
+    /// The address.
+    pub address: String,
+    /// The algorithm id (2 = ML-KEM-1024).
+    pub algorithm_id: i64,
+    /// The algorithm name.
+    pub algorithm_name: String,
+    /// The FIPS 203 encapsulation key, lowercase hex.
+    pub public_key: String,
+    /// The height the key was registered at.
+    pub registered_height: i64,
 }
 
 /// A subsidiary-layer state anchor committed to the Main Chain (the
@@ -245,6 +354,85 @@ pub fn map_params_view(raw: &Value) -> ParamsView {
             pick(raw, &["max_batches_per_block", "maxBatchesPerBlock"]),
             0,
         ),
+        finalized_batch_retention_blocks: opt_num(
+            raw,
+            &[
+                "finalized_batch_retention_blocks",
+                "finalizedBatchRetentionBlocks",
+            ],
+        ),
+        max_posted_data_bytes: opt_num(raw, &["max_posted_data_bytes", "maxPostedDataBytes"]),
+        max_posted_data_bytes_per_block: opt_num(
+            raw,
+            &[
+                "max_posted_data_bytes_per_block",
+                "maxPostedDataBytesPerBlock",
+            ],
+        ),
+        posted_data_fee_per_byte: opt_num(
+            raw,
+            &["posted_data_fee_per_byte", "postedDataFeePerByte"],
+        ),
+        posted_data_retention_blocks: opt_num(
+            raw,
+            &["posted_data_retention_blocks", "postedDataRetentionBlocks"],
+        ),
+        min_submitter_bond: present(pick(raw, &["min_submitter_bond", "minSubmitterBond"]))
+            .map(|v| str_of(Some(v), "")),
+    }
+}
+
+/// A number the node may not send (absent, null or empty reads as `None`).
+fn opt_num(raw: &Value, keys: &[&str]) -> Option<i64> {
+    present(pick(raw, keys)).map(|v| num_of(Some(v), 0))
+}
+
+/// Map a raw JSON object into an [`InboxView`].
+pub fn map_inbox_view(raw: &Value) -> InboxView {
+    InboxView {
+        rollup_id: str_of(pick(raw, &["rollup_id", "rollupId"]), ""),
+        sequencing: str_of(pick(raw, &["sequencing"]), ""),
+        head_sequence: num_of(pick(raw, &["head_sequence", "headSequence"]), 0),
+        head_acc: str_of(pick(raw, &["head_acc", "headAcc"]), ""),
+        consumed_sequence: num_of(pick(raw, &["consumed_sequence", "consumedSequence"]), 0),
+        consumed_acc: str_of(pick(raw, &["consumed_acc", "consumedAcc"]), ""),
+        range_end: num_of(pick(raw, &["range_end", "rangeEnd"]), 0),
+        range_data_hash: str_of(pick(raw, &["range_data_hash", "rangeDataHash"]), ""),
+    }
+}
+
+/// Map a raw JSON object into a [`PostedDataView`].
+pub fn map_posted_data_view(raw: &Value) -> PostedDataView {
+    PostedDataView {
+        rollup_id: str_of(pick(raw, &["rollup_id", "rollupId"]), ""),
+        sequence: num_of(pick(raw, &["sequence"]), 0),
+        data_hash: str_of(pick(raw, &["data_hash", "dataHash"]), ""),
+        size: num_of(pick(raw, &["size"]), 0),
+        poster: str_of(pick(raw, &["poster"]), ""),
+        height: num_of(pick(raw, &["height"]), 0),
+        inbox_acc: str_of(pick(raw, &["inbox_acc", "inboxAcc"]), ""),
+        expires_at_height: num_of(pick(raw, &["expires_at_height", "expiresAtHeight"]), 0),
+    }
+}
+
+/// Map a raw JSON object into a [`SubmitterBondView`].
+pub fn map_submitter_bond_view(raw: &Value) -> SubmitterBondView {
+    SubmitterBondView {
+        amount: str_of(pick(raw, &["amount"]), "0"),
+        last_submit_time: num_of(pick(raw, &["last_submit_time", "lastSubmitTime"]), 0),
+        unbond_after: num_of(pick(raw, &["unbond_after", "unbondAfter"]), 0),
+        pending: num_of(pick(raw, &["pending"]), 0),
+    }
+}
+
+/// Map a raw JSON object into a [`KemKeyView`].
+pub fn map_kem_key_view(raw: &Value) -> KemKeyView {
+    KemKeyView {
+        address: str_of(pick(raw, &["address"]), ""),
+        algorithm_id: num_of(pick(raw, &["algorithm_id", "algorithmId"]), 0),
+        algorithm_name: str_of(pick(raw, &["algorithm_name", "algorithmName"]), ""),
+        public_key: hex_of(pick(raw, &["public_key", "publicKey"])),
+        registered_height: num_of(pick(raw, &["registered_height", "registeredHeight"]), 0),
     }
 }
 
@@ -272,6 +460,15 @@ pub fn map_rollup_view(raw: &Value) -> RollupView {
             .map(|v| str_of(Some(v), "")),
         has_verification_key: pick(raw, &["has_verification_key", "hasVerificationKey"])
             == Some(&Value::Bool(true)),
+        sequencing: str_of(pick(raw, &["sequencing"]), ""),
+        execution_vm: str_of(pick(raw, &["execution_vm", "executionVm"]), ""),
+        privacy: str_of(pick(raw, &["privacy"]), ""),
+        members: pick(raw, &["members"])
+            .and_then(Value::as_array)
+            .map(|arr| arr.iter().map(|v| str_of(Some(v), "")).collect())
+            .unwrap_or_default(),
+        members_epoch: num_of(pick(raw, &["members_epoch", "membersEpoch"]), 0),
+        deposit_pool: str_of(pick(raw, &["deposit_pool", "depositPool"]), "0"),
     }
 }
 
@@ -301,5 +498,11 @@ pub fn map_batch_view(raw: &Value) -> BatchView {
         submitted_time: num_of(pick(raw, &["submitted_time", "submittedTime"]), 0),
         withdrawals_bound: pick(raw, &["withdrawals_bound", "withdrawalsBound"])
             == Some(&Value::Bool(true)),
+        inbox_start: num_of(pick(raw, &["inbox_start", "inboxStart"]), 0),
+        inbox_end: num_of(pick(raw, &["inbox_end", "inboxEnd"]), 0),
+        withdrawals_root_reduced: pick(
+            raw,
+            &["withdrawals_root_reduced", "withdrawalsRootReduced"],
+        ) == Some(&Value::Bool(true)),
     }
 }

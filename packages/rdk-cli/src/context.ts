@@ -93,7 +93,7 @@ export function buildContext(options: BuildContextOptions): CliContext {
         );
       }
       if (!pqc.registered) {
-        out.line(`Registering your post-quantum key (${pqc.derivation}) with this transaction.`);
+        out.line(`Registering your post-quantum key (${pqc.derivation}) first, in a transaction of its own.`);
       }
       return client.connectTx(signer, {
         gasPrice,

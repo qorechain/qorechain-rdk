@@ -7,7 +7,7 @@ package rdk
 // with the rdk params query surface before acting on them.
 
 // Version is the RDK package version (kept in lockstep with the TypeScript RDK).
-const Version = "0.8.0"
+const Version = "0.9.0"
 
 const (
 	// DisplayDenom is the display denomination.
@@ -74,4 +74,36 @@ const (
 	// DefaultChallengeBondUqor is the default optimistic challenge bond, in
 	// uqor (1,000 QOR).
 	DefaultChallengeBondUqor = "1000000000"
+)
+
+// Protocol switches of the chain v3.2.7 and v3.2.8 rdk features, as the chain's
+// protocol-features route reports them (see RestClient.IsProtocolFeatureEnabled).
+const (
+	FeatureRDKZkVerificationKey  = "rdk-zk-verification-key"
+	FeatureRDKPostRollupData     = "rdk-post-rollup-data"
+	FeatureRDKBasedSequencing    = "rdk-based-sequencing"
+	FeatureRDKOptimisticReexec   = "rdk-optimistic-reexec"
+	FeatureRDKStarkStatement     = "rdk-stark-statement"
+	FeatureRDKPrivateRollups     = "rdk-private-rollups"
+	FeatureRDKZkCanonicalInputs  = "rdk-zk-canonical-inputs"
+	FeatureRDKMaxBatchesPerBlock = "rdk-max-batches-per-block"
+)
+
+// Posted-data retention (chain v3.2.8): default 648,000 blocks; a value set by
+// governance is 100 to 25,920,000 blocks and at least the longest challenge
+// window in force, counted as one block per second.
+const (
+	DefaultPostedDataRetentionBlocks uint64 = 648_000
+	MinPostedDataRetentionBlocks     uint64 = 100
+	MaxPostedDataRetentionBlocks     uint64 = 25_920_000
+)
+
+const (
+	// MinRollupDepositUqor is the smallest MsgDepositToRollup amount, in uqor
+	// (1 QOR).
+	MinRollupDepositUqor uint64 = 1_000_000
+
+	// DefaultMinSubmitterBondUqor is the default min_submitter_bond, in uqor
+	// (1,000 QOR). Read the live value from the params query.
+	DefaultMinSubmitterBondUqor uint64 = 1_000_000_000
 )

@@ -2,8 +2,11 @@ import type {
   DABackend,
   GasModel,
   ProfileName,
+  ExecutionVm,
   ProofSystem,
+  RollupPrivacy,
   SequencerMode,
+  SequencingMode,
   SettlementParadigm,
   VmType,
 } from "./enums";
@@ -66,6 +69,15 @@ export interface RollupConfig {
   maxDaBlobSize?: number;
   /** Stake committed at creation, in uqor. Required to build a create message. */
   stakeAmountUqor?: string;
+  /**
+   * Chain v3.2.8+: `"based"` sequencing (sent on the wire). Not the same as
+   * `sequencer`, which is descriptive and has no effect on chain.
+   */
+  sequencing?: SequencingMode;
+  /** Chain v3.2.8+: `"qledger-v1"`, required for every new optimistic rollup. */
+  executionVm?: ExecutionVm;
+  /** Chain v3.2.8+: `"encapsulated"` for a private rollup (zk with a Groth16 key). */
+  privacy?: RollupPrivacy;
 }
 
 /** Inputs for an on-chain `MsgCreateRollup`, as the kit submits them. */
@@ -75,4 +87,7 @@ export interface CreateRollupMsgInput {
   profile: ProfileName;
   vmType: VmType;
   stakeAmount: string;
+  sequencing?: SequencingMode;
+  executionVm?: ExecutionVm;
+  privacy?: RollupPrivacy;
 }

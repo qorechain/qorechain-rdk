@@ -1,6 +1,6 @@
 //! A fluent builder for a [`RollupConfig`].
 
-use super::enums::{Profile, VmType};
+use super::enums::{ExecutionVm, Profile, RollupPrivacy, SequencingMode, VmType};
 use super::errors::RollupConfigError;
 use super::types::{CreateRollupMsgInput, RollupConfig, SequencerParams};
 use super::validate::{assert_valid_rollup_config, validate_rollup_config, ValidationResult};
@@ -36,6 +36,25 @@ impl RollupConfigBuilder {
     /// Override the VM type.
     pub fn set_vm_type(mut self, vm_type: VmType) -> Self {
         self.config.vm_type = vm_type;
+        self
+    }
+
+    /// Set the chain v3.2.8 sequencing (`None` = the rollup's sequencer
+    /// settles).
+    pub fn set_sequencing(mut self, sequencing: Option<SequencingMode>) -> Self {
+        self.config.sequencing = sequencing;
+        self
+    }
+
+    /// Set the chain v3.2.8 execution VM.
+    pub fn set_execution_vm(mut self, execution_vm: Option<ExecutionVm>) -> Self {
+        self.config.execution_vm = execution_vm;
+        self
+    }
+
+    /// Set the chain v3.2.8 privacy mode.
+    pub fn set_privacy(mut self, privacy: Option<RollupPrivacy>) -> Self {
+        self.config.privacy = privacy;
         self
     }
 
@@ -95,6 +114,9 @@ impl RollupConfigBuilder {
             profile: self.config.profile,
             vm_type: self.config.vm_type,
             stake_amount: stake,
+            sequencing: self.config.sequencing,
+            execution_vm: self.config.execution_vm,
+            privacy: self.config.privacy,
         })
     }
 

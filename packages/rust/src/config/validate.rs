@@ -1,6 +1,9 @@
 //! Client-side validation of a rollup configuration against the on-chain rules.
 
-use super::enums::{is_vm_type, DaBackend, Sequencer};
+use super::enums::{
+    is_vm_type, DaBackend, Sequencer, EXECUTION_VMS, PAUSED_PROOF_SYSTEMS, ROLLUP_PRIVACY_MODES,
+    SEQUENCING_MODES,
+};
 use super::errors::RollupConfigError;
 use super::matrix::{is_proof_compatible, requires_based_sequencer, valid_proof_systems};
 use super::types::RollupConfig;
@@ -64,6 +67,25 @@ pub fn validate_rollup_config(config: &RollupConfig) -> ValidationResult {
         ));
     }
 
+    // STARK settlement is refused by the chain from v3.2.8.
+    if PAUSED_PROOF_SYSTEMS.contains(&config.proof_system) {
+        errors.push(format!(
+            "proof system \"{}\" is paused on the network: the chain refuses STARK keys and \
+             STARK batches until it verifies a real rollup statement; use snark (Groth16)",
+            config.proof_system.as_str()
+        ));
+    }
+
+    // Sequencing, execution VM and privacy (chain v3.2.8+), mirroring the
+    // chain's rollup config validation and its create-time rule.
+    errors.extend(rollup_mode_errors(&RollupModeInput {
+        settlement: config.settlement.as_str(),
+        proof_system: config.proof_system.as_str(),
+        sequencing: config.sequencing.map(|v| v.as_str()).unwrap_or(""),
+        execution_vm: config.execution_vm.map(|v| v.as_str()).unwrap_or(""),
+        privacy: config.privacy.map(|v| v.as_str()).unwrap_or(""),
+    }));
+
     if requires_based_sequencer(config.settlement) && config.sequencer != Sequencer::Based {
         errors.push("based settlement requires the \"based\" sequencer mode".to_string());
     }
@@ -115,4 +137,99 @@ pub fn assert_valid_rollup_config(config: &RollupConfig) -> Result<(), RollupCon
     } else {
         Err(RollupConfigError::new(result.errors))
     }
+}
+
+/// The fields [`rollup_mode_errors`] judges, as wire strings (`""` = unset).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RollupModeInput<'a> {
+    /// Settlement paradigm (`optimistic`, `zk`, `based`, `sovereign`).
+    pub settlement: &'a str,
+    /// Proof system (`fraud`, `snark`, `stark`, `none`).
+    pub proof_system: &'a str,
+    /// `""` or `"based"`.
+    pub sequencing: &'a str,
+    /// `""` or `"qledger-v1"`.
+    pub execution_vm: &'a str,
+    /// `""` or `"encapsulated"`.
+    pub privacy: &'a str,
+}
+
+/// The chain's v3.2.8 rules for `sequencing`, `execution_vm` and `privacy` on
+/// a new rollup. Returns every violation (empty when the combination is
+/// accepted).
+///
+/// - A new optimistic rollup needs `execution_vm: "qledger-v1"` and
+///   `sequencing: "based"`.
+/// - `sequencing: "based"` is allowed for zk with snark, based settlement, and
+///   optimistic with qledger-v1.
+/// - `execution_vm: "qledger-v1"` needs optimistic settlement, based
+///   sequencing, and no privacy.
+/// - `privacy: "encapsulated"` needs zk settlement with snark.
+pub fn rollup_mode_errors(m: &RollupModeInput<'_>) -> Vec<String> {
+    let mut errors = Vec::new();
+    let RollupModeInput {
+        settlement,
+        proof_system,
+        sequencing,
+        execution_vm,
+        privacy,
+    } = *m;
+    if !sequencing.is_empty() && !SEQUENCING_MODES.iter().any(|v| v.as_str() == sequencing) {
+        errors.push(format!(
+            "sequencing \"{sequencing}\" is not valid (want \"based\" or empty)"
+        ));
+    }
+    if !execution_vm.is_empty() && !EXECUTION_VMS.iter().any(|v| v.as_str() == execution_vm) {
+        errors.push(format!(
+            "executionVm \"{execution_vm}\" is not valid (want \"qledger-v1\" or empty)"
+        ));
+    }
+    if !privacy.is_empty() && !ROLLUP_PRIVACY_MODES.iter().any(|v| v.as_str() == privacy) {
+        errors.push(format!(
+            "privacy \"{privacy}\" is not valid (want \"encapsulated\" or empty)"
+        ));
+    }
+    if settlement == "optimistic" && execution_vm.is_empty() {
+        errors.push(
+            "from chain v3.2.8 a new optimistic rollup needs executionVm \"qledger-v1\" and \
+             sequencing \"based\" (its fraud proof re-executes the batch)"
+                .to_string(),
+        );
+    }
+    if sequencing == "based" {
+        let eligible = (settlement == "zk" && proof_system == "snark")
+            || settlement == "based"
+            || (settlement == "optimistic" && execution_vm == "qledger-v1");
+        if !eligible {
+            errors.push(format!(
+                "settlement {settlement} with proof system {proof_system} cannot use based \
+                 sequencing (zk with snark, based settlement, or optimistic with qledger-v1 only)"
+            ));
+        }
+    }
+    if execution_vm == "qledger-v1" {
+        if settlement != "optimistic" {
+            errors.push(format!(
+                "executionVm qledger-v1 needs optimistic settlement, not {settlement}"
+            ));
+        }
+        if sequencing != "based" {
+            errors.push(
+                "executionVm qledger-v1 needs sequencing \"based\": its batches consume the inbox"
+                    .to_string(),
+            );
+        }
+        if !privacy.is_empty() {
+            errors.push(
+                "a qledger-v1 rollup cannot be private: a fraud proof re-executes plaintext"
+                    .to_string(),
+            );
+        }
+    }
+    if privacy == "encapsulated" && !(settlement == "zk" && proof_system == "snark") {
+        errors.push(format!(
+            "a private rollup must be zk with a snark (Groth16) key, not {settlement}/{proof_system}"
+        ));
+    }
+    errors
 }

@@ -5,12 +5,13 @@ use super::enums::{ProofSystem, Settlement};
 /// The settlement -> proof-system compatibility matrix:
 ///
 /// - `optimistic` -> `fraud`
-/// - `zk` -> `snark` | `stark`
+/// - `zk` -> `snark` (`stark` is refused from chain v3.2.8, see
+///   [`PAUSED_PROOF_SYSTEMS`](super::enums::PAUSED_PROOF_SYSTEMS))
 /// - `based` -> `none`
 /// - `sovereign` -> `none`
 pub const SETTLEMENT_PROOF_MATRIX: &[(Settlement, &[ProofSystem])] = &[
     (Settlement::Optimistic, &[ProofSystem::Fraud]),
-    (Settlement::Zk, &[ProofSystem::Snark, ProofSystem::Stark]),
+    (Settlement::Zk, &[ProofSystem::Snark]),
     (Settlement::Based, &[ProofSystem::None]),
     (Settlement::Sovereign, &[ProofSystem::None]),
 ];
@@ -50,13 +51,14 @@ mod tests {
             ProofSystem::Snark
         ));
         assert!(is_proof_compatible(Settlement::Zk, ProofSystem::Snark));
-        assert!(is_proof_compatible(Settlement::Zk, ProofSystem::Stark));
+        // STARK settlement is refused by the chain from v3.2.8.
+        assert!(!is_proof_compatible(Settlement::Zk, ProofSystem::Stark));
         assert!(is_proof_compatible(Settlement::Based, ProofSystem::None));
         assert!(is_proof_compatible(
             Settlement::Sovereign,
             ProofSystem::None
         ));
-        assert_eq!(valid_proof_systems(Settlement::Zk).len(), 2);
+        assert_eq!(valid_proof_systems(Settlement::Zk), &[ProofSystem::Snark]);
         assert!(requires_based_sequencer(Settlement::Based));
         assert!(!requires_based_sequencer(Settlement::Optimistic));
     }

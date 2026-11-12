@@ -19,9 +19,42 @@ export const SETTLEMENT_PARADIGMS: readonly SettlementParadigm[] = [
 export type SequencerMode = "dedicated" | "shared" | "based";
 export const SEQUENCER_MODES: readonly SequencerMode[] = ["dedicated", "shared", "based"];
 
-/** The proof a settlement batch carries. */
+/**
+ * The proof a settlement batch carries.
+ *
+ * `stark` stays in the type so rollups created before can be read, but the
+ * chain refuses STARK settlement from v3.2.8: a STARK key cannot be set and a
+ * STARK rollup's batches are refused until the chain verifies a real rollup
+ * statement. New rollups use `snark` (see {@link PAUSED_PROOF_SYSTEMS}).
+ */
 export type ProofSystem = "fraud" | "snark" | "stark" | "none";
 export const PROOF_SYSTEMS: readonly ProofSystem[] = ["fraud", "snark", "stark", "none"];
+
+/** Proof systems the chain currently refuses for new rollups and new batches. */
+export const PAUSED_PROOF_SYSTEMS: readonly ProofSystem[] = ["stark"];
+
+/**
+ * How a rollup's transactions are ordered (chain v3.2.8+): `""`, the rollup's
+ * sequencer settles; `"based"`, anyone posts data, the order is inclusion on
+ * the chain, and every batch consumes the inbox in order.
+ */
+export type SequencingMode = "" | "based";
+export const SEQUENCING_MODES: readonly SequencingMode[] = ["", "based"];
+
+/**
+ * The execution model the chain re-executes in an optimistic fraud proof
+ * (chain v3.2.8+). `qledger-v1` is a uqor account ledger with signed
+ * transfers and withdrawals; every new optimistic rollup needs it.
+ */
+export type ExecutionVm = "" | "qledger-v1";
+export const EXECUTION_VMS: readonly ExecutionVm[] = ["", "qledger-v1"];
+
+/** Rollup privacy (chain v3.2.8+): `"encapsulated"` posts are ML-KEM-1024 envelopes to the members. */
+export type RollupPrivacy = "" | "encapsulated";
+export const ROLLUP_PRIVACY_MODES: readonly RollupPrivacy[] = ["", "encapsulated"];
+
+/** Most members a private rollup can have. */
+export const MAX_ROLLUP_MEMBERS = 32;
 
 /** Where rollup data is made available. */
 export type DABackend = "native" | "celestia" | "both";

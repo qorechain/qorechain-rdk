@@ -17,6 +17,22 @@ export interface MsgCreateRollup {
   profile: string;
   vmType: string;
   stakeAmount: bigint;
+  /**
+   * Field 6 (chain v3.2.7+): the rollup's ZK verification key, registered at
+   * creation, in the encoding `MsgSetVerificationKey` takes. Empty: none.
+   */
+  verificationKey: Uint8Array;
+  /**
+   * Field 7 (chain v3.2.8+): `""` (the rollup's sequencer settles) or
+   * `"based"` (transactions are ordered by their inclusion on the chain, every
+   * batch consumes the inbox in order). zk (snark), based settlement, and
+   * qledger-v1 optimistic rollups only.
+   */
+  sequencing: string;
+  /** Field 8 (chain v3.2.8+): `""` or `"qledger-v1"` (optimistic, must be based). */
+  executionVm: string;
+  /** Field 9 (chain v3.2.8+): `""` or `"encapsulated"` (zk with a Groth16 key only). */
+  privacy: string;
 }
 export interface MsgCreateRollupResponse {
   rollupId: string;
@@ -41,6 +57,12 @@ export interface MsgSubmitBatch {
   anchorSignature: Uint8Array;
   /** Field 11 (chain v3.2.2+): the validator-set commitment carried in the anchor. */
   validatorSetHash: Uint8Array;
+  /**
+   * Field 12 (chain v3.2.8+): for a based rollup, the inbox sequence of the
+   * last post this batch consumes; `data_hash` must then be the inbox range
+   * commitment. Zero for every other rollup.
+   */
+  inboxEnd: bigint;
 }
 export interface MsgChallengeBatch {
   challenger: string;
@@ -86,6 +108,10 @@ export const MsgCreateRollup = {
     if (message.profile !== "") writer.uint32(26).string(message.profile);
     if (message.vmType !== "") writer.uint32(34).string(message.vmType);
     if (message.stakeAmount !== 0n) writer.uint32(40).int64(message.stakeAmount);
+    if (message.verificationKey.length !== 0) writer.uint32(50).bytes(message.verificationKey);
+    if (message.sequencing !== "") writer.uint32(58).string(message.sequencing);
+    if (message.executionVm !== "") writer.uint32(66).string(message.executionVm);
+    if (message.privacy !== "") writer.uint32(74).string(message.privacy);
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgCreateRollup {
@@ -97,6 +123,10 @@ export const MsgCreateRollup = {
       profile: "",
       vmType: "",
       stakeAmount: 0n,
+      verificationKey: new Uint8Array(),
+      sequencing: "",
+      executionVm: "",
+      privacy: "",
     };
     while (reader.pos < end) {
       const tag = reader.uint32();
@@ -116,6 +146,18 @@ export const MsgCreateRollup = {
         case 5:
           message.stakeAmount = reader.int64();
           break;
+        case 6:
+          message.verificationKey = reader.bytes();
+          break;
+        case 7:
+          message.sequencing = reader.string();
+          break;
+        case 8:
+          message.executionVm = reader.string();
+          break;
+        case 9:
+          message.privacy = reader.string();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -130,6 +172,10 @@ export const MsgCreateRollup = {
       profile: object.profile ?? "",
       vmType: object.vmType ?? "",
       stakeAmount: object.stakeAmount ?? 0n,
+      verificationKey: object.verificationKey ?? new Uint8Array(),
+      sequencing: object.sequencing ?? "",
+      executionVm: object.executionVm ?? "",
+      privacy: object.privacy ?? "",
     };
   },
 };
@@ -179,6 +225,7 @@ export const MsgSubmitBatch = {
     if (message.withdrawalsRoot.length !== 0) writer.uint32(74).bytes(message.withdrawalsRoot);
     if (message.anchorSignature.length !== 0) writer.uint32(82).bytes(message.anchorSignature);
     if (message.validatorSetHash.length !== 0) writer.uint32(90).bytes(message.validatorSetHash);
+    if (message.inboxEnd !== 0n) writer.uint32(96).uint64(message.inboxEnd);
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgSubmitBatch {
@@ -196,6 +243,7 @@ export const MsgSubmitBatch = {
       withdrawalsRoot: new Uint8Array(),
       anchorSignature: new Uint8Array(),
       validatorSetHash: new Uint8Array(),
+      inboxEnd: 0n,
     };
     while (reader.pos < end) {
       const tag = reader.uint32();
@@ -233,6 +281,9 @@ export const MsgSubmitBatch = {
         case 11:
           message.validatorSetHash = reader.bytes();
           break;
+        case 12:
+          message.inboxEnd = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -253,6 +304,7 @@ export const MsgSubmitBatch = {
       withdrawalsRoot: object.withdrawalsRoot ?? new Uint8Array(),
       anchorSignature: object.anchorSignature ?? new Uint8Array(),
       validatorSetHash: object.validatorSetHash ?? new Uint8Array(),
+      inboxEnd: object.inboxEnd ?? 0n,
     };
   },
 };
@@ -539,3 +591,287 @@ export const MsgExecuteWithdrawal = {
     };
   },
 };
+
+// ---------------------------------------------------------------------------
+// Messages added in chain v3.2.7 (verification keys) and v3.2.8 (posted data,
+// based sequencing, qledger-v1 rollups, private rollups). They hold only
+// string, bytes, uint64 and repeated-string fields, so one table-driven codec
+// serves all of them.
+// ---------------------------------------------------------------------------
+
+type FieldKind = "string" | "bytes" | "uint64" | "uint32" | "repeatedString";
+type FieldSpec = readonly [no: number, key: string, kind: FieldKind];
+
+function zeroOf(kind: FieldKind): unknown {
+  switch (kind) {
+    case "string":
+      return "";
+    case "bytes":
+      return new Uint8Array();
+    case "uint64":
+      return 0n;
+    case "uint32":
+      return 0;
+    case "repeatedString":
+      return [];
+  }
+}
+
+/** A cosmjs-shaped codec (`encode` / `decode` / `fromPartial`) built from a field table. */
+export interface TableCodec<T> {
+  readonly typeUrl: string;
+  encode(message: T, writer?: BinaryWriter): BinaryWriter;
+  decode(input: BinaryReader | Uint8Array, length?: number): T;
+  fromPartial(object: Partial<T>): T;
+}
+
+function tableCodec<T>(name: string, fields: readonly FieldSpec[], prefix = TYPE_URL_PREFIX): TableCodec<T> {
+  const byNo = new Map(fields.map((f) => [f[0], f] as const));
+  const fresh = (): Record<string, unknown> =>
+    Object.fromEntries(fields.map(([, key, kind]) => [key, zeroOf(kind)]));
+  return {
+    typeUrl: `${prefix}${name}`,
+    encode(message: T, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+      const m = message as Record<string, unknown>;
+      for (const [no, key, kind] of fields) {
+        const v = m[key];
+        switch (kind) {
+          case "string":
+            if (typeof v === "string" && v !== "") writer.uint32((no << 3) | 2).string(v);
+            break;
+          case "bytes":
+            if (v instanceof Uint8Array && v.length !== 0) writer.uint32((no << 3) | 2).bytes(v);
+            break;
+          case "uint64":
+            if (typeof v === "bigint" && v !== 0n) writer.uint32(no << 3).uint64(v);
+            break;
+          case "uint32":
+            if (typeof v === "number" && v !== 0) writer.uint32(no << 3).uint32(v);
+            break;
+          case "repeatedString":
+            for (const s of (v as string[] | undefined) ?? []) writer.uint32((no << 3) | 2).string(s);
+            break;
+        }
+      }
+      return writer;
+    },
+    decode(input: BinaryReader | Uint8Array, length?: number): T {
+      const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const m = fresh();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        const spec = byNo.get(tag >>> 3);
+        if (!spec) {
+          reader.skipType(tag & 7);
+          continue;
+        }
+        const [, key, kind] = spec;
+        switch (kind) {
+          case "string":
+            m[key] = reader.string();
+            break;
+          case "bytes":
+            m[key] = reader.bytes();
+            break;
+          case "uint64":
+            m[key] = reader.uint64();
+            break;
+          case "uint32":
+            m[key] = reader.uint32();
+            break;
+          case "repeatedString":
+            (m[key] as string[]).push(reader.string());
+            break;
+        }
+      }
+      return m as T;
+    },
+    fromPartial(object: Partial<T>): T {
+      const m = fresh();
+      for (const [, key] of fields) {
+        const v = (object as Record<string, unknown>)[key];
+        if (v !== undefined) m[key] = Array.isArray(v) ? [...v] : v;
+      }
+      return m as T;
+    },
+  };
+}
+
+/**
+ * Registers or replaces a zk rollup's verification key (chain v3.2.7+). Signed
+ * by the creator, before the rollup's first batch only. For `snark` the key is
+ * a Groth16 BLS12-381 verifying key in gnark's binary encoding for a circuit
+ * with exactly four public inputs (prev_state_root, state_root, data_hash,
+ * withdrawals_root). From v3.2.8 a `stark` key is refused.
+ */
+export interface MsgSetVerificationKey {
+  creator: string;
+  rollupId: string;
+  verificationKey: Uint8Array;
+  /** `"snark"`, or empty to keep the rollup's proof system. */
+  proofSystem: string;
+}
+export const MsgSetVerificationKey = tableCodec<MsgSetVerificationKey>("MsgSetVerificationKey", [
+  [1, "creator", "string"],
+  [2, "rollupId", "string"],
+  [3, "verificationKey", "bytes"],
+  [4, "proofSystem", "string"],
+]);
+
+/** Governance-only key replacement (chain v3.2.7+); `authority` is the gov module account. */
+export interface MsgUpdateVerificationKey {
+  authority: string;
+  rollupId: string;
+  verificationKey: Uint8Array;
+  proofSystem: string;
+}
+export const MsgUpdateVerificationKey = tableCodec<MsgUpdateVerificationKey>("MsgUpdateVerificationKey", [
+  [1, "authority", "string"],
+  [2, "rollupId", "string"],
+  [3, "verificationKey", "bytes"],
+  [4, "proofSystem", "string"],
+]);
+
+/**
+ * Puts rollup data on chain (chain v3.2.8+). The chain keeps a commitment
+ * (SHA-256 of `data`) under the rollup's next inbox sequence; a native-DA batch
+ * may then carry that SHA-256 as its `data_hash`. Who may post: the rollup's
+ * sequencer (its creator when none is set); anyone on a based rollup.
+ */
+export interface MsgPostRollupData {
+  poster: string;
+  rollupId: string;
+  data: Uint8Array;
+}
+export const MsgPostRollupData = tableCodec<MsgPostRollupData>("MsgPostRollupData", [
+  [1, "poster", "string"],
+  [2, "rollupId", "string"],
+  [3, "data", "bytes"],
+]);
+export interface MsgPostRollupDataResponse {
+  /** The inbox sequence the post was given (from 1). */
+  sequence: bigint;
+  /** SHA-256 of the data: the hash a batch references. */
+  dataHash: Uint8Array;
+}
+export const MsgPostRollupDataResponse = tableCodec<MsgPostRollupDataResponse>("MsgPostRollupDataResponse", [
+  [1, "sequence", "uint64"],
+  [2, "dataHash", "bytes"],
+]);
+
+/** Governance-only move to based sequencing (`"based"`) or back (`""`), chain v3.2.8+. */
+export interface MsgSetRollupSequencing {
+  authority: string;
+  rollupId: string;
+  sequencing: string;
+}
+export const MsgSetRollupSequencing = tableCodec<MsgSetRollupSequencing>("MsgSetRollupSequencing", [
+  [1, "authority", "string"],
+  [2, "rollupId", "string"],
+  [3, "sequencing", "string"],
+]);
+
+/**
+ * Moves `amount` uqor into a qledger-v1 rollup's deposit pool and credits the
+ * 32-byte L2 `account` through the rollup's inbox (chain v3.2.8+). At least
+ * 1 QOR (1,000,000 uqor).
+ */
+export interface MsgDepositToRollup {
+  depositor: string;
+  rollupId: string;
+  account: Uint8Array;
+  amount: bigint;
+}
+export const MsgDepositToRollup = tableCodec<MsgDepositToRollup>("MsgDepositToRollup", [
+  [1, "depositor", "string"],
+  [2, "rollupId", "string"],
+  [3, "account", "bytes"],
+  [4, "amount", "uint64"],
+]);
+export interface MsgDepositToRollupResponse {
+  /** The inbox sequence of the deposit entry. */
+  sequence: bigint;
+}
+export const MsgDepositToRollupResponse = tableCodec<MsgDepositToRollupResponse>("MsgDepositToRollupResponse", [
+  [1, "sequence", "uint64"],
+]);
+
+/** Adds `amount` uqor to the submitter's bond on a qledger-v1 rollup (chain v3.2.8+). */
+export interface MsgBondRollupSubmitter {
+  submitter: string;
+  rollupId: string;
+  amount: bigint;
+}
+export const MsgBondRollupSubmitter = tableCodec<MsgBondRollupSubmitter>("MsgBondRollupSubmitter", [
+  [1, "submitter", "string"],
+  [2, "rollupId", "string"],
+  [3, "amount", "uint64"],
+]);
+export interface MsgBondRollupSubmitterResponse {
+  bond: bigint;
+}
+export const MsgBondRollupSubmitterResponse = tableCodec<MsgBondRollupSubmitterResponse>(
+  "MsgBondRollupSubmitterResponse",
+  [[1, "bond", "uint64"]],
+);
+
+/** Returns the submitter's whole bond, a full challenge window after its last batch (chain v3.2.8+). */
+export interface MsgUnbondRollupSubmitter {
+  submitter: string;
+  rollupId: string;
+}
+export const MsgUnbondRollupSubmitter = tableCodec<MsgUnbondRollupSubmitter>("MsgUnbondRollupSubmitter", [
+  [1, "submitter", "string"],
+  [2, "rollupId", "string"],
+]);
+export interface MsgUnbondRollupSubmitterResponse {
+  returned: bigint;
+}
+export const MsgUnbondRollupSubmitterResponse = tableCodec<MsgUnbondRollupSubmitterResponse>(
+  "MsgUnbondRollupSubmitterResponse",
+  [[1, "returned", "uint64"]],
+);
+
+/**
+ * Sets a private rollup's member list (chain v3.2.8+): at most 32 canonical
+ * account addresses, each with a registered ML-KEM-1024 key. Signed by the
+ * creator; each change starts a new membership epoch.
+ */
+export interface MsgSetRollupMembers {
+  creator: string;
+  rollupId: string;
+  members: string[];
+}
+export const MsgSetRollupMembers = tableCodec<MsgSetRollupMembers>("MsgSetRollupMembers", [
+  [1, "creator", "string"],
+  [2, "rollupId", "string"],
+  [3, "members", "repeatedString"],
+]);
+export interface MsgSetRollupMembersResponse {
+  epoch: bigint;
+}
+export const MsgSetRollupMembersResponse = tableCodec<MsgSetRollupMembersResponse>("MsgSetRollupMembersResponse", [
+  [1, "epoch", "uint64"],
+]);
+
+/**
+ * Publishes the sender's key-encapsulation public key in the chain's KEM
+ * registry (`x/pqc`, chain v3.2.5+). A private rollup's members need an
+ * ML-KEM-1024 key there (`algorithmId` 2, the 1568-byte FIPS 203 encapsulation
+ * key). Signed hybrid like the other key maintenance.
+ */
+export interface MsgRegisterKEMKey {
+  sender: string;
+  algorithmId: number;
+  publicKey: Uint8Array;
+}
+export const MsgRegisterKEMKey = tableCodec<MsgRegisterKEMKey>(
+  "MsgRegisterKEMKey",
+  [
+    [1, "sender", "string"],
+    [2, "algorithmId", "uint32"],
+    [3, "publicKey", "bytes"],
+  ],
+  "/qorechain.pqc.v1.",
+);

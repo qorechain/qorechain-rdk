@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.9.0
+
+QoreChain v3.2.8 support (the testnet runs v3.2.8 since block 9,929,500; the
+features below are refused on a network that has not applied it).
+
+### Changed (QoreChain v3.2.8)
+
+- **New optimistic rollups run qledger-v1 and are based.** From chain v3.2.8
+  the chain refuses an optimistic rollup without an execution VM. The `nft` and
+  `custom` presets now carry `executionVm: "qledger-v1"` and
+  `sequencing: "based"`, and `createRollup`, the CLI and every template send
+  them. Validation refuses an optimistic configuration without them.
+- **STARK settlement is paused.** The chain refuses STARK keys and STARK
+  batches from v3.2.8. The compatibility matrix is now `zk` -> `snark`;
+  `stark` stays a known value so existing rollups can be read.
+- **Canonical ZK public inputs.** From v3.2.8 a Groth16 batch is refused when
+  an input the submitter chose is not below the BLS12-381 scalar modulus (a raw
+  hash is above it about half the time). `submitBatch` checks this before the
+  fee; `zkPublicInputErrors`, `isCanonicalScalar`, `toCanonicalScalar` and
+  `isDataHashChainBound` are exported.
+- `dataHashError` accepts a native-DA `data_hash` once posted data is enabled.
+- A Groth16 batch's `withdrawals_root` may be any 32 bytes: the chain stores
+  it reduced modulo the scalar field. `zkPublicInputs` returns the circuit's
+  four inputs and `withdrawalsRootMatches` compares roots the way the chain
+  does, using the batch view's new `withdrawalsRootReduced`.
+
+### Fixed
+
+- **A new account's first transaction was refused** (code 8, "account has no
+  PQC key"). Since chain v3.2.3 the chain no longer registers a key carried in
+  the signature extension on first use; an account without a registered key
+  may send only a registration. Every client now sends `MsgRegisterPQCKeyV2`,
+  with a proof of possession, in a transaction of its own first, and waits for
+  it to be included. In Rust a refused registration is the new
+  `TxError::PqcKeyRegistration` variant (a `match` over every variant needs
+  a new arm).
+- **"auto" fees under-priced hybrid transactions.** The simulation ran the
+  classical transaction; the ML-DSA-87 extension (10 gas per byte) and its
+  verification (40,000 gas) are now added, so small transactions no longer run
+  out of gas.
+
+### Added (QoreChain v3.2.7 and v3.2.8)
+
+- `MsgCreateRollup` fields `verification_key`, `sequencing`, `execution_vm`
+  and `privacy`; `MsgSubmitBatch` field `inbox_end`.
+- Messages, builders and client methods: `setVerificationKey` and
+  `updateVerificationKeyMsg` (v3.2.7); `postRollupData`, `depositToRollup`,
+  `bondRollupSubmitter`, `unbondRollupSubmitter`, `setRollupMembers` and
+  `setRollupSequencingMsg` (v3.2.8); `registerKemKey` for the chain's KEM
+  registry.
+- Rollup inbox: `postedDataHash`, `inboxAccumulate`, `inboxRangeHash`, and
+  `RestClient.getInbox`, `getPostedData`, `getSubmitterBond`.
+- Private rollups: `sealEnvelope`, `openEnvelope`, `parseEnvelope`,
+  `envelopeMembershipError`, `kemKeypairFromSeed`, `RestClient.getKemKey` and
+  `getPrivateRollupRecipients` (ML-KEM-1024 envelopes, byte-compatible with the
+  chain).
+- Views carry `sequencing`, `executionVm`, `privacy`, `members`,
+  `membersEpoch`, `depositPool`, batch `inboxStart`/`inboxEnd` and the v3.2.8
+  params; readable names for rdk error codes 37 to 54.
+- qledger-v1 execution model, byte-compatible with the chain: account keys and
+  transactions (`qledgerKeypairFromSeed`, `signQledgerTx`), deposits, the
+  state tree (`QledgerLedger`, witnesses), `executeQledger`, withdrawal roots
+  and proofs, `buildQledgerFraudProof` and `checkQledgerFraud`.
+- qledger-v1 batch admission: `qledgerBatchErrors`, `chooseQledgerBatchEnd`,
+  `fetchQledgerEntries` and `planQledgerBatch` (choose the range, read the
+  entries back and check them against the inbox, execute, return the batch);
+  `submitBatch` runs the same checks. `RestClient.getLatestHeight`,
+  `searchTxs`, and `pending` on the submitter-bond view.
+- Posted-data retention constants: default 648,000 blocks, range 100 to
+  25,920,000.
+- Guide: Rollup data, based sequencing and private rollups.
+- The Go, Python, Rust and Java clients carry the same surface and assert the
+  same shared vectors byte for byte. Envelopes seal and open in Go, Python and
+  Java; Rust parses them and runs the membership check. Each of these four
+  clients gains the rdk error table (codes 2 to 54).
+- qledger-v1 and its batch rules are in all five languages with the same
+  vectors. The Rust crate signs (`QledgerTx::sign`) and verifies
+  (`MLDSA44_VERIFIER`) with the FIPS 204 context through a direct `fips204`
+  dependency, already part of its dependency tree.
+
 ### Docs
 
 - Mainnet runs QoreChain v3.2.5 since block 3,906,833 (the testnet since block

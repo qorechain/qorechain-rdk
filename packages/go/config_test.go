@@ -14,7 +14,8 @@ func TestSettlementProofMatrix(t *testing.T) {
 		{SettlementOptimistic, ProofFraud, true},
 		{SettlementOptimistic, ProofSnark, false},
 		{SettlementZK, ProofSnark, true},
-		{SettlementZK, ProofStark, true},
+		// STARK settlement is refused by the chain from v3.2.8.
+		{SettlementZK, ProofStark, false},
 		{SettlementZK, ProofFraud, false},
 		{SettlementBased, ProofNone, true},
 		{SettlementBased, ProofSnark, false},
@@ -60,7 +61,7 @@ func TestValidateRollupConfig_MatrixError(t *testing.T) {
 	}
 	found := false
 	for _, e := range r.Errors {
-		if e == `proof system "fraud" is not compatible with "zk" settlement (expected one of: snark, stark)` {
+		if e == `proof system "fraud" is not compatible with "zk" settlement (expected one of: snark)` {
 			found = true
 		}
 	}

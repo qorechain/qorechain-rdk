@@ -12,6 +12,34 @@ const (
 	TypeURLMsgResumeRollup      = rdkTypeURLPrefix + "MsgResumeRollup"
 	TypeURLMsgStopRollup        = rdkTypeURLPrefix + "MsgStopRollup"
 	TypeURLMsgExecuteWithdrawal = rdkTypeURLPrefix + "MsgExecuteWithdrawal"
+
+	// Chain v3.2.7+.
+	TypeURLMsgSetVerificationKey    = rdkTypeURLPrefix + "MsgSetVerificationKey"
+	TypeURLMsgUpdateVerificationKey = rdkTypeURLPrefix + "MsgUpdateVerificationKey"
+
+	// Chain v3.2.8+.
+	TypeURLMsgPostRollupData                = rdkTypeURLPrefix + "MsgPostRollupData"
+	TypeURLMsgPostRollupDataResponse        = rdkTypeURLPrefix + "MsgPostRollupDataResponse"
+	TypeURLMsgSetRollupSequencing           = rdkTypeURLPrefix + "MsgSetRollupSequencing"
+	TypeURLMsgDepositToRollup               = rdkTypeURLPrefix + "MsgDepositToRollup"
+	TypeURLMsgDepositToRollupResponse       = rdkTypeURLPrefix + "MsgDepositToRollupResponse"
+	TypeURLMsgBondRollupSubmitter           = rdkTypeURLPrefix + "MsgBondRollupSubmitter"
+	TypeURLMsgBondRollupSubmitterResponse   = rdkTypeURLPrefix + "MsgBondRollupSubmitterResponse"
+	TypeURLMsgUnbondRollupSubmitter         = rdkTypeURLPrefix + "MsgUnbondRollupSubmitter"
+	TypeURLMsgUnbondRollupSubmitterResponse = rdkTypeURLPrefix + "MsgUnbondRollupSubmitterResponse"
+	TypeURLMsgSetRollupMembers              = rdkTypeURLPrefix + "MsgSetRollupMembers"
+	TypeURLMsgSetRollupMembersResponse      = rdkTypeURLPrefix + "MsgSetRollupMembersResponse"
+
+	// TypeURLMsgRegisterKEMKey is the x/pqc KEM registry message (chain
+	// v3.2.5+) a private rollup's members use to publish their key.
+	TypeURLMsgRegisterKEMKey = "/qorechain.pqc.v1.MsgRegisterKEMKey"
+
+	// The x/pqc signing-key registration messages. Since chain v3.2.3
+	// (pqc-keyless-extension-closed) an account with no registered
+	// post-quantum key may send only these.
+	TypeURLMsgRegisterPQCKey   = "/qorechain.pqc.v1.MsgRegisterPQCKey"
+	TypeURLMsgRegisterPQCKeyV2 = "/qorechain.pqc.v1.MsgRegisterPQCKeyV2"
+	TypeURLMsgMigratePQCKey    = "/qorechain.pqc.v1.MsgMigratePQCKey"
 )
 
 // Msg is implemented by every rdk transaction message. TypeURL returns the wire
@@ -28,6 +56,21 @@ type MsgCreateRollup struct {
 	Profile     string
 	VmType      string
 	StakeAmount int64
+	// VerificationKey is field 6 (chain v3.2.7+): the rollup's ZK verification
+	// key, registered at creation, in the encoding MsgSetVerificationKey takes.
+	// Empty: none.
+	VerificationKey []byte
+	// Sequencing is field 7 (chain v3.2.8+): "" (the rollup's sequencer
+	// settles) or "based" (transactions are ordered by their inclusion on the
+	// chain and every batch consumes the inbox in order). zk (snark), based
+	// settlement and qledger-v1 optimistic rollups only.
+	Sequencing string
+	// ExecutionVm is field 8 (chain v3.2.8+): "" or "qledger-v1" (optimistic,
+	// must be based).
+	ExecutionVm string
+	// Privacy is field 9 (chain v3.2.8+): "" or "encapsulated" (zk with a
+	// Groth16 key only).
+	Privacy string
 }
 
 func (MsgCreateRollup) TypeURL() string { return TypeURLMsgCreateRollup }
@@ -39,6 +82,10 @@ func (m MsgCreateRollup) Marshal() []byte {
 	w.writeString(3, m.Profile)
 	w.writeString(4, m.VmType)
 	w.writeInt64(5, m.StakeAmount)
+	w.writeBytes(6, m.VerificationKey)
+	w.writeString(7, m.Sequencing)
+	w.writeString(8, m.ExecutionVm)
+	w.writeString(9, m.Privacy)
 	return w.bytes()
 }
 
@@ -53,6 +100,10 @@ type MsgSubmitBatch struct {
 	DataHash        []byte
 	Proof           []byte
 	WithdrawalsRoot []byte
+	// InboxEnd is field 12 (chain v3.2.8+): for a based rollup, the inbox
+	// sequence of the last post this batch consumes; DataHash must then be the
+	// inbox range commitment (InboxRangeHash). Zero for every other rollup.
+	InboxEnd uint64
 }
 
 func (MsgSubmitBatch) TypeURL() string { return TypeURLMsgSubmitBatch }
@@ -68,6 +119,7 @@ func (m MsgSubmitBatch) Marshal() []byte {
 	w.writeBytes(7, m.DataHash)
 	w.writeBytes(8, m.Proof)
 	w.writeBytes(9, m.WithdrawalsRoot)
+	w.writeUint64(12, m.InboxEnd)
 	return w.bytes()
 }
 
@@ -192,6 +244,20 @@ type CreateRollupInput struct {
 	Profile     string
 	VmType      string
 	StakeAmount int64
+	// VerificationKey registers the zk verification key at creation (chain
+	// v3.2.7+, see SetVerificationKeyMsg).
+	VerificationKey []byte
+	// Sequencing is "based" to order the rollup's transactions by their
+	// inclusion on the chain (chain v3.2.8+). Allowed for zk (snark), based
+	// settlement and qledger-v1 optimistic rollups.
+	Sequencing string
+	// ExecutionVm is "qledger-v1", the execution model the chain re-executes in
+	// a fraud proof (chain v3.2.8+). Required for every new optimistic rollup
+	// (nft, custom), together with Sequencing "based".
+	ExecutionVm string
+	// Privacy is "encapsulated" for a private rollup (chain v3.2.8+, zk with a
+	// Groth16 key only).
+	Privacy string
 }
 
 // CreateRollupMsg builds a MsgCreateRollup from input. The VmType is mapped to
@@ -204,6 +270,11 @@ func CreateRollupMsg(in CreateRollupInput) MsgCreateRollup {
 		Profile:     in.Profile,
 		VmType:      VMTypeWireValue(in.VmType),
 		StakeAmount: in.StakeAmount,
+
+		VerificationKey: in.VerificationKey,
+		Sequencing:      in.Sequencing,
+		ExecutionVm:     in.ExecutionVm,
+		Privacy:         in.Privacy,
 	}
 }
 
@@ -218,6 +289,10 @@ type SubmitBatchInput struct {
 	DataHash        []byte
 	Proof           []byte
 	WithdrawalsRoot []byte
+	// InboxEnd is for based rollups only (chain v3.2.8+): the inbox sequence of
+	// the last post this batch consumes. DataHash must then be the inbox range
+	// commitment (InboxRangeHash, or RestClient.GetInbox(rollupID, inboxEnd)).
+	InboxEnd uint64
 }
 
 // SubmitBatchMsg builds a MsgSubmitBatch from input.
@@ -232,6 +307,7 @@ func SubmitBatchMsg(in SubmitBatchInput) MsgSubmitBatch {
 		DataHash:        in.DataHash,
 		Proof:           in.Proof,
 		WithdrawalsRoot: in.WithdrawalsRoot,
+		InboxEnd:        in.InboxEnd,
 	}
 }
 

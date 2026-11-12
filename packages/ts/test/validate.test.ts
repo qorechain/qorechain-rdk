@@ -43,6 +43,8 @@ describe("validateRollupConfig", () => {
       settlement: "based",
       proofSystem: "none",
       sequencer: "based",
+      // qledger-v1 (carried by the custom preset) is for optimistic rollups only.
+      executionVm: "",
     } as RollupConfig;
     expect(validateRollupConfig(cfg).valid).toBe(true);
   });

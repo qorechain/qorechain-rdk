@@ -32,6 +32,10 @@ async function main(): Promise<void> {
     profile: msg.profile,
     vmType: msg.vmType,
     stakeAmount: msg.stakeAmount,
+    // Chain v3.2.8: an optimistic profile carries qledger-v1 and based sequencing.
+    sequencing: msg.sequencing,
+    executionVm: msg.executionVm,
+    privacy: msg.privacy,
   });
   console.log(`Submitted: ${res.transactionHash} (code ${res.code})`);
 }

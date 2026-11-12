@@ -1,7 +1,8 @@
 """The settlement -> proof-system compatibility matrix enforced by the chain.
 
 - ``optimistic`` -> ``fraud``
-- ``zk`` -> ``snark`` | ``stark``
+- ``zk`` -> ``snark`` (``stark`` is refused from chain v3.2.8, see
+  ``PAUSED_PROOF_SYSTEMS``)
 - ``based`` -> ``none``
 - ``sovereign`` -> ``none``
 """
@@ -13,7 +14,7 @@ from ..enums import ProofSystem, SettlementParadigm
 #: Settlement paradigm to the proof systems it accepts.
 SETTLEMENT_PROOF_MATRIX: dict[SettlementParadigm, tuple[ProofSystem, ...]] = {
     SettlementParadigm.OPTIMISTIC: (ProofSystem.FRAUD,),
-    SettlementParadigm.ZK: (ProofSystem.SNARK, ProofSystem.STARK),
+    SettlementParadigm.ZK: (ProofSystem.SNARK,),
     SettlementParadigm.BASED: (ProofSystem.NONE,),
     SettlementParadigm.SOVEREIGN: (ProofSystem.NONE,),
 }

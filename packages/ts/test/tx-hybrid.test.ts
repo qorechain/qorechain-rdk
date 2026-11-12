@@ -228,7 +228,9 @@ describe("RdkTxClient hybrid signing", () => {
       gas: "200000",
     });
 
-    // "auto" simulates (120000) and applies the 1.4 multiplier → 168000 gas.
+    // "auto" simulates (120000), applies the 1.4 multiplier (168000), and adds
+    // the hybrid extension the classical simulation leaves out: 40000 for the
+    // ML-DSA-87 verification and 10 gas per byte of signature and framing.
     await rdk.createRollup({
       rollupId: "roll-r2",
       profile: "defi",
@@ -236,8 +238,8 @@ describe("RdkTxClient hybrid signing", () => {
       stakeAmount: "100",
     });
     expect(hybridSpy.calls[1].fee).toEqual({
-      amount: [{ denom: "uqor", amount: "25200" }],
-      gas: "168000",
+      amount: [{ denom: "uqor", amount: "38237" }],
+      gas: "254910",
     });
   });
 

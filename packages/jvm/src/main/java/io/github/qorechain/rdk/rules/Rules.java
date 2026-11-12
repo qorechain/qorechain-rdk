@@ -1,5 +1,6 @@
 package io.github.qorechain.rdk.rules;
 
+import io.github.qorechain.rdk.config.Validate;
 import io.github.qorechain.rdk.tx.Messages.MsgCreateRollup;
 import io.github.qorechain.rdk.tx.Messages.MsgExecuteWithdrawal;
 import io.github.qorechain.rdk.tx.Messages.MsgSubmitBatch;
@@ -8,6 +9,7 @@ import io.github.qorechain.rdk.util.Bech32;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Client-side copies of rules the chain enforces, so a transaction the chain would refuse is caught
@@ -120,6 +122,10 @@ public final class Rules {
                 if (e != null) {
                     throw new IllegalArgumentException("rollupId \"" + c.rollupId + "\" " + e);
                 }
+                String mode = createRollupModeError(c);
+                if (mode != null) {
+                    throw new IllegalArgumentException(mode);
+                }
             } else if (msg instanceof MsgSubmitBatch) {
                 MsgSubmitBatch b = (MsgSubmitBatch) msg;
                 String e = withdrawalsRootError(b.withdrawalsRoot);
@@ -137,25 +143,67 @@ public final class Rules {
         }
     }
 
+    /** The settlement and proof system the chain derives from each preset profile. */
+    private static final Map<String, String[]> PROFILE_SETTLEMENT =
+            Map.of(
+                    "defi", new String[] {"zk", "snark"},
+                    "gaming", new String[] {"based", "none"},
+                    "nft", new String[] {"optimistic", "fraud"},
+                    "enterprise", new String[] {"based", "none"},
+                    "custom", new String[] {"optimistic", "fraud"});
+
+    /**
+     * Why the chain (v3.2.8+) would refuse a create message's {@code sequencing}, {@code
+     * executionVm} and {@code privacy} for its profile's settlement, or {@code null}. Only checked
+     * when the profile is one of the presets (the chain derives the settlement from it).
+     */
+    public static String createRollupModeError(MsgCreateRollup c) {
+        String[] preset = PROFILE_SETTLEMENT.get(c.profile == null ? "" : c.profile);
+        if (preset == null) {
+            return null;
+        }
+        List<String> errors =
+                Validate.rollupModeErrors(preset[0], preset[1], c.sequencing, c.executionVm, c.privacy);
+        return errors.isEmpty()
+                ? null
+                : "rollup \"" + c.rollupId + "\" would be refused: " + String.join("; ", errors);
+    }
+
     /**
      * Why a batch with {@code dataHash} would be refused for a rollup on {@code daBackend}, or
-     * {@code null} if the chain accepts it.
-     *
-     * <p>On a {@code native} or {@code both} rollup the chain accepts a non-empty {@code data_hash}
-     * only when a matching blob is stored on chain, and no transaction stores one: the batch is
-     * refused as data unavailable. Leave it empty there; the batch's state roots and proof still
-     * bind it. ({@code celestia} is not checked by the chain, and is not active on the network.)
+     * {@code null} if the chain may accept it. Same as {@link #dataHashError(String, byte[],
+     * boolean)} with {@code postedDataEnabled} false (a chain before v3.2.8).
      */
     public static String dataHashError(String daBackend, byte[] dataHash) {
+        return dataHashError(daBackend, dataHash, false);
+    }
+
+    /**
+     * Why a batch with {@code dataHash} would be refused for a rollup on {@code daBackend}, or
+     * {@code null} if the chain may accept it.
+     *
+     * <p>On a {@code native} or {@code both} rollup the chain accepts a non-empty {@code data_hash}
+     * only when it names data the chain holds: from chain v3.2.8 a retained {@code
+     * MsgPostRollupData} post ({@code data_hash} = SHA-256 of the payload, see {@code
+     * Inbox.postedDataHash}). Before v3.2.8 no transaction stored such data, so the batch is always
+     * refused there; pass {@code postedDataEnabled} true (the {@code rdk-post-rollup-data} switch)
+     * to allow it. ({@code celestia} is not checked by the chain, and is not active on the
+     * network.) A based rollup's batch is judged by its inbox range instead; see {@code
+     * Inbox.inboxRangeHash}.
+     */
+    public static String dataHashError(String daBackend, byte[] dataHash, boolean postedDataEnabled) {
         if (dataHash == null
                 || dataHash.length == 0
                 || !("native".equals(daBackend) || "both".equals(daBackend))) {
             return null;
         }
+        if (postedDataEnabled) {
+            return null;
+        }
         return "data_hash must be empty on a rollup with "
                 + daBackend
-                + " data availability: no transaction stores a data-availability blob on chain, so"
-                + " the chain refuses a batch that claims one";
+                + " data availability: no transaction stores a data-availability blob on chain"
+                + " before v3.2.8, so the chain refuses a batch that claims one";
     }
 
     /**

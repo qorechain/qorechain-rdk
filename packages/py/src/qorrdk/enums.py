@@ -28,7 +28,13 @@ class SequencerMode(str, Enum):
 
 
 class ProofSystem(str, Enum):
-    """The proof a settlement batch carries."""
+    """The proof a settlement batch carries.
+
+    ``STARK`` stays so rollups created before can be read, but the chain
+    refuses STARK settlement from v3.2.8: a STARK key cannot be set and a STARK
+    rollup's batches are refused until the chain verifies a real rollup
+    statement. New rollups use ``SNARK`` (see :data:`PAUSED_PROOF_SYSTEMS`).
+    """
 
     FRAUD = "fraud"
     SNARK = "snark"
@@ -114,6 +120,27 @@ ROLLUP_STATUSES: tuple[str, ...] = tuple(m.value for m in RollupStatus)
 BATCH_STATUSES: tuple[str, ...] = tuple(m.value for m in BatchStatus)
 PROFILE_NAMES: tuple[str, ...] = tuple(m.value for m in ProfileName)
 
+#: Proof systems the chain currently refuses for new rollups and new batches.
+PAUSED_PROOF_SYSTEMS: tuple[str, ...] = (ProofSystem.STARK.value,)
+
+#: How a rollup's transactions are ordered (chain v3.2.8+): ``""``, the
+#: rollup's sequencer settles; ``"based"``, anyone posts data, the order is
+#: inclusion on the chain, and every batch consumes the inbox in order. Not the
+#: same as :class:`SequencerMode`, which is descriptive and has no effect on chain.
+SEQUENCING_MODES: tuple[str, ...] = ("", "based")
+
+#: The execution model the chain re-executes in an optimistic fraud proof
+#: (chain v3.2.8+). ``qledger-v1`` is a uqor account ledger with signed
+#: transfers and withdrawals; every new optimistic rollup needs it.
+EXECUTION_VMS: tuple[str, ...] = ("", "qledger-v1")
+
+#: Rollup privacy (chain v3.2.8+): ``"encapsulated"`` posts are ML-KEM-1024
+#: envelopes to the members.
+ROLLUP_PRIVACY_MODES: tuple[str, ...] = ("", "encapsulated")
+
+#: Most members a private rollup can have.
+MAX_ROLLUP_MEMBERS = 32
+
 _ACCEPTED_VM_TYPES: frozenset[str] = frozenset((*VM_TYPES, "cosmwasm"))
 
 
@@ -166,6 +193,11 @@ __all__ = [
     "ROLLUP_STATUSES",
     "BATCH_STATUSES",
     "PROFILE_NAMES",
+    "PAUSED_PROOF_SYSTEMS",
+    "SEQUENCING_MODES",
+    "EXECUTION_VMS",
+    "ROLLUP_PRIVACY_MODES",
+    "MAX_ROLLUP_MEMBERS",
     "is_vm_type",
     "vm_type_wire_value",
     "vm_type_label",

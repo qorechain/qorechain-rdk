@@ -27,8 +27,11 @@ public final class HybridSigningOptions {
     public SignBytes.Mode signBytesVersion = SignBytes.Mode.AUTO;
 
     /**
-     * Embed the ML-DSA-87 public key in the extension so the chain can register it on first use.
-     * Defaults to {@code false}.
+     * Set when the key is not registered on chain yet. Since chain v3.2.3 a key embedded in the
+     * extension is not registered on first use, so {@link RdkTxClient#broadcast} first sends
+     * {@code MsgRegisterPQCKeyV2} (with the key's proof of possession) in a transaction of its
+     * own, waits for a block to include it, then clears this flag and sends the transaction
+     * asked for at the next sequence. Defaults to {@code false}.
      */
     public boolean includePqcPublicKey;
 

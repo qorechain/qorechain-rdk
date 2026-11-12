@@ -77,6 +77,52 @@ class SdkMessagesTest {
         return List.of(create, batch, challenge, resolve, pause, resume, stop, withdrawal);
     }
 
+    /** The chain v3.2.7 and v3.2.8 messages, with every field set. */
+    private static List<Msg> v328Messages() {
+        Messages.CreateRollupInput c = new Messages.CreateRollupInput();
+        c.creator = "qor1creator";
+        c.rollupId = "my-rollup";
+        c.profile = "nft";
+        c.vmType = "native";
+        c.stakeAmount = 10000000000L;
+        c.verificationKey = new byte[] {9, 8, 7};
+        c.sequencing = "based";
+        c.executionVm = "qledger-v1";
+        c.privacy = "encapsulated";
+        Messages.SubmitBatchInput b = new Messages.SubmitBatchInput();
+        b.sequencer = "qor1seq";
+        b.rollupId = "r1";
+        b.batchIndex = 7;
+        b.stateRoot = new byte[] {1};
+        b.inboxEnd = -1L; // the largest uint64
+        Messages.SetVerificationKeyInput vk = new Messages.SetVerificationKeyInput();
+        vk.creator = "qor1creator";
+        vk.rollupId = "r1";
+        vk.verificationKey = new byte[] {1, 2};
+        vk.proofSystem = "snark";
+        return List.of(
+                Messages.createRollupMsg(c),
+                Messages.submitBatchMsg(b),
+                Messages.setVerificationKeyMsg(vk),
+                Messages.updateVerificationKeyMsg("qor1gov", "r1", new byte[] {5}, "snark"),
+                Messages.postRollupDataMsg("qor1p", "r1", new byte[] {1, 2, 3}),
+                Messages.setRollupSequencingMsg("qor1gov", "r1", "based"),
+                Messages.depositToRollupMsg("qor1d", "r1", new byte[32], 1000000L),
+                Messages.bondRollupSubmitterMsg("qor1s", "r1", 5L),
+                Messages.unbondRollupSubmitterMsg("qor1s", "r1"),
+                Messages.setRollupMembersMsg("qor1creator", "r1", List.of("qor1a", "", "qor1b")),
+                Messages.registerKemKeyMsg("qor1m", new byte[1568]));
+    }
+
+    @Test
+    void everyV328MessageIsCarriedVerbatim() {
+        for (Msg m : v328Messages()) {
+            TypedMessage tm = SdkMessages.typed(m);
+            assertEquals(m.typeUrl(), tm.typeUrl);
+            assertArrayEquals(m.marshal(), tm.message.toByteArray(), m.typeUrl());
+        }
+    }
+
     @Test
     void everyRdkMessageIsCarriedVerbatim() {
         for (Msg m : everyMessage()) {

@@ -102,6 +102,14 @@ public class RollupConfigBuilder {
                             "a stake amount is required to build a create message; set stakeAmountUqor or pass "
                                     + "stakeAmount (read the minimum from the params query)"));
         }
-        return new CreateRollupMsgInput(creator, config.rollupId, config.profile, config.vmType, stake);
+        return new CreateRollupMsgInput(
+                creator,
+                config.rollupId,
+                config.profile,
+                config.vmType,
+                stake,
+                config.sequencing,
+                config.executionVm,
+                config.privacy);
     }
 }

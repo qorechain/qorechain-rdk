@@ -11,7 +11,9 @@ type PresetDefaults = Omit<RollupConfig, "rollupId" | "stakeAmountUqor">;
  *
  * These mirror the network's published profile table. The proof system for each
  * profile is the one its settlement paradigm requires (optimistic → fraud,
- * zk → snark, based → none).
+ * zk → snark, based → none). The optimistic profiles (`nft`, `custom`) carry
+ * `executionVm: "qledger-v1"` and `sequencing: "based"`, which the chain
+ * requires of every new optimistic rollup from v3.2.8.
  */
 export const PRESET_DEFAULTS: Record<ProfileName, PresetDefaults> = {
   defi: {
@@ -48,6 +50,9 @@ export const PRESET_DEFAULTS: Record<ProfileName, PresetDefaults> = {
     maxTxPerBlock: 5000,
     challengeWindowSecs: DEFAULT_RDK_PARAMS.defaultChallengeWindow,
     challengeBondUqor: DEFAULT_CHALLENGE_BOND_UQOR,
+    // From chain v3.2.8 a new optimistic rollup must run qledger-v1 and be based.
+    executionVm: "qledger-v1",
+    sequencing: "based",
   },
   enterprise: {
     profile: "enterprise",
@@ -72,6 +77,9 @@ export const PRESET_DEFAULTS: Record<ProfileName, PresetDefaults> = {
     maxTxPerBlock: 10000,
     challengeWindowSecs: DEFAULT_RDK_PARAMS.defaultChallengeWindow,
     challengeBondUqor: DEFAULT_CHALLENGE_BOND_UQOR,
+    // From chain v3.2.8 a new optimistic rollup must run qledger-v1 and be based.
+    executionVm: "qledger-v1",
+    sequencing: "based",
   },
 };
 

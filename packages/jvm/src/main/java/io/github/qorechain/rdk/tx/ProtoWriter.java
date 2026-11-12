@@ -91,6 +91,25 @@ public final class ProtoWriter {
         writeVarint(v);
     }
 
+    /** Write a non-zero uint32 varint field ({@code v} is read unsigned). */
+    public void writeUint32(int field, int v) {
+        if (v == 0) {
+            return;
+        }
+        tag(field, WIRE_VARINT);
+        writeVarint(Integer.toUnsignedLong(v));
+    }
+
+    /** Write a repeated string field, one entry per element (empty strings included). */
+    public void writeRepeatedString(int field, List<String> items) {
+        if (items == null) {
+            return;
+        }
+        for (String item : items) {
+            writeRawString(field, item == null ? "" : item);
+        }
+    }
+
     /** Write a non-zero int64 varint field (two's-complement varint, as gogoproto encodes int64). */
     public void writeInt64(int field, long v) {
         if (v == 0) {

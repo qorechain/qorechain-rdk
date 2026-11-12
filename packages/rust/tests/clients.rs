@@ -176,6 +176,7 @@ fn sign_doc_roundtrip_verifies() {
         profile: "defi".to_string(),
         vm_type: "evm".to_string(),
         stake_amount: 1,
+        ..Default::default()
     };
     let payload = qorechain_rdk::tx::codecs::RdkMsg::encode_to_vec_msg(&create.to_msg());
     let signature = key.sign(&payload).unwrap();
@@ -307,6 +308,7 @@ fn tx_client_simulate_returns_gas_estimate() {
         profile: "defi".to_string(),
         vm_type: "evm".to_string(),
         stake_amount: 1,
+        ..Default::default()
     };
     let gas = tx.simulate(&input.to_msg(), &opts).unwrap();
     assert_eq!(gas, 175_000);

@@ -9,14 +9,22 @@ from .rest import RestClient
 from .views import (
     AnchorView,
     BatchView,
+    InboxView,
+    KemKeyView,
     ParamsView,
+    PostedDataView,
     PqcAccountView,
     RollupView,
+    SubmitterBondView,
     map_anchor_view,
     map_batch_view,
+    map_inbox_view,
+    map_kem_key_view,
     map_params_view,
+    map_posted_data_view,
     map_pqc_account_view,
     map_rollup_view,
+    map_submitter_bond_view,
 )
 
 __all__ = [
@@ -37,4 +45,12 @@ __all__ = [
     "map_batch_view",
     "map_anchor_view",
     "map_pqc_account_view",
+    "InboxView",
+    "PostedDataView",
+    "SubmitterBondView",
+    "KemKeyView",
+    "map_inbox_view",
+    "map_posted_data_view",
+    "map_submitter_bond_view",
+    "map_kem_key_view",
 ]

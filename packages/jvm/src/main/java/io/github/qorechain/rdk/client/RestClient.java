@@ -3,9 +3,13 @@ package io.github.qorechain.rdk.client;
 import io.github.qorechain.rdk.client.Views.AnchorView;
 import io.github.qorechain.rdk.client.Views.Balance;
 import io.github.qorechain.rdk.client.Views.BatchView;
+import io.github.qorechain.rdk.client.Views.InboxView;
+import io.github.qorechain.rdk.client.Views.KemKeyView;
 import io.github.qorechain.rdk.client.Views.ParamsView;
+import io.github.qorechain.rdk.client.Views.PostedDataView;
 import io.github.qorechain.rdk.client.Views.PqcAccountView;
 import io.github.qorechain.rdk.client.Views.RollupView;
+import io.github.qorechain.rdk.client.Views.SubmitterBondView;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -197,6 +201,102 @@ public final class RestClient {
         return Math.max(0, Views.asLong(body.get("height"), 0));
     }
 
+    /**
+     * A rollup's inbox (chain v3.2.8+): head, consumed position, and the {@code data_hash} a based
+     * batch ending at {@code inboxEnd} must carry (0 = the head). {@code inboxEnd} is read
+     * unsigned.
+     */
+    public InboxView getInbox(String rollupId, long inboxEnd) {
+        String q = inboxEnd != 0 ? "?inbox_end=" + Long.toUnsignedString(inboxEnd) : "";
+        Map<String, Object> body = get("/qorechain/rdk/v1/inbox/" + pathEscape(rollupId) + q);
+        Object i = Views.pick(body, "inbox");
+        return Views.mapInboxView(i != null ? Views.asRecord(i) : body);
+    }
+
+    /** {@link #getInbox(String, long)} at the inbox head. */
+    public InboxView getInbox(String rollupId) {
+        return getInbox(rollupId, 0);
+    }
+
+    /** One posted-data commitment (chain v3.2.8+). The payload is in the transaction at {@code height}. */
+    public PostedDataView getPostedData(String rollupId, long sequence) {
+        Map<String, Object> body =
+                get(
+                        "/qorechain/rdk/v1/posted_data/"
+                                + pathEscape(rollupId)
+                                + "/"
+                                + Long.toUnsignedString(sequence));
+        Object d = Views.pick(body, "posted_data", "postedData");
+        return Views.mapPostedDataView(d != null ? Views.asRecord(d) : body);
+    }
+
+    /** A submitter's bond on a qledger-v1 rollup and when it unlocks (chain v3.2.8+). */
+    public SubmitterBondView getSubmitterBond(String rollupId, String submitter) {
+        Map<String, Object> body =
+                get(
+                        "/qorechain/rdk/v1/submitter_bond/"
+                                + pathEscape(rollupId)
+                                + "/"
+                                + pathEscape(submitter));
+        return Views.mapSubmitterBondView(body);
+    }
+
+    /**
+     * The key-encapsulation key {@code address} published (chain v3.2.5+), or {@code null} when it
+     * has none.
+     */
+    public KemKeyView getKemKey(String address) {
+        Map<String, Object> body = get("/qorechain/pqc/v1/kem/" + pathEscape(address));
+        if (!Boolean.TRUE.equals(body.get("found"))) {
+            return null;
+        }
+        return Views.mapKemKeyView(Views.asRecord(body.get("key")));
+    }
+
+    /** The recipients a post on a private rollup must be sealed to, and the membership epoch. */
+    public static final class PrivateRollupRecipients {
+        /** The rollup's membership epoch, which an envelope must carry. */
+        public final long epoch;
+        /** The members in the rollup's order, each with its ML-KEM-1024 encapsulation key. */
+        public final List<io.github.qorechain.rdk.privpost.Privpost.Recipient> recipients;
+
+        PrivateRollupRecipients(
+                long epoch, List<io.github.qorechain.rdk.privpost.Privpost.Recipient> recipients) {
+            this.epoch = epoch;
+            this.recipients = recipients;
+        }
+    }
+
+    /**
+     * The recipients a post on private rollup {@code rollupId} must be sealed to: its members in
+     * order, each with its registered ML-KEM-1024 key, and the membership epoch. Throws if the
+     * rollup is not private, has no members, or a member has no such key (the chain would refuse
+     * any envelope).
+     */
+    public PrivateRollupRecipients getPrivateRollupRecipients(String rollupId) {
+        RollupView rollup = getRollup(rollupId);
+        if (!"encapsulated".equals(rollup.privacy)) {
+            throw new IllegalStateException("rollup " + rollupId + " is not private");
+        }
+        if (rollup.members.isEmpty()) {
+            throw new IllegalStateException("rollup " + rollupId + " has no members yet");
+        }
+        List<io.github.qorechain.rdk.privpost.Privpost.Recipient> recipients = new ArrayList<>();
+        for (String member : rollup.members) {
+            KemKeyView key = getKemKey(member);
+            if (key == null
+                    || key.algorithmId
+                            != io.github.qorechain.rdk.tx.Messages.ML_KEM_1024_ALGORITHM_ID) {
+                throw new IllegalStateException(
+                        "member " + member + " has no ML-KEM-1024 key registered");
+            }
+            recipients.add(
+                    new io.github.qorechain.rdk.privpost.Privpost.Recipient(
+                            member, io.github.qorechain.rdk.util.Bytes.hexToBytes(key.publicKey)));
+        }
+        return new PrivateRollupRecipients(rollup.membersEpoch, recipients);
+    }
+
     /** Read raw data-availability blob details. */
     public Map<String, Object> getBlob(String rollupId, long blobIndex) {
         return get("/qorechain/rdk/v1/blob/" + pathEscape(rollupId) + "/" + blobIndex);
@@ -295,6 +395,53 @@ public final class RestClient {
     /** Read a transaction by hash (the raw response). */
     public Map<String, Object> getTx(String hash) {
         return get("/cosmos/tx/v1beta1/txs/" + pathEscape(hash));
+    }
+
+    /** The node's latest block height ({@code /cosmos/base/node/v1beta1/status}). */
+    public long getLatestHeight() {
+        Map<String, Object> body = get("/cosmos/base/node/v1beta1/status");
+        long h = Views.asLong(body.get("height"), 0);
+        if (h <= 0) {
+            throw new RuntimeException("the node did not report its height");
+        }
+        return h;
+    }
+
+    /**
+     * Every transaction matching an event query (for example {@code
+     * rdk_data_posted.rollup_id='my-rollup'}), as raw {@code tx_responses}, oldest first. Needs a
+     * node with transaction indexing on.
+     *
+     * @param pageLimit transactions per page (0 means 100)
+     * @param maxPages most pages read (0 means 50)
+     */
+    public List<Map<String, Object>> searchTxs(String query, int pageLimit, int maxPages) {
+        int limit = pageLimit > 0 ? pageLimit : 100;
+        int pages = maxPages > 0 ? maxPages : 50;
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (int page = 1; page <= pages; page++) {
+            Map<String, Object> body =
+                    get(
+                            "/cosmos/tx/v1beta1/txs?query="
+                                    + pathEscape(query)
+                                    + "&page="
+                                    + page
+                                    + "&limit="
+                                    + limit
+                                    + "&order_by=ORDER_BY_ASC");
+            List<Map<String, Object>> txs = Views.asArray(body.get("tx_responses"));
+            out.addAll(txs);
+            long total = Views.asLong(body.get("total"), 0);
+            if (txs.size() < limit || (total > 0 && out.size() >= total)) {
+                break;
+            }
+        }
+        return out;
+    }
+
+    /** {@link #searchTxs(String, int, int)} with 100 transactions per page, at most 50 pages. */
+    public List<Map<String, Object>> searchTxs(String query) {
+        return searchTxs(query, 0, 0);
     }
 
     private Map<String, Object> post(String path, Map<String, Object> payload) {

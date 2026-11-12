@@ -8,10 +8,11 @@ import io.github.qorechain.rdk.util.Qorehash;
 /**
  * Native data-availability helpers.
  *
- * <p>A settlement batch can commit to its data via the batch's {@code data_hash}. On QoreChain no
- * transaction posts a blob to the native DA store yet, so on a {@code native} or {@code both}
+ * <p>A settlement batch can commit to its data via the batch's {@code data_hash}. Before chain
+ * v3.2.8 no transaction posts a blob to the native DA store, so on a {@code native} or {@code both}
  * rollup the chain refuses a batch whose {@code data_hash} claims one: leave it empty there (see
- * {@code Rules.dataHashError}). This class assembles a blob (enforcing the size limit) and computes
+ * {@code Rules.dataHashError}). From v3.2.8 a batch may instead name a {@code MsgPostRollupData}
+ * post by its SHA-256 ({@code Inbox.postedDataHash}), not by the commitment below. This class assembles a blob (enforcing the size limit) and computes
  * the commitment the chain's blob store uses, SHAKE-256 (32 bytes); releases before 0.7.0 used
  * SHA-256. Read the live {@code max_da_blob_size} from {@code rdk.params()}; the default here is
  * reference only.

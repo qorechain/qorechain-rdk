@@ -13,15 +13,23 @@ from .http import Transport, default_transport
 from .views import (
     AnchorView,
     BatchView,
+    InboxView,
+    KemKeyView,
     ParamsView,
+    PostedDataView,
     PqcAccountView,
     RawRecord,
     RollupView,
+    SubmitterBondView,
     map_anchor_view,
     map_batch_view,
+    map_inbox_view,
+    map_kem_key_view,
     map_params_view,
+    map_posted_data_view,
     map_pqc_account_view,
     map_rollup_view,
+    map_submitter_bond_view,
 )
 
 
@@ -157,6 +165,58 @@ class RestClient:
             return 0
         return max(height, 0)
 
+    def get_inbox(self, rollup_id: str, inbox_end: Union[int, str] = 0) -> InboxView:
+        """A rollup's inbox (chain v3.2.8+): head, consumed position, and the
+        ``data_hash`` a based batch ending at ``inbox_end`` must carry (0 = the
+        head)."""
+        q = f"?inbox_end={int(inbox_end)}" if int(inbox_end) > 0 else ""
+        body = self._get(f"/qorechain/rdk/v1/inbox/{quote(rollup_id, safe='')}{q}")
+        return map_inbox_view(_as_record(body.get("inbox", body)))
+
+    def get_posted_data(self, rollup_id: str, sequence: Union[int, str]) -> PostedDataView:
+        """One posted-data commitment (chain v3.2.8+). The payload is in the
+        transaction at ``height``."""
+        body = self._get(
+            f"/qorechain/rdk/v1/posted_data/{quote(rollup_id, safe='')}/{sequence}"
+        )
+        raw = body.get("posted_data", body.get("postedData", body))
+        return map_posted_data_view(_as_record(raw))
+
+    def get_submitter_bond(self, rollup_id: str, submitter: str) -> SubmitterBondView:
+        """A submitter's bond on a qledger-v1 rollup and when it unlocks (chain v3.2.8+)."""
+        body = self._get(
+            f"/qorechain/rdk/v1/submitter_bond/{quote(rollup_id, safe='')}"
+            f"/{quote(submitter, safe='')}"
+        )
+        return map_submitter_bond_view(body)
+
+    def get_kem_key(self, address: str) -> Optional[KemKeyView]:
+        """The key-encapsulation key ``address`` published (chain v3.2.5+), or
+        ``None`` when it has none."""
+        body = self._get(f"/qorechain/pqc/v1/kem/{quote(address, safe='')}")
+        if body.get("found") is not True:
+            return None
+        return map_kem_key_view(_as_record(body.get("key")))
+
+    def get_private_rollup_recipients(self, rollup_id: str) -> tuple[int, list[tuple[str, str]]]:
+        """The recipients a post on private rollup ``rollup_id`` must be sealed
+        to: ``(members_epoch, [(member, encapsulation_key_hex), ...])`` with the
+        members in order, each with its registered ML-KEM-1024 key. Raises if
+        the rollup is not private, has no members, or a member has no such key
+        (the chain would refuse any envelope)."""
+        rollup = self.get_rollup(rollup_id)
+        if rollup.privacy != "encapsulated":
+            raise ValueError(f"rollup {rollup_id} is not private")
+        if not rollup.members:
+            raise ValueError(f"rollup {rollup_id} has no members yet")
+        recipients: list[tuple[str, str]] = []
+        for member in rollup.members:
+            key = self.get_kem_key(member)
+            if key is None or key.algorithm_id != 2:
+                raise ValueError(f"member {member} has no ML-KEM-1024 key registered")
+            recipients.append((member, key.public_key))
+        return rollup.members_epoch, recipients
+
     def get_blob(self, rollup_id: str, blob_index: Union[int, str]) -> RawRecord:
         """Raw data-availability blob details (status, size, expiry)."""
         return self._get(
@@ -246,6 +306,39 @@ class RestClient:
     def get_tx(self, tx_hash: str) -> RawRecord:
         """A transaction by hash (the raw ``/cosmos/tx/v1beta1/txs/{hash}`` response)."""
         return self._get(f"/cosmos/tx/v1beta1/txs/{quote(tx_hash, safe='')}")
+
+    def get_latest_height(self) -> int:
+        """The node's latest block height (``/cosmos/base/node/v1beta1/status``)."""
+        body = self._get("/cosmos/base/node/v1beta1/status")
+        try:
+            height = int(body.get("height") or 0)
+        except (TypeError, ValueError):
+            height = 0
+        if height <= 0:
+            raise RuntimeError("the node did not report its height")
+        return height
+
+    def search_txs(
+        self, query: str, page_limit: int = 100, max_pages: int = 50
+    ) -> list[RawRecord]:
+        """Every transaction matching an event query (for example
+        ``rdk_data_posted.rollup_id='my-rollup'``), as raw ``tx_responses``,
+        oldest first. Needs a node with transaction indexing on."""
+        out: list[RawRecord] = []
+        for page in range(1, max_pages + 1):
+            body = self._get(
+                f"/cosmos/tx/v1beta1/txs?query={quote(query, safe='')}"
+                f"&page={page}&limit={page_limit}&order_by=ORDER_BY_ASC"
+            )
+            txs = _as_array(body.get("tx_responses"))
+            out.extend(txs)
+            try:
+                total = int(body.get("total") or 0)
+            except (TypeError, ValueError):
+                total = 0
+            if len(txs) < page_limit or (total > 0 and len(out) >= total):
+                break
+        return out
 
 
 __all__ = ["RestClient"]

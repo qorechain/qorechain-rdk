@@ -9,7 +9,7 @@
  *     batch itself is submitted WITHOUT a proof and finalizes after the
  *     challenge window. (We pass illustrative fraud-proof bytes here only to
  *     show the field shape; in practice optimistic batches omit `proof`.)
- *   - zk         → carries a validity proof (snark/stark bytes) in `proof`.
+ *   - zk         → carries a validity proof (Groth16 bytes) in `proof`.
  *   - based      → no proof; ordering/inclusion is inherited from the host.
  *   - sovereign  → no proof; settlement is verified off the Main Chain.
  *

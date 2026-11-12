@@ -82,6 +82,25 @@ public final class Validate {
                             + ")");
         }
 
+        // STARK settlement is refused by the chain from v3.2.8.
+        if (config.proofSystem != null && Enums.PAUSED_PROOF_SYSTEMS.contains(config.proofSystem)) {
+            errors.add(
+                    "proof system \""
+                            + config.proofSystem.wire()
+                            + "\" is paused on the network: the chain refuses STARK keys and STARK"
+                            + " batches until it verifies a real rollup statement; use snark (Groth16)");
+        }
+
+        // Sequencing, execution VM and privacy (chain v3.2.8+), mirroring the chain's
+        // RollupConfig.Validate and its create-time rule.
+        errors.addAll(
+                rollupModeErrors(
+                        wire(config.settlement),
+                        wire(config.proofSystem),
+                        config.sequencing,
+                        config.executionVm,
+                        config.privacy));
+
         // Based settlement requires the based sequencer mode.
         if (config.settlement != null
                 && Matrix.requiresBasedSequencer(config.settlement)
@@ -122,6 +141,84 @@ public final class Validate {
         if (!result.valid) {
             throw new RollupConfigError(result.errors);
         }
+    }
+
+    /**
+     * The chain's v3.2.8 rules for {@code sequencing}, {@code executionVm} and {@code privacy} on a
+     * new rollup. Returns every violation (empty when the combination is accepted). {@code null}
+     * reads as the empty string.
+     *
+     * <ul>
+     *   <li>A new optimistic rollup needs {@code executionVm = "qledger-v1"} and {@code sequencing =
+     *       "based"}.
+     *   <li>{@code sequencing = "based"} is allowed for zk with snark, based settlement, and
+     *       optimistic with qledger-v1.
+     *   <li>{@code executionVm = "qledger-v1"} needs optimistic settlement, based sequencing, and
+     *       no privacy.
+     *   <li>{@code privacy = "encapsulated"} needs zk settlement with snark.
+     * </ul>
+     *
+     * @param settlement the settlement wire value, e.g. {@code "optimistic"}
+     * @param proofSystem the proof system wire value, e.g. {@code "fraud"}
+     */
+    public static List<String> rollupModeErrors(
+            String settlement, String proofSystem, String sequencing, String executionVm, String privacy) {
+        List<String> errors = new ArrayList<>();
+        String seq = sequencing == null ? "" : sequencing;
+        String vm = executionVm == null ? "" : executionVm;
+        String priv = privacy == null ? "" : privacy;
+        if (!Enums.SEQUENCING_MODES.contains(seq)) {
+            errors.add("sequencing \"" + seq + "\" is not valid (want \"based\" or empty)");
+        }
+        if (!Enums.EXECUTION_VMS.contains(vm)) {
+            errors.add("executionVm \"" + vm + "\" is not valid (want \"qledger-v1\" or empty)");
+        }
+        if (!Enums.ROLLUP_PRIVACY_MODES.contains(priv)) {
+            errors.add("privacy \"" + priv + "\" is not valid (want \"encapsulated\" or empty)");
+        }
+        boolean zkSnark = "zk".equals(settlement) && "snark".equals(proofSystem);
+        if ("optimistic".equals(settlement) && vm.isEmpty()) {
+            errors.add(
+                    "from chain v3.2.8 a new optimistic rollup needs executionVm \"qledger-v1\" and"
+                            + " sequencing \"based\" (its fraud proof re-executes the batch)");
+        }
+        if (Enums.SEQUENCING_BASED.equals(seq)) {
+            boolean eligible =
+                    zkSnark
+                            || "based".equals(settlement)
+                            || ("optimistic".equals(settlement)
+                                    && Enums.EXECUTION_VM_QLEDGER_V1.equals(vm));
+            if (!eligible) {
+                errors.add(
+                        "settlement "
+                                + settlement
+                                + " with proof system "
+                                + proofSystem
+                                + " cannot use based sequencing (zk with snark, based settlement, or"
+                                + " optimistic with qledger-v1 only)");
+            }
+        }
+        if (Enums.EXECUTION_VM_QLEDGER_V1.equals(vm)) {
+            if (!"optimistic".equals(settlement)) {
+                errors.add("executionVm qledger-v1 needs optimistic settlement, not " + settlement);
+            }
+            if (!Enums.SEQUENCING_BASED.equals(seq)) {
+                errors.add(
+                        "executionVm qledger-v1 needs sequencing \"based\": its batches consume the inbox");
+            }
+            if (!priv.isEmpty()) {
+                errors.add(
+                        "a qledger-v1 rollup cannot be private: a fraud proof re-executes plaintext");
+            }
+        }
+        if (Enums.PRIVACY_ENCAPSULATED.equals(priv) && !zkSnark) {
+            errors.add(
+                    "a private rollup must be zk with a snark (Groth16) key, not "
+                            + settlement
+                            + "/"
+                            + proofSystem);
+        }
+        return errors;
     }
 
     private static String wire(SettlementParadigm v) {

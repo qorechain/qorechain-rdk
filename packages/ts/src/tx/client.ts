@@ -31,14 +31,23 @@ import type {
   OfflineDirectSigner,
 } from "@cosmjs/proto-signing";
 import {
+  HYBRID_VERIFY_GAS,
+  buildRegisterPqcKeyMsg,
+  qorechainRegistryTypes,
+  signProofOfPossession,
   pqcSign,
   signAndBroadcastHybrid,
   type PqcKeypair,
   type SignBytesVersionOption,
 } from "@qorechain/sdk";
-import { RestClient } from "../client/rest";
+import { RestClient, isRestNotFound } from "../client/rest";
 import { dataHashError, rollupIdError, stopRollupError, withdrawalErrors, withdrawalsRootError } from "../rules";
 import { FEATURE_RDK_CHALLENGE_SETTLEMENT } from "../transition";
+import { MIN_ROLLUP_DEPOSIT_UQOR, RDK_FEATURES } from "../constants";
+import { rollupModeErrors } from "../config/validate";
+import { PAUSED_PROOF_SYSTEMS, MAX_ROLLUP_MEMBERS, type ProofSystem } from "../config/enums";
+import { isDataHashChainBound, zkPublicInputErrors } from "../zk";
+import { qledgerBatchErrors } from "../qledger/batch";
 import { anchorSignBytesV2 } from "../receipts";
 import { bytesToHex, toBytes } from "../utils/bytes";
 import type { RollupStatus } from "../config/enums";
@@ -83,6 +92,10 @@ export type TxFee = StdFee | number | "auto";
 
 /** The multiplier applied to a simulated gas estimate for an `"auto"` fee. */
 const GAS_MULTIPLIER = 1.4;
+/** The chain's per-byte transaction size gas (`tx_size_cost_per_byte`). */
+const TX_SIZE_COST_PER_BYTE = 10;
+const ML_DSA_87_SIGNATURE_BYTES = 4627;
+const ML_DSA_87_PUBLIC_KEY_BYTES = 2592;
 
 /** The signing capability `RdkTxClient` depends on (satisfied by `SigningStargateClient`). */
 export interface SignAndBroadcastCapable {
@@ -156,8 +169,10 @@ export interface HybridSigningOptions {
    */
   signBytesVersion?: SignBytesVersionOption;
   /**
-   * Embed the ML-DSA-87 public key in the extension so the chain can register
-   * it on first use. Defaults to `false`.
+   * The ML-DSA-87 key is not registered on chain yet. The client then sends a
+   * `MsgRegisterPQCKeyV2` (with a proof of possession) in a transaction of its
+   * own before the first real one: since chain v3.2.3 an account without a
+   * registered key may send nothing else. Defaults to `false`.
    */
   includePqcPublicKey?: boolean;
 }
@@ -207,6 +222,33 @@ function hybridConfigFrom(
     signBytesVersion: options.signBytesVersion,
     includePqcPublicKey: options.includePqcPublicKey,
   };
+}
+
+/** The settlement and proof system the chain derives from each preset profile. */
+const PROFILE_SETTLEMENT: Record<string, { settlement: string; proofSystem: string }> = {
+  defi: { settlement: "zk", proofSystem: "snark" },
+  gaming: { settlement: "based", proofSystem: "none" },
+  nft: { settlement: "optimistic", proofSystem: "fraud" },
+  enterprise: { settlement: "based", proofSystem: "none" },
+  custom: { settlement: "optimistic", proofSystem: "fraud" },
+};
+
+/** Messages a keyless account may send on its own (chain `txIsRegistrationOnly`). */
+const PQC_REGISTRATION_TYPES = new Set([
+  "/qorechain.pqc.v1.MsgRegisterPQCKey",
+  "/qorechain.pqc.v1.MsgRegisterPQCKeyV2",
+  "/qorechain.pqc.v1.MsgMigratePQCKey",
+]);
+/** The pqc codespace's "key already registered" refusal. */
+const PQC_ALREADY_REGISTERED_CODE = 7;
+
+/** The rdk registry plus the `x/pqc` key messages. */
+function registryWithPqc() {
+  const r = createRdkRegistry();
+  for (const [url, type] of qorechainRegistryTypes) {
+    if (url.startsWith("/qorechain.pqc.v1.MsgRegisterPQCKey") && !r.lookupType(url)) r.register(url, type);
+  }
+  return r;
 }
 
 export class RdkTxClient {
@@ -306,7 +348,13 @@ export class RdkTxClient {
     }
     if (typeof fee === "number") return calculateFee(fee, this.gasPrice);
     const gas = await this.simulate(messages, memo);
-    return calculateFee(Math.round(gas * GAS_MULTIPLIER), this.gasPrice);
+    // The simulation runs the classical transaction; a hybrid one also carries
+    // the ML-DSA-87 extension (charged per byte) and its verification.
+    const hybridExtra = this.hybrid
+      ? HYBRID_VERIFY_GAS +
+        TX_SIZE_COST_PER_BYTE * (ML_DSA_87_SIGNATURE_BYTES + 64 + (this.hybrid.includePqcPublicKey ? ML_DSA_87_PUBLIC_KEY_BYTES : 0))
+      : 0;
+    return calculateFee(Math.round(gas * GAS_MULTIPLIER) + hybridExtra, this.gasPrice);
   }
 
   /** Sign and broadcast hybrid, mapping the SDK result onto cosmjs's shape. */
@@ -326,13 +374,34 @@ export class RdkTxClient {
           "getChainId, getSequence, and broadcastTx (a connected StargateClient does).",
       );
     }
+    const chainId = await transport.getChainId();
+    // Since chain v3.2.3 (`pqc-keyless-extension-closed`) a key carried in the
+    // signature extension is no longer registered on first use: an account
+    // without a registered key may send only a registration. Register it in a
+    // transaction of its own first, then send `messages`.
+    if (hybrid.includePqcPublicKey && !messages.every((m) => PQC_REGISTRATION_TYPES.has(m.typeUrl))) {
+      const reg = buildRegisterPqcKeyMsg(this.address, {
+        pqcKeypair: hybrid.pqcKeypair,
+        keyType: "hybrid",
+        proofOfPossession: signProofOfPossession({
+          chainId,
+          account: this.address,
+          algorithmId: 1,
+          keypair: hybrid.pqcKeypair,
+        }),
+      });
+      const res = await this.broadcastHybrid(hybrid, [reg], { fee: { amount: [{ denom: "uqor", amount: "90000" }], gas: "600000" } });
+      if (res.code !== 0 && res.code !== PQC_ALREADY_REGISTERED_CODE) {
+        throw new Error(`registering this account's post-quantum key failed (code ${res.code}): ${res.rawLog ?? ""}`);
+      }
+      hybrid.includePqcPublicKey = false;
+    }
     const memo = opts.memo ?? "";
     const fee = await this.resolveFee(messages, opts.fee ?? "auto", opts.memo);
-    const chainId = await transport.getChainId();
     const { accountNumber, sequence } = await transport.getSequence(this.address);
 
     const result = await signAndBroadcastHybrid({
-      registry: createRdkRegistry(),
+      registry: registryWithPqc(),
       signer: hybrid.signer,
       pqcKeypair: hybrid.pqcKeypair,
       messages,
@@ -382,6 +451,13 @@ export class RdkTxClient {
   ): Promise<DeliverTxResponse> {
     const idError = rollupIdError(input.rollupId);
     if (idError) throw new Error(`rollupId "${input.rollupId}" ${idError}`);
+    // Chain v3.2.8 mode rules: checked against the profile's settlement when
+    // the profile is one of the presets, so a refused combination costs no fee.
+    const preset = PROFILE_SETTLEMENT[input.profile];
+    if (preset) {
+      const errors = rollupModeErrors({ ...preset, ...input });
+      if (errors.length > 0) throw new Error(`rollup "${input.rollupId}" would be refused: ${errors.join("; ")}`);
+    }
     return this.broadcast([msgs.createRollupMsg({ creator: this.address, ...input })], opts);
   }
 
@@ -411,12 +487,68 @@ export class RdkTxClient {
     const mode = opts.anchor ?? "auto";
     const rootErr = withdrawalsRootError(input.withdrawalsRoot);
     if (rootErr) throw new Error(`cannot submit batch ${String(input.batchIndex)}: ${rootErr}`);
-    // A non-empty data hash on a native-DA rollup is always refused by the
-    // chain; catch it before the fee is paid when the rollup can be read.
-    if (input.dataHash && toBytes(input.dataHash).length > 0 && this.hybrid?.rest) {
-      const rollup = await new RestClient(this.hybrid.rest).getRollup(input.rollupId);
-      const err = dataHashError(rollup.daBackend, input.dataHash);
-      if (err) throw new Error(`cannot submit batch ${String(input.batchIndex)}: ${err}`);
+    // Checks the chain would make after the fee is paid, when the rollup can
+    // be read: a native-DA data hash, a based rollup's inbox range, and (chain
+    // v3.2.8) canonical ZK public inputs and the paused STARK settlement.
+    if (this.hybrid?.rest) {
+      const rest = new RestClient(this.hybrid.rest);
+      const rollup = await rest.getRollup(input.rollupId);
+      const fail = (why: string) => new Error(`cannot submit batch ${String(input.batchIndex)}: ${why}`);
+      const based = rollup.sequencing === "based";
+      const inboxEnd = input.inboxEnd === undefined ? 0n : BigInt(input.inboxEnd);
+      if (based && inboxEnd === 0n) {
+        throw fail("the rollup is based: set inboxEnd and carry the inbox range commitment as dataHash");
+      }
+      if (!based && inboxEnd !== 0n) throw fail("inboxEnd must be 0 on a rollup that is not based");
+      if (!based && input.dataHash && toBytes(input.dataHash).length > 0) {
+        const postedDataEnabled = await rest.isProtocolFeatureEnabled(RDK_FEATURES.postRollupData);
+        const err = dataHashError(rollup.daBackend, input.dataHash, { postedDataEnabled });
+        if (err) throw fail(err);
+      }
+      if (rollup.executionVm === "qledger-v1") {
+        // Chain v3.2.8 admission rules for qledger-v1 batches.
+        const [params, bond, inbox] = await Promise.all([
+          rest.getParams(),
+          rest.getSubmitterBond(input.rollupId, this.address),
+          rest.getInbox(input.rollupId),
+        ]);
+        const head = BigInt(inbox.headSequence);
+        const retained = async (x: bigint) => x === head || (await rest.getInbox(input.rollupId, x)).rangeDataHash !== "";
+        let nextRetained: boolean | undefined;
+        let nextHeight: number | undefined;
+        if (inboxEnd < head) {
+          try {
+            nextHeight = (await rest.getPostedData(input.rollupId, inboxEnd + 1n)).height;
+            nextRetained = true;
+          } catch (err) {
+            if (!isRestNotFound(err)) throw err;
+            nextRetained = false;
+          }
+        }
+        const errors = qledgerBatchErrors({
+          consumed: inbox.consumedSequence,
+          head,
+          end: inboxEnd,
+          bond: bond.amount,
+          minBond: params.minSubmitterBond ?? "1000000000",
+          pending: bond.pending,
+          endRetained: inboxEnd <= head && (await retained(inboxEnd)),
+          nextRetained,
+          nextHeight,
+          inclusionHeight: (await rest.getLatestHeight()) + 2,
+        });
+        if (errors.length > 0) throw fail(errors.join("; "));
+      }
+      if (rollup.settlementMode === "zk") {
+        if (PAUSED_PROOF_SYSTEMS.includes(rollup.proofSystem as ProofSystem)) {
+          if (await rest.isProtocolFeatureEnabled(RDK_FEATURES.starkStatement)) {
+            throw fail("STARK settlement is paused on the network; governance can move the rollup to a Groth16 key");
+          }
+        } else if (await rest.isProtocolFeatureEnabled(RDK_FEATURES.zkCanonicalInputs)) {
+          const errors = zkPublicInputErrors(input, { dataHashBound: isDataHashChainBound(rollup, input.dataHash) });
+          if (errors.length > 0) throw fail(errors.join("; "));
+        }
+      }
     }
     let anchored = input;
     if (!input.anchorSignature && mode !== "off") {
@@ -540,6 +672,89 @@ export class RdkTxClient {
       [msgs.stopRollupMsg({ creator: this.address, rollupId: input.rollupId })],
       opts,
     );
+  }
+
+  /**
+   * Register or replace the rollup's ZK verification key (chain v3.2.7+). The
+   * client's address must be the creator, and only before the first batch.
+   * `proofSystem` `"stark"` is refused from v3.2.8.
+   */
+  setVerificationKey(
+    input: Omit<msgs.SetVerificationKeyInput, "creator">,
+    opts?: TxOptions,
+  ): Promise<DeliverTxResponse> {
+    if (input.proofSystem && PAUSED_PROOF_SYSTEMS.includes(input.proofSystem as ProofSystem)) {
+      return Promise.reject(new Error("STARK keys are refused by the chain from v3.2.8; register a snark (Groth16) key"));
+    }
+    return this.broadcast([msgs.setVerificationKeyMsg({ creator: this.address, ...input })], opts);
+  }
+
+  /**
+   * Post rollup data on chain (chain v3.2.8+). The response's
+   * `MsgPostRollupDataResponse` carries the inbox sequence and SHA-256; on a
+   * private rollup `data` must be an envelope (`sealEnvelope`). The poster pays
+   * `posted_data_fee_per_byte` per billable byte (at least 1 KiB) on top of gas.
+   */
+  postRollupData(input: { rollupId: string; data: string | Uint8Array }, opts?: TxOptions): Promise<DeliverTxResponse> {
+    if (toBytes(input.data).length === 0) return Promise.reject(new Error("data cannot be empty"));
+    return this.broadcast([msgs.postRollupDataMsg({ poster: this.address, ...input })], opts);
+  }
+
+  /**
+   * Deposit uqor into a qledger-v1 rollup, crediting the 32-byte L2 `account`
+   * through the rollup's inbox (chain v3.2.8+). At least 1 QOR.
+   */
+  depositToRollup(
+    input: { rollupId: string; account: string | Uint8Array; amount: string | number | bigint },
+    opts?: TxOptions,
+  ): Promise<DeliverTxResponse> {
+    const account = toBytes(input.account);
+    if (account.length !== 32 || account.every((b) => b === 0)) {
+      return Promise.reject(new Error("account must be a non-zero 32-byte qledger-v1 account id"));
+    }
+    if (BigInt(input.amount) < MIN_ROLLUP_DEPOSIT_UQOR) {
+      return Promise.reject(new Error(`a deposit is at least ${MIN_ROLLUP_DEPOSIT_UQOR} uqor (1 QOR)`));
+    }
+    return this.broadcast([msgs.depositToRollupMsg({ depositor: this.address, ...input, account })], opts);
+  }
+
+  /** Add to this client's submitter bond on a qledger-v1 rollup (chain v3.2.8+). */
+  bondRollupSubmitter(
+    input: { rollupId: string; amount: string | number | bigint },
+    opts?: TxOptions,
+  ): Promise<DeliverTxResponse> {
+    if (BigInt(input.amount) <= 0n) return Promise.reject(new Error("amount must be positive"));
+    return this.broadcast([msgs.bondRollupSubmitterMsg({ submitter: this.address, ...input })], opts);
+  }
+
+  /** Withdraw this client's whole submitter bond, a full challenge window after its last batch (chain v3.2.8+). */
+  unbondRollupSubmitter(input: { rollupId: string }, opts?: TxOptions): Promise<DeliverTxResponse> {
+    return this.broadcast([msgs.unbondRollupSubmitterMsg({ submitter: this.address, ...input })], opts);
+  }
+
+  /**
+   * Set a private rollup's member list (chain v3.2.8+). The client's address
+   * must be the creator; each member needs a registered ML-KEM-1024 key. Starts
+   * a new membership epoch.
+   */
+  setRollupMembers(input: { rollupId: string; members: string[] }, opts?: TxOptions): Promise<DeliverTxResponse> {
+    const { members } = input;
+    if (members.length === 0 || members.length > MAX_ROLLUP_MEMBERS) {
+      return Promise.reject(new Error(`a private rollup has 1 to ${MAX_ROLLUP_MEMBERS} members`));
+    }
+    if (new Set(members).size !== members.length) return Promise.reject(new Error("a member is listed twice"));
+    return this.broadcast([msgs.setRollupMembersMsg({ creator: this.address, ...input })], opts);
+  }
+
+  /**
+   * Publish this client's ML-KEM-1024 encapsulation key in the chain's KEM
+   * registry (chain v3.2.5+), so a private rollup can list it as a member.
+   * Derive the key pair with `kemKeypairFromSeed` and keep the seed secret.
+   */
+  registerKemKey(input: { publicKey: string | Uint8Array }, opts?: TxOptions): Promise<DeliverTxResponse> {
+    const pk = toBytes(input.publicKey);
+    if (pk.length !== 1568) return Promise.reject(new Error(`an ML-KEM-1024 key is 1568 bytes, got ${pk.length}`));
+    return this.broadcast([msgs.registerKemKeyMsg({ sender: this.address, publicKey: pk })], opts);
   }
 
   /** Execute a finalized-batch withdrawal. The client's address is the submitter. */

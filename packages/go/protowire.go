@@ -1,6 +1,9 @@
 package rdk
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"errors"
+)
 
 // Minimal protobuf wire encoder. Fields are written in ascending field-number
 // order by the message encoders, matching the canonical cosmjs/gogoproto output
@@ -116,3 +119,67 @@ func (w *protoWriter) writeMessage(field int, b []byte) {
 	w.writeVarint(uint64(len(b)))
 	w.buf = append(w.buf, b...)
 }
+
+// writeRepeatedString writes a repeated string field, one entry per element
+// (empty elements included, as proto3 encodes repeated fields).
+func (w *protoWriter) writeRepeatedString(field int, items []string) {
+	for _, s := range items {
+		w.writeRawString(field, s)
+	}
+}
+
+// protoField is one decoded wire field: a varint value or length-delimited
+// bytes, by its wire type.
+type protoField struct {
+	num    int
+	wire   int
+	varint uint64
+	bytes  []byte
+}
+
+// readProtoFields splits an encoded message into its fields. It understands the
+// wire types the rdk messages use (varint and length-delimited) and skips
+// fixed-width fields; anything else is an error.
+func readProtoFields(b []byte) ([]protoField, error) {
+	var out []protoField
+	for len(b) > 0 {
+		tag, n := binary.Uvarint(b)
+		if n <= 0 {
+			return nil, errMalformedProto
+		}
+		b = b[n:]
+		f := protoField{num: int(tag >> 3), wire: int(tag & 7)}
+		switch f.wire {
+		case wireVarint:
+			v, m := binary.Uvarint(b)
+			if m <= 0 {
+				return nil, errMalformedProto
+			}
+			f.varint = v
+			b = b[m:]
+		case wireBytes:
+			l, m := binary.Uvarint(b)
+			if m <= 0 || l > uint64(len(b)-m) {
+				return nil, errMalformedProto
+			}
+			f.bytes = append([]byte{}, b[m:m+int(l)]...)
+			b = b[m+int(l):]
+		case 1: // fixed64
+			if len(b) < 8 {
+				return nil, errMalformedProto
+			}
+			b = b[8:]
+		case 5: // fixed32
+			if len(b) < 4 {
+				return nil, errMalformedProto
+			}
+			b = b[4:]
+		default:
+			return nil, errMalformedProto
+		}
+		out = append(out, f)
+	}
+	return out, nil
+}
+
+var errMalformedProto = errors.New("malformed protobuf message")

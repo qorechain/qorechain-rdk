@@ -5,7 +5,9 @@ package rdk
 //
 // These mirror the network's published profile table. The proof system for each
 // profile is the one its settlement paradigm requires (optimistic -> fraud,
-// zk -> snark, based -> none).
+// zk -> snark, based -> none). The optimistic profiles (nft, custom) carry
+// ExecutionVm "qledger-v1" and Sequencing "based", which the chain requires of
+// every new optimistic rollup from v3.2.8.
 var PresetDefaults = map[Profile]RollupConfig{
 	ProfileDefi: {
 		Profile:       ProfileDefi,
@@ -41,6 +43,9 @@ var PresetDefaults = map[Profile]RollupConfig{
 		MaxTxPerBlock:       5000,
 		ChallengeWindowSecs: DefaultChallengeWindowSecs,
 		ChallengeBondUqor:   DefaultChallengeBondUqor,
+		// From chain v3.2.8 a new optimistic rollup must run qledger-v1 and be based.
+		ExecutionVm: ExecutionVmQLedgerV1,
+		Sequencing:  SequencingBased,
 	},
 	ProfileEnterprise: {
 		Profile:       ProfileEnterprise,
@@ -65,6 +70,9 @@ var PresetDefaults = map[Profile]RollupConfig{
 		MaxTxPerBlock:       10000,
 		ChallengeWindowSecs: DefaultChallengeWindowSecs,
 		ChallengeBondUqor:   DefaultChallengeBondUqor,
+		// From chain v3.2.8 a new optimistic rollup must run qledger-v1 and be based.
+		ExecutionVm: ExecutionVmQLedgerV1,
+		Sequencing:  SequencingBased,
 	},
 }
 

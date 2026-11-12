@@ -95,6 +95,9 @@ class RollupConfigBuilder:
             profile=ProfileName(self._config.profile),
             vm_type=VmType(self._config.vm_type),
             stake_amount=amount,
+            sequencing=self._config.sequencing or "",
+            execution_vm=self._config.execution_vm or "",
+            privacy=self._config.privacy or "",
         )
 
 

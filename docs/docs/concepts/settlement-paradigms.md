@@ -14,7 +14,7 @@ systems it can use.
 | Paradigm | Finality | Proofs | Sequencer | Notes |
 | --- | --- | --- | --- | --- |
 | `optimistic` | Delayed (challenge window) | Interactive fraud proofs | `dedicated` / `shared` | Default 604,800 s window with a challenge bond (see below) |
-| `zk` | Instant on a valid proof | SNARK or STARK | `dedicated` / `shared` | On-chain verification gates finalization |
+| `zk` | Instant on a valid proof | SNARK (STARK paused) | `dedicated` / `shared`, or based sequencing | On-chain verification gates finalization |
 | `based` | ~2 blocks | None | `based` only | Host-chain proposers sequence the rollup |
 | `sovereign` | The rollup's own consensus | None | `dedicated` / `shared` | Self-sequenced, settles off the Main Chain |
 
@@ -42,31 +42,44 @@ paid from the rollup's escrow. Compute the root with `batchTransitionRoot` (see
 [Watchtower](../guides/watchtower.md#checking-a-batch-against-the-chains-rule)):
 a placeholder or a root from your own scheme is provably fraudulent.
 
+**From chain v3.2.8: qledger-v1.** A new optimistic rollup must be created with
+`executionVm: "qledger-v1"` and `sequencing: "based"` (the `nft` and `custom`
+presets set both). The chain then runs the qledger-v1 model: a uqor account
+ledger with signed transfers and withdrawals (ML-DSA-44 account keys). Its
+inputs are its inbox: user posts (`postRollupData`) and deposits
+(`depositToRollup`). Any account holding a submitter bond (`bondRollupSubmitter`,
+at least `min_submitter_bond`, default 1,000 QOR) may submit a batch of up to 64
+inbox entries, setting `inboxEnd` and carrying the inbox range commitment as
+`dataHash`. A fraud proof makes the chain re-execute the batch; if its state or
+withdrawals root is wrong, the batch and every batch built on it are rejected
+and the submitter's bond is paid to the challenger. Withdrawals are paid from
+finalized batches only, from the rollup's deposit pool. Optimistic rollups
+created before v3.2.8 keep working under the transition-root rule above.
+
 **Choose it when** you want low submission overhead and can tolerate delayed
-finality — general-purpose app-chains, NFT platforms, anything not latency-
+finality: general-purpose app-chains, NFT platforms, anything not latency-
 critical.
 
 ## `zk`
 
-Each batch carries a validity proof — a `snark` or a `stark`. The proof is
-verified on-chain when the batch is submitted, and a **valid** proof finalizes
-the batch immediately, with no challenge window.
+Each batch carries a validity proof (a `snark`; `stark` is paused from chain
+v3.2.8). The proof is verified on-chain when the batch is submitted, and a
+**valid** proof finalizes the batch immediately, with no challenge window.
 
-:::caution ZK settlement cannot be used yet
 The chain verifies a zk batch against a verification key registered on the
-rollup, and no chain release up to v3.2.5 has a way to register one: creating a
-rollup carries no key and no message sets it. Every zk batch is therefore
-refused (code 21) after its fee is paid, on both networks. Key registration is
-planned for chain v3.2.7. Until then the `defi` profile, and any zk rollup, can
-be created but cannot settle; the `defi-rollup` template stops before
-submitting.
-:::
+rollup. From chain v3.2.7 the creator registers it with `setVerificationKey` or
+`verificationKey` on `createRollup`; on a release without it every zk batch is
+refused (code 21). A SNARK is Groth16 over BLS12-381 in gnark's binary
+encoding, with public inputs `prev_state_root`, `state_root`, `data_hash` and
+(for batches from chain v3.2.5) `withdrawals_root`. From chain v3.2.8 each
+input the submitter chooses must already be below the scalar modulus; see
+[Proof systems](../guides/proof-systems.md#snark-zk).
 
-What the chain verifies, for when it can: a SNARK is Groth16 over BLS12-381 in
-gnark's binary encoding, with public inputs `prev_state_root`, `state_root`,
-`data_hash` and (for batches from chain v3.2.5) `withdrawals_root`, each a
-big-endian integer reduced into the scalar field. A STARK's transcript also
-names the withdrawals root from v3.2.5.
+A zk (snark) rollup can be created with `sequencing: "based"`: anyone posts
+data, the order is inclusion on the chain, and since the proof binds the roots,
+the inbox range and the withdrawals root, any account may submit its batches.
+With `privacy: "encapsulated"` it is a private rollup: every post is an
+ML-KEM-1024 envelope to its members (`sealEnvelope` / `openEnvelope`).
 
 **Choose it when** you need fast, trust-minimized finality — high-value DeFi,
 exchanges, anything that benefits from cryptographic finality without a wait.
@@ -95,7 +108,8 @@ are using QoreChain primarily for anchoring and data availability.
 The paradigm constrains the proof system and (for `based`) the sequencer mode:
 
 - `optimistic` → `fraud`
-- `zk` → `snark` | `stark`
+- `zk` → `snark` (`stark` is paused)
+- `optimistic` also needs `executionVm: "qledger-v1"` and `sequencing: "based"` for a new rollup
 - `based` → `none` (and `based` sequencer mode)
 - `sovereign` → `none`
 

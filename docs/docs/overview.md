@@ -64,13 +64,13 @@ against shared cross-language golden vectors.
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | Available (v0.8.0) |
-| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.8.0) |
-| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.8.0) |
-| `qorechain-rdk` | Go | Available (v0.8.0, `go get`) |
-| `qorechain-rdk` | Python | Available on PyPI (v0.8.0, imports as `qorrdk`) |
-| `qorechain-rdk` | Rust | Available on crates.io (v0.8.0) |
-| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.8.0) |
+| `@qorechain/rdk` | TypeScript | Available (v0.9.0) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.9.0) |
+| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.9.0) |
+| `qorechain-rdk` | Go | Available (v0.9.0, `go get`) |
+| `qorechain-rdk` | Python | Available on PyPI (v0.9.0, imports as `qorrdk`) |
+| `qorechain-rdk` | Rust | Available on crates.io (v0.9.0) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.9.0) |
 
 The TypeScript core (`@qorechain/rdk`) is the basis for the examples in this
 documentation.

@@ -686,3 +686,275 @@ fn env_prefers_the_seed_then_the_mnemonic_then_none() {
         pqc_keypair_from_env_with(&client_with(Routes::new()), &v.address, |_| None).unwrap();
     assert!(none.is_none());
 }
+
+// --- first transaction of an account with no registered key ------------------
+
+const REG_HASH: &str = "REGHASH";
+
+fn posted_txs(routes: &Routes) -> Vec<Vec<u8>> {
+    routes
+        .requests()
+        .into_iter()
+        .filter(|r| r.method == Method::Post)
+        .map(|r| {
+            let body: Value = serde_json::from_str(r.body.as_ref().unwrap()).unwrap();
+            BASE64.decode(body["tx_bytes"].as_str().unwrap()).unwrap()
+        })
+        .collect()
+}
+
+fn decode_tx(
+    raw: &[u8],
+) -> (
+    cosmrs::proto::cosmos::tx::v1beta1::TxBody,
+    cosmrs::proto::cosmos::tx::v1beta1::AuthInfo,
+) {
+    use cosmrs::proto::cosmos::tx::v1beta1::{AuthInfo, TxBody, TxRaw};
+    let tx = TxRaw::decode(raw).unwrap();
+    (
+        TxBody::decode(tx.body_bytes.as_slice()).unwrap(),
+        AuthInfo::decode(tx.auth_info_bytes.as_slice()).unwrap(),
+    )
+}
+
+/// The requested transaction exactly as a client that knows the key is
+/// registered signs it at `sequence`.
+fn expected_tx(v: &Vector, sequence: u64) -> Vec<u8> {
+    let account = NativeAccount::from_mnemonic_default(&v.mnemonic).unwrap();
+    let tx = RdkTxClient::new_with_options(
+        account,
+        RestClient::with_transport("http://node.example", Routes::new()),
+        v.chain_id.clone(),
+        v.account_number,
+        sequence,
+        HybridSigningOptions {
+            pqc_keypair: Some(derive_pqc_canonical(&v.address, &v.mnemonic)),
+            sign_bytes_version: SignBytesMode::V2,
+            include_pqc_public_key: false,
+        },
+    )
+    .unwrap();
+    tx.build_hybrid_tx(&v.msg, &v.opts, SignBytesVersion::V2)
+        .unwrap()
+        .tx_raw_bytes
+}
+
+fn tx_response(code: u64, codespace: &str, txhash: &str) -> Value {
+    json!({ "tx_response": {
+        "code": code, "codespace": codespace, "txhash": txhash, "raw_log": "", "height": "5"
+    }})
+}
+
+#[test]
+fn keyless_client_registers_the_key_first() {
+    use qorechain::proto::qorechain::pqc::v1::MsgRegisterPqcKeyV2;
+
+    let v = vector();
+    let routes = Routes::new()
+        // Asked once whether the registration was included.
+        .on(
+            &format!("/cosmos/tx/v1beta1/txs/{REG_HASH}"),
+            &[(200, tx_response(0, "", REG_HASH))],
+        )
+        .on(
+            "/cosmos/tx/v1beta1/txs",
+            &[
+                (200, tx_response(0, "", REG_HASH)),
+                (200, tx_response(0, "", "REAL1")),
+                (200, tx_response(0, "", "REAL2")),
+            ],
+        );
+    let tx = hybrid_client(
+        &v,
+        RestClient::with_transport("http://node.example", routes.clone()),
+        SignBytesMode::V2,
+        true,
+    );
+    assert!(tx.will_register_pqc_key());
+
+    let resp = tx
+        .pause_rollup(&v.msg.rollup_id, &v.msg.reason, None, &v.opts)
+        .unwrap();
+    assert_eq!(resp["tx_response"]["txhash"], "REAL1");
+
+    let posts = posted_txs(&routes);
+    assert_eq!(posts.len(), 2, "the registration, then the transaction");
+    assert_eq!(routes.count(&format!("txs/{REG_HASH}")), 1);
+
+    // 1. MsgRegisterPQCKeyV2 alone, at the client's sequence, fixed fee.
+    let (body, auth) = decode_tx(&posts[0]);
+    assert_eq!(body.messages.len(), 1);
+    assert_eq!(
+        body.messages[0].type_url,
+        "/qorechain.pqc.v1.MsgRegisterPQCKeyV2"
+    );
+    let fee = auth.fee.unwrap();
+    assert_eq!(fee.gas_limit, 600_000);
+    assert_eq!(fee.amount[0].denom, "uqor");
+    assert_eq!(fee.amount[0].amount, "90000");
+    assert_eq!(auth.signer_infos[0].sequence, v.sequence);
+
+    let keypair = derive_pqc_canonical(&v.address, &v.mnemonic);
+    let reg = MsgRegisterPqcKeyV2::decode(body.messages[0].value.as_slice()).unwrap();
+    assert_eq!(reg.sender, v.address);
+    assert_eq!(reg.public_key, keypair.public_key);
+    assert_eq!(reg.algorithm_id, 1);
+    assert_eq!(reg.key_type, "hybrid");
+    assert!(reg.ecdsa_pubkey.is_empty());
+    // The proof of possession: the key's signature over
+    // "qorechain-pqc-pop-v1|<chain id>|1|<sender>|<hex public key>".
+    let pop_bytes = qorechain::key_integrity::proof_of_possession_sign_bytes(
+        &v.chain_id,
+        1,
+        &v.address,
+        &keypair.public_key,
+    )
+    .unwrap();
+    assert_eq!(
+        String::from_utf8(pop_bytes.clone()).unwrap(),
+        format!(
+            "qorechain-pqc-pop-v1|{}|1|{}|{}",
+            v.chain_id,
+            v.address,
+            hex::encode(&keypair.public_key)
+        )
+    );
+    assert!(qorechain::pqc::pqc_verify(
+        &keypair.public_key,
+        &pop_bytes,
+        &reg.proof_of_possession
+    ));
+
+    // 2. The requested transaction at the next sequence, key no longer embedded.
+    assert_eq!(posts[1], expected_tx(&v, v.sequence + 1));
+    assert_eq!(tx.sequence(), v.sequence + 1);
+    assert!(!tx.will_register_pqc_key());
+
+    // Registered once: the next transaction goes straight out.
+    tx.pause_rollup(&v.msg.rollup_id, &v.msg.reason, None, &v.opts)
+        .unwrap();
+    assert_eq!(posted_txs(&routes).len(), 3);
+}
+
+#[test]
+fn already_registered_is_accepted() {
+    let v = vector();
+
+    // Refused at admission (code 7): no sequence consumed, nothing to wait for.
+    let routes = Routes::new().on(
+        "/cosmos/tx/v1beta1/txs",
+        &[
+            (200, tx_response(7, "pqc", REG_HASH)),
+            (200, tx_response(0, "", "REAL")),
+        ],
+    );
+    let tx = hybrid_client(
+        &v,
+        RestClient::with_transport("http://node.example", routes.clone()),
+        SignBytesMode::V2,
+        true,
+    );
+    let resp = tx
+        .pause_rollup(&v.msg.rollup_id, &v.msg.reason, None, &v.opts)
+        .unwrap();
+    assert_eq!(resp["tx_response"]["code"], 0);
+    let posts = posted_txs(&routes);
+    assert_eq!(posts.len(), 2);
+    assert_eq!(routes.requests().len(), 2, "no inclusion poll");
+    assert_eq!(posts[1], expected_tx(&v, v.sequence));
+    assert_eq!(tx.sequence(), v.sequence);
+    assert!(!tx.will_register_pqc_key());
+
+    // Admitted, then refused in the block with code 7: the sequence is spent.
+    let routes = Routes::new()
+        .on(
+            &format!("/cosmos/tx/v1beta1/txs/{REG_HASH}"),
+            &[(200, tx_response(7, "pqc", REG_HASH))],
+        )
+        .on(
+            "/cosmos/tx/v1beta1/txs",
+            &[
+                (200, tx_response(0, "", REG_HASH)),
+                (200, tx_response(0, "", "REAL")),
+            ],
+        );
+    let tx = hybrid_client(
+        &v,
+        RestClient::with_transport("http://node.example", routes.clone()),
+        SignBytesMode::V2,
+        true,
+    );
+    tx.pause_rollup(&v.msg.rollup_id, &v.msg.reason, None, &v.opts)
+        .unwrap();
+    let posts = posted_txs(&routes);
+    assert_eq!(posts.len(), 2);
+    assert_eq!(posts[1], expected_tx(&v, v.sequence + 1));
+}
+
+#[test]
+fn a_failed_registration_stops_the_transaction() {
+    let v = vector();
+    let routes = Routes::new().on(
+        "/cosmos/tx/v1beta1/txs",
+        &[(200, tx_response(5, "sdk", REG_HASH))],
+    );
+    let tx = hybrid_client(
+        &v,
+        RestClient::with_transport("http://node.example", routes.clone()),
+        SignBytesMode::V2,
+        true,
+    );
+    let err = tx
+        .pause_rollup(&v.msg.rollup_id, &v.msg.reason, None, &v.opts)
+        .unwrap_err();
+    assert!(matches!(err, TxError::PqcKeyRegistration(_)), "{err}");
+    assert_eq!(posted_txs(&routes).len(), 1, "only the registration");
+    assert_eq!(tx.sequence(), v.sequence);
+    assert!(tx.will_register_pqc_key());
+
+    // Another pqc code is not "already registered".
+    let routes = Routes::new().on(
+        "/cosmos/tx/v1beta1/txs",
+        &[(200, tx_response(8, "pqc", REG_HASH))],
+    );
+    let tx = hybrid_client(
+        &v,
+        RestClient::with_transport("http://node.example", routes.clone()),
+        SignBytesMode::V2,
+        true,
+    );
+    assert!(matches!(
+        tx.pause_rollup(&v.msg.rollup_id, &v.msg.reason, None, &v.opts),
+        Err(TxError::PqcKeyRegistration(_))
+    ));
+}
+
+#[test]
+fn registered_client_sends_no_registration() {
+    let v = vector();
+    let mock = std::sync::Arc::new(qorechain_rdk::tx::MockTxClient::new());
+    let tx = hybrid_client(
+        &v,
+        RestClient::with_transport("http://node.example", mock.clone()),
+        SignBytesMode::V2,
+        false,
+    );
+    assert!(!tx.will_register_pqc_key());
+    tx.pause_rollup(&v.msg.rollup_id, &v.msg.reason, None, &v.opts)
+        .unwrap();
+    assert_eq!(mock.call_count(), 1);
+    assert_eq!(tx.sequence(), v.sequence);
+
+    // The mock transport, keyless: registration first, then the transaction.
+    let mock = std::sync::Arc::new(qorechain_rdk::tx::MockTxClient::new());
+    let tx = hybrid_client(
+        &v,
+        RestClient::with_transport("http://node.example", mock.clone()),
+        SignBytesMode::V2,
+        true,
+    );
+    tx.pause_rollup(&v.msg.rollup_id, &v.msg.reason, None, &v.opts)
+        .unwrap();
+    assert_eq!(mock.call_count(), 2);
+    assert_eq!(tx.sequence(), v.sequence + 1);
+}

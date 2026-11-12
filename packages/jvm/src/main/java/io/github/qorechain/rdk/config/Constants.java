@@ -68,4 +68,37 @@ public final class Constants {
 
     /** Default optimistic challenge bond, in uqor (1,000 QOR). */
     public static final String DEFAULT_CHALLENGE_BOND_UQOR = "1000000000";
+
+    /** Protocol switches of the chain v3.2.7 and v3.2.8 RDK features, as {@code x/pqc} reports them. */
+    public static final class RdkFeatures {
+        private RdkFeatures() {}
+
+        public static final String ZK_VERIFICATION_KEY = "rdk-zk-verification-key";
+        public static final String POST_ROLLUP_DATA = "rdk-post-rollup-data";
+        public static final String BASED_SEQUENCING = "rdk-based-sequencing";
+        public static final String OPTIMISTIC_REEXEC = "rdk-optimistic-reexec";
+        public static final String STARK_STATEMENT = "rdk-stark-statement";
+        public static final String PRIVATE_ROLLUPS = "rdk-private-rollups";
+        public static final String ZK_CANONICAL_INPUTS = "rdk-zk-canonical-inputs";
+        public static final String MAX_BATCHES_PER_BLOCK = "rdk-max-batches-per-block";
+    }
+
+    /**
+     * Default posted-data retention (chain v3.2.8), in blocks. A set value is {@link
+     * #MIN_POSTED_DATA_RETENTION_BLOCKS} to {@link #MAX_POSTED_DATA_RETENTION_BLOCKS} blocks and at
+     * least the longest challenge window in force, counted as one block per second.
+     */
+    public static final long DEFAULT_POSTED_DATA_RETENTION_BLOCKS = 648_000L;
+
+    /** Smallest posted-data retention a parameter change may set, in blocks (chain v3.2.8). */
+    public static final long MIN_POSTED_DATA_RETENTION_BLOCKS = 100L;
+
+    /** Largest posted-data retention a parameter change may set, in blocks (chain v3.2.8). */
+    public static final long MAX_POSTED_DATA_RETENTION_BLOCKS = 25_920_000L;
+
+    /** Smallest {@code MsgDepositToRollup} amount, in uqor (1 QOR). */
+    public static final long MIN_ROLLUP_DEPOSIT_UQOR = 1_000_000L;
+
+    /** Default {@code min_submitter_bond}, in uqor (1,000 QOR); read the live value from {@code rdk.params()}. */
+    public static final long DEFAULT_MIN_SUBMITTER_BOND_UQOR = 1_000_000_000L;
 }

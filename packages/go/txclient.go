@@ -1,6 +1,10 @@
 package rdk
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"strings"
+)
 
 // TxBackend is the sign-and-broadcast capability RdkTxClient depends on. The
 // default backend signs locally and broadcasts via the REST txs endpoint; the
@@ -98,7 +102,8 @@ func (c *RdkTxClient) Sign(messages []Msg, p TxParams) ([]byte, error) {
 // When a Backend is configured it is used; otherwise the messages are signed
 // locally (hybrid when the client has a Hybrid configuration) and broadcast via
 // the REST txs endpoint, which requires a non-nil REST client. The rule checks
-// run before anything is signed.
+// run before anything is signed; on the REST path each MsgSubmitBatch is also
+// checked against the rollup as the chain reads it (CheckSubmitBatch).
 func (c *RdkTxClient) Broadcast(ctx context.Context, messages []Msg, p TxParams) (map[string]any, error) {
 	if err := preflightMessages(messages); err != nil {
 		return nil, err
@@ -108,6 +113,13 @@ func (c *RdkTxClient) Broadcast(ctx context.Context, messages []Msg, p TxParams)
 	}
 	if c.Rest == nil {
 		return nil, &RollupConfigError{Errors: []string{"no REST client configured for broadcast"}}
+	}
+	for _, m := range messages {
+		if batch, ok := m.(MsgSubmitBatch); ok {
+			if err := c.CheckSubmitBatch(ctx, batch); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if c.Hybrid != nil {
 		return c.broadcastHybrid(ctx, messages, p)
@@ -205,4 +217,163 @@ func (c *RdkTxClient) StopRollup(rollupID string, currentStatus RollupStatus) (M
 func (c *RdkTxClient) ExecuteWithdrawal(in ExecuteWithdrawalInput) MsgExecuteWithdrawal {
 	in.Submitter = c.Account.Address
 	return ExecuteWithdrawalMsg(in)
+}
+
+// --- chain v3.2.7 and v3.2.8 messages ---
+
+// SetVerificationKey builds a MsgSetVerificationKey with this client's address
+// as creator (chain v3.2.7+). The creator only, and only before the first
+// batch. ProofSystem "stark" is refused from chain v3.2.8.
+func (c *RdkTxClient) SetVerificationKey(in SetVerificationKeyInput) (MsgSetVerificationKey, error) {
+	if e := setVerificationKeyError(in.ProofSystem); e != "" {
+		return MsgSetVerificationKey{}, &RollupConfigError{Errors: []string{e}}
+	}
+	in.Creator = c.Account.Address
+	return SetVerificationKeyMsg(in), nil
+}
+
+// PostRollupData builds a MsgPostRollupData with this client's address as
+// poster (chain v3.2.8+). The response's MsgPostRollupDataResponse carries the
+// inbox sequence and SHA-256; on a private rollup data must be an envelope
+// (SealEnvelope). The poster pays posted_data_fee_per_byte per billable byte
+// (at least 1 KiB) on top of gas.
+func (c *RdkTxClient) PostRollupData(rollupID string, data []byte) (MsgPostRollupData, error) {
+	if e := postRollupDataError(data); e != "" {
+		return MsgPostRollupData{}, &RollupConfigError{Errors: []string{e}}
+	}
+	return PostRollupDataMsg(PostRollupDataInput{Poster: c.Account.Address, RollupID: rollupID, Data: data}), nil
+}
+
+// DepositToRollup builds a MsgDepositToRollup with this client's address as
+// depositor (chain v3.2.8+): amount uqor into a qledger-v1 rollup, credited to
+// the 32-byte L2 account through the rollup's inbox. At least
+// MinRollupDepositUqor (1 QOR).
+func (c *RdkTxClient) DepositToRollup(rollupID string, account []byte, amount uint64) (MsgDepositToRollup, error) {
+	if e := depositToRollupError(account, amount); e != "" {
+		return MsgDepositToRollup{}, &RollupConfigError{Errors: []string{e}}
+	}
+	return DepositToRollupMsg(DepositToRollupInput{
+		Depositor: c.Account.Address, RollupID: rollupID, Account: account, Amount: amount,
+	}), nil
+}
+
+// BondRollupSubmitter builds a MsgBondRollupSubmitter adding amount uqor to
+// this client's submitter bond on a qledger-v1 rollup (chain v3.2.8+).
+func (c *RdkTxClient) BondRollupSubmitter(rollupID string, amount uint64) (MsgBondRollupSubmitter, error) {
+	if e := bondRollupSubmitterError(amount); e != "" {
+		return MsgBondRollupSubmitter{}, &RollupConfigError{Errors: []string{e}}
+	}
+	return BondRollupSubmitterMsg(BondRollupSubmitterInput{Submitter: c.Account.Address, RollupID: rollupID, Amount: amount}), nil
+}
+
+// UnbondRollupSubmitter builds a MsgUnbondRollupSubmitter withdrawing this
+// client's whole submitter bond, a full challenge window after its last batch
+// (chain v3.2.8+).
+func (c *RdkTxClient) UnbondRollupSubmitter(rollupID string) MsgUnbondRollupSubmitter {
+	return UnbondRollupSubmitterMsg(UnbondRollupSubmitterInput{Submitter: c.Account.Address, RollupID: rollupID})
+}
+
+// SetRollupMembers builds a MsgSetRollupMembers with this client's address as
+// creator (chain v3.2.8+): 1 to MaxRollupMembers distinct members, each with a
+// registered ML-KEM-1024 key. Starts a new membership epoch.
+func (c *RdkTxClient) SetRollupMembers(rollupID string, members []string) (MsgSetRollupMembers, error) {
+	if e := setRollupMembersError(members); e != "" {
+		return MsgSetRollupMembers{}, &RollupConfigError{Errors: []string{e}}
+	}
+	return SetRollupMembersMsg(SetRollupMembersInput{Creator: c.Account.Address, RollupID: rollupID, Members: members}), nil
+}
+
+// RegisterKEMKey builds a MsgRegisterKEMKey publishing this client's
+// ML-KEM-1024 encapsulation key (1568 bytes) in the chain's KEM registry (chain
+// v3.2.5+), so a private rollup can list it as a member. Derive the key pair
+// with KemKeypairFromSeed and keep the seed secret.
+func (c *RdkTxClient) RegisterKEMKey(publicKey []byte) (MsgRegisterKEMKey, error) {
+	if e := registerKEMKeyError(publicKey); e != "" {
+		return MsgRegisterKEMKey{}, &RollupConfigError{Errors: []string{e}}
+	}
+	return RegisterKEMKeyMsg(RegisterKEMKeyInput{Sender: c.Account.Address, PublicKey: publicKey}), nil
+}
+
+// CheckSubmitBatch makes the checks the chain would make on a batch after the
+// fee is paid, reading the rollup over the client's REST client: a based
+// rollup's InboxEnd, a native-DA data hash (allowed once rdk-post-rollup-data
+// is on), the qledger-v1 admission rules (QledgerBatchErrors: bond, pending
+// batches, range, retained end, fresh-post and checkpoint stops), the paused
+// STARK settlement, and, while rdk-zk-canonical-inputs is on, canonical ZK
+// public inputs. Without a REST client it checks nothing.
+// Broadcast calls it for every MsgSubmitBatch on the REST path.
+func (c *RdkTxClient) CheckSubmitBatch(ctx context.Context, m MsgSubmitBatch) error {
+	if c.Rest == nil {
+		return nil
+	}
+	fail := func(why string) error {
+		return &RollupConfigError{Errors: []string{fmt.Sprintf("cannot submit batch %d: %s", m.BatchIndex, why)}}
+	}
+	rollup, err := c.Rest.GetRollup(ctx, m.RollupID)
+	if err != nil {
+		return err
+	}
+	based := rollup.Sequencing == string(SequencingBased)
+	if based && m.InboxEnd == 0 {
+		return fail("the rollup is based: set InboxEnd and carry the inbox range commitment as DataHash")
+	}
+	if !based && m.InboxEnd != 0 {
+		return fail("InboxEnd must be 0 on a rollup that is not based")
+	}
+	if !based && len(m.DataHash) > 0 {
+		postedData, err := c.Rest.IsProtocolFeatureEnabled(ctx, FeatureRDKPostRollupData)
+		if err != nil {
+			return err
+		}
+		if e := DataHashError(rollup.DABackend, m.DataHash, DataHashOptions{PostedDataEnabled: postedData}); e != "" {
+			return fail(e)
+		}
+	}
+	if rollup.ExecutionVm == string(ExecutionVmQLedgerV1) {
+		// Chain v3.2.8 admission rules for qledger-v1 batches.
+		submitter := m.Sequencer
+		if submitter == "" {
+			submitter = c.Account.Address
+		}
+		inbox, err := c.Rest.GetInbox(ctx, m.RollupID, 0)
+		if err != nil {
+			return err
+		}
+		facts, err := qledgerLiveFacts(ctx, c.Rest, m.RollupID, submitter, inbox, m.InboxEnd, 2)
+		if err != nil {
+			return err
+		}
+		if errs := QledgerBatchErrors(facts); len(errs) > 0 {
+			return fail(strings.Join(errs, "; "))
+		}
+	}
+	if rollup.SettlementMode != string(SettlementZK) {
+		return nil
+	}
+	if contains(PausedProofSystems, ProofSystem(rollup.ProofSystem)) {
+		paused, err := c.Rest.IsProtocolFeatureEnabled(ctx, FeatureRDKStarkStatement)
+		if err != nil {
+			return err
+		}
+		if paused {
+			return fail("STARK settlement is paused on the network; governance can move the rollup to a Groth16 key")
+		}
+		return nil
+	}
+	canonical, err := c.Rest.IsProtocolFeatureEnabled(ctx, FeatureRDKZkCanonicalInputs)
+	if err != nil {
+		return err
+	}
+	if canonical {
+		errs := ZkPublicInputErrors(ZkBatchInputs{
+			PrevStateRoot:   m.PrevStateRoot,
+			StateRoot:       m.StateRoot,
+			DataHash:        m.DataHash,
+			WithdrawalsRoot: m.WithdrawalsRoot,
+		}, ZkInputOptions{DataHashBound: IsDataHashChainBound(rollup, m.DataHash)})
+		if len(errs) > 0 {
+			return fail(strings.Join(errs, "; "))
+		}
+	}
+	return nil
 }
