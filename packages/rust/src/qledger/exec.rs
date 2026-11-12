@@ -223,8 +223,10 @@ fn levels(chain_id: &str, rollup_id: &str, ws: &[QledgerWithdrawal]) -> Option<V
     while out.last().map_or(0, Vec::len) > 1 {
         let prev = out.last().expect("a level");
         let next = prev
-            .chunks_exact(2)
-            .map(|p| qorehash(&[&p[0], &p[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|[l, r]| qorehash(&[l, r]))
             .collect();
         out.push(next);
     }
