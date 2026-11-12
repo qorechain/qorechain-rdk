@@ -92,8 +92,8 @@ model and be based. Users credit it with `depositToRollup` (at least 1 QOR, to a
 submitter bonds with `bondRollupSubmitter` (at least `min_submitter_bond`,
 default 1,000 QOR; see `RestClient.getSubmitterBond`) and can unbond with
 `unbondRollupSubmitter` a full challenge window after its last batch. A fraud
-proof makes the chain re-execute the batch, and an upheld one pays the
-submitter's whole bond to the challenger. Withdrawals are paid from the
+proof makes the chain re-execute the batch, and an upheld one slashes the
+submitter's bond: half is burned and the challenger receives the other half. Withdrawals are paid from the
 rollup's deposit pool, and the rollup cannot be stopped while the pool holds
 deposits.
 

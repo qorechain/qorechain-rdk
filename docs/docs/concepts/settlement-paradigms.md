@@ -52,7 +52,8 @@ at least `min_submitter_bond`, default 1,000 QOR) may submit a batch of up to 64
 inbox entries, setting `inboxEnd` and carrying the inbox range commitment as
 `dataHash`. A fraud proof makes the chain re-execute the batch; if its state or
 withdrawals root is wrong, the batch and every batch built on it are rejected
-and the submitter's bond is paid to the challenger. Withdrawals are paid from
+and the submitter's bond is slashed: half is burned, the challenger receives
+the other half. Withdrawals are paid from
 finalized batches only, from the rollup's deposit pool. Optimistic rollups
 created before v3.2.8 keep working under the transition-root rule above.
 
