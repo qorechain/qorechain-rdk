@@ -173,13 +173,125 @@ func isNotFound(err error) bool {
 	return err != nil && strings.Contains(err.Error(), " failed: 404")
 }
 
+// QledgerMaxMessageJSONDepth is how deep (in JSON levels) the payload search
+// looks into a transaction's messages. Each authz MsgExec or group proposal
+// level adds two, and the chain decodes at most 10 levels of nested messages,
+// so no transaction it executed comes near this; anything deeper is refused,
+// never skipped.
+const QledgerMaxMessageJSONDepth = 64
+
+// groupExecutingTypeURLs are the x/group messages that can execute a proposal,
+// so run its messages in their own transaction.
+var groupExecutingTypeURLs = map[string]bool{
+	"/cosmos.group.v1.MsgExec": true,
+	"/cosmos.group.v1.MsgVote": true,
+}
+
+// PostedPayloads is what a transaction's messages carry, at any nesting depth.
+type PostedPayloads struct {
+	// Payloads holds every MsgPostRollupData payload by its data hash (lowercase hex).
+	Payloads map[string][]byte
+	// GroupProposals holds the ids of the x/group proposals the transaction
+	// executes (MsgExec, or MsgVote with immediate execution).
+	GroupProposals map[string]bool
+}
+
+// NewPostedPayloads returns an empty PostedPayloads.
+func NewPostedPayloads() *PostedPayloads {
+	return &PostedPayloads{Payloads: map[string][]byte{}, GroupProposals: map[string]bool{}}
+}
+
+// CollectPostedPayloads adds every MsgPostRollupData payload in messages (a
+// transaction's body.messages as the REST gateway returns them) to into,
+// looking inside every wrapper the chain executes on someone's behalf: authz
+// MsgExec (nested to any depth), x/group MsgSubmitProposal, and any other
+// message that carries messages. Payloads are keyed by data hash, so a payload
+// found anywhere is the one the chain committed to whenever its hash matches
+// the event.
+func CollectPostedPayloads(messages any, into *PostedPayloads) error {
+	var walk func(node any, depth int) error
+	walk = func(node any, depth int) error {
+		if depth > QledgerMaxMessageJSONDepth {
+			return fmt.Errorf("qledger: transaction messages nest deeper than %d levels", QledgerMaxMessageJSONDepth)
+		}
+		switch n := node.(type) {
+		case []any:
+			for _, x := range n {
+				if err := walk(x, depth+1); err != nil {
+					return err
+				}
+			}
+		case []map[string]any:
+			for _, x := range n {
+				if err := walk(x, depth+1); err != nil {
+					return err
+				}
+			}
+		case map[string]any:
+			typ, _ := n["@type"].(string)
+			if typ == TypeURLMsgPostRollupData {
+				if s, ok := n["data"].(string); ok {
+					if d, err := base64.StdEncoding.DecodeString(s); err == nil {
+						into.Payloads[BytesToHex(PostedDataHash(d))] = d
+					}
+				}
+			}
+			if groupExecutingTypeURLs[typ] {
+				if id := asStr(n["proposal_id"], ""); id != "" {
+					into.GroupProposals[id] = true
+				}
+			}
+			for k, v := range n {
+				if k == "@type" {
+					continue
+				}
+				if err := walk(v, depth+1); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	return walk(messages, 0)
+}
+
+func txMessages(tx map[string]any) any {
+	return asRecord(asRecord(tx["tx"])["body"])["messages"]
+}
+
+// groupProposalPayloads collects the payloads of a group proposal's messages:
+// from the transaction that submitted it, and from the chain while it still
+// holds the proposal.
+func groupProposalPayloads(ctx context.Context, rest *RestClient, id string, into *PostedPayloads) error {
+	subs, err := rest.SearchTxs(ctx, "cosmos.group.v1.EventSubmitProposal.proposal_id='\""+id+"\"'")
+	if err != nil {
+		return err
+	}
+	for _, tx := range subs {
+		if err := CollectPostedPayloads(txMessages(tx), into); err != nil {
+			return err
+		}
+	}
+	msgs, err := rest.GetGroupProposalMessages(ctx, id)
+	if err != nil {
+		// A pruned proposal is not an error: its submitting transaction was read above.
+		if strings.Contains(err.Error(), "REST GET ") {
+			return nil
+		}
+		return err
+	}
+	return CollectPostedPayloads(msgs, into)
+}
+
 // FetchQledgerEntries reads the inbox entries From+1 .. To of a qledger-v1
 // rollup back from the transactions that made them (the chain keeps only
 // commitments; the bytes stay in block history): posts from MsgPostRollupData,
-// deposits from the rdk_rollup_deposit event. The entries are checked against
-// the chain's inbox accumulator: every post event's inbox_acc, and the inbox
-// range commitment up to To. Entries that cannot be verified are refused.
-// Needs a node with transaction indexing on.
+// found at any depth inside authz MsgExec and x/group proposals (including a
+// proposal executed in a later transaction), deposits from the
+// rdk_rollup_deposit event. The entries are checked against the chain's inbox
+// accumulator: every post event's inbox_acc, and the inbox range commitment up
+// to To. Entries that cannot be read back or verified are refused, never
+// skipped. Needs a node with transaction indexing on.
 func FetchQledgerEntries(ctx context.Context, rest *RestClient, in FetchQledgerEntriesInput) ([]QledgerEntry, error) {
 	if in.To < in.From {
 		return nil, fmt.Errorf("qledger: inbox range %d..%d is reversed", in.From, in.To)
@@ -192,20 +304,22 @@ func FetchQledgerEntries(ctx context.Context, rest *RestClient, in FetchQledgerE
 		acc   string
 	}
 	bySeq := map[uint64]found{}
-	query := func(event string) string { return event + ".rollup_id='" + in.RollupID + "'" }
+	query := func(event string) string {
+		return fmt.Sprintf("%s.rollup_id='%s' AND %s.sequence>%d AND %s.sequence<=%d", event, in.RollupID, event, in.From, event, in.To)
+	}
 
 	posts, err := rest.SearchTxs(ctx, query("rdk_data_posted"))
 	if err != nil {
 		return nil, err
 	}
+	proposalCache := map[string]*PostedPayloads{}
 	for _, tx := range posts {
 		height := asU64(tx["height"], 0)
-		var msgs []map[string]any
-		for _, m := range asArray(asRecord(asRecord(tx["tx"])["body"])["messages"]) {
-			if asStr(m["@type"], "") == TypeURLMsgPostRollupData {
-				msgs = append(msgs, m)
-			}
+		inTx := NewPostedPayloads()
+		if err := CollectPostedPayloads(txMessages(tx), inTx); err != nil {
+			return nil, err
 		}
+		proposalsRead := false
 		for _, ev := range asArray(tx["events"]) {
 			if asStr(ev["type"], "") != "rdk_data_posted" {
 				continue
@@ -218,20 +332,28 @@ func FetchQledgerEntries(ctx context.Context, rest *RestClient, in FetchQledgerE
 			if err != nil || seq <= in.From || seq > in.To {
 				continue
 			}
-			var payload []byte
-			matched := false
-			for _, m := range msgs {
-				d, err := base64.StdEncoding.DecodeString(asStr(m["data"], ""))
-				if err != nil {
-					continue
+			hash := strings.ToLower(strings.TrimPrefix(a["data_hash"], "0x"))
+			if _, ok := inTx.Payloads[hash]; !ok && !proposalsRead {
+				// The post ran inside a group proposal executed by this transaction.
+				for id := range inTx.GroupProposals {
+					p, ok := proposalCache[id]
+					if !ok {
+						p = NewPostedPayloads()
+						if err := groupProposalPayloads(ctx, rest, id, p); err != nil {
+							return nil, err
+						}
+						proposalCache[id] = p
+					}
+					for h, d := range p.Payloads {
+						inTx.Payloads[h] = d
+					}
 				}
-				if BytesToHex(PostedDataHash(d)) == strings.ToLower(a["data_hash"]) && asStr(m["poster"], "") == a["poster"] {
-					payload, matched = d, true
-					break
-				}
+				proposalsRead = true
 			}
-			if !matched {
-				return nil, fmt.Errorf("qledger: post %d is in transaction %s but its payload could not be matched", seq, asStr(tx["txhash"], ""))
+			payload, ok := inTx.Payloads[hash]
+			if !ok {
+				return nil, fmt.Errorf("qledger: post %d is in transaction %s but its payload is not in the transaction "+
+					"or in a group proposal it executes, so the entry cannot be read back", seq, asStr(tx["txhash"], ""))
 			}
 			bySeq[seq] = found{QledgerEntry{Height: height, Poster: a["poster"], Payload: payload}, strings.ToLower(a["inbox_acc"])}
 		}
@@ -279,7 +401,8 @@ func FetchQledgerEntries(ctx context.Context, rest *RestClient, in FetchQledgerE
 	for s := in.From + 1; s <= in.To; s++ {
 		f, ok := bySeq[s]
 		if !ok {
-			return nil, fmt.Errorf("qledger: inbox entry %d of rollup %s was not found in the node's transaction index", s, in.RollupID)
+			return nil, fmt.Errorf("qledger: inbox entry %d of rollup %s was not found in the node's transaction index "+
+				"(a post or deposit made by a governance proposal runs outside any transaction)", s, in.RollupID)
 		}
 		entries = append(entries, f.entry)
 		acc = QledgerAccumulate(in.ChainID, in.RollupID, s-1, acc, []QledgerEntry{f.entry})

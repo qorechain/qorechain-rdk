@@ -18,9 +18,10 @@ pub mod smt;
 pub mod tx;
 
 pub use batch::{
-    choose_qledger_batch_end, fetch_qledger_entries, is_qledger_checkpoint, plan_qledger_batch,
-    qledger_accumulate, qledger_batch_errors, QledgerBatchFacts, QledgerBatchPlan,
-    QledgerFetchInput, QledgerPlanInput, QLEDGER_CHECKPOINT_INTERVAL, QLEDGER_FRESH_POST_BLOCKS,
+    choose_qledger_batch_end, collect_posted_payloads, fetch_qledger_entries,
+    is_qledger_checkpoint, plan_qledger_batch, qledger_accumulate, qledger_batch_errors,
+    PostedPayloads, QledgerBatchFacts, QledgerBatchPlan, QledgerFetchInput, QledgerPlanInput,
+    QLEDGER_CHECKPOINT_INTERVAL, QLEDGER_FRESH_POST_BLOCKS, QLEDGER_MAX_MESSAGE_JSON_DEPTH,
     QLEDGER_MAX_PENDING_BATCHES_PER_SUBMITTER, QLEDGER_SLASH_BURN_PERCENT,
 };
 pub use exec::{

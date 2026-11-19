@@ -17,7 +17,7 @@
  */
 import { bytesToHex, hexToBytes } from "../utils/bytes";
 import { inboxAccumulate, inboxRangeHash, postedDataHash } from "../inbox";
-import { isRestNotFound, type RestClient } from "../client/rest";
+import { RestError, isRestNotFound, type RestClient } from "../client/rest";
 import type { RawRecord } from "../client/views";
 import { executeQledger, type QledgerEntry, type QledgerResult } from "./exec";
 import { QLEDGER_MAX_BATCH_ENTRIES } from "./fraud";
@@ -133,13 +133,89 @@ function attrs(ev: RawRecord): Record<string, string> {
   return out;
 }
 
+const POST_TYPE_URL = "/qorechain.rdk.v1.MsgPostRollupData";
+/** x/group messages that can execute a proposal, so run its messages in their transaction. */
+const GROUP_EXECUTING_TYPE_URLS = new Set(["/cosmos.group.v1.MsgExec", "/cosmos.group.v1.MsgVote"]);
+
+/**
+ * How deep (in JSON levels) the payload search looks into a transaction's
+ * messages. Each authz `MsgExec` or group proposal level adds two, and the
+ * chain decodes at most 10 levels of nested messages, so no transaction it
+ * executed comes near this; anything deeper is refused, never skipped.
+ */
+export const QLEDGER_MAX_MESSAGE_JSON_DEPTH = 64;
+
+/** What a transaction's messages carry, at any nesting depth. */
+export interface PostedPayloads {
+  /** Every `MsgPostRollupData` payload, keyed by its data hash (lowercase hex). */
+  payloads: Map<string, Uint8Array>;
+  /** Ids of the x/group proposals the transaction executes (`MsgExec`, or `MsgVote` with immediate execution). */
+  groupProposals: Set<string>;
+}
+
+/**
+ * Collect every `MsgPostRollupData` payload in `messages` (a transaction's
+ * `body.messages` as the REST gateway returns them), looking inside every
+ * wrapper the chain executes on someone's behalf: authz `MsgExec` (nested to
+ * any depth), x/group `MsgSubmitProposal`, and any other message that carries
+ * messages. Payloads are keyed by data hash, so a payload found anywhere is
+ * the one the chain committed to whenever its hash matches the event.
+ */
+export function collectPostedPayloads(messages: unknown, into?: PostedPayloads): PostedPayloads {
+  const out = into ?? { payloads: new Map<string, Uint8Array>(), groupProposals: new Set<string>() };
+  const walk = (node: unknown, depth: number): void => {
+    if (depth > QLEDGER_MAX_MESSAGE_JSON_DEPTH) {
+      throw new Error(`qledger: transaction messages nest deeper than ${QLEDGER_MAX_MESSAGE_JSON_DEPTH} levels`);
+    }
+    if (Array.isArray(node)) {
+      for (const x of node) walk(x, depth + 1);
+      return;
+    }
+    if (node === null || typeof node !== "object") return;
+    const rec = node as RawRecord;
+    const type = rec["@type"];
+    if (type === POST_TYPE_URL && typeof rec.data === "string") {
+      let data: Uint8Array | undefined;
+      try {
+        data = b64(rec.data);
+      } catch {
+        data = undefined;
+      }
+      if (data) out.payloads.set(bytesToHex(postedDataHash(data)), data);
+    }
+    if (typeof type === "string" && GROUP_EXECUTING_TYPE_URLS.has(type) && rec.proposal_id !== undefined) {
+      out.groupProposals.add(String(rec.proposal_id));
+    }
+    for (const [k, v] of Object.entries(rec)) {
+      if (k !== "@type") walk(v, depth + 1);
+    }
+  };
+  walk(messages, 0);
+  return out;
+}
+
+/** The messages of a group proposal: from the chain while it holds it, else from the transaction that submitted it. */
+async function groupProposalPayloads(rest: RestClient, id: string, into: PostedPayloads): Promise<void> {
+  for (const tx of await rest.searchTxs(`cosmos.group.v1.EventSubmitProposal.proposal_id='"${id}"'`)) {
+    collectPostedPayloads(((tx.tx as RawRecord)?.body as RawRecord)?.messages, into);
+  }
+  try {
+    collectPostedPayloads(await rest.getGroupProposalMessages(id), into);
+  } catch (err) {
+    // A pruned proposal is not an error: its submitting transaction was read above.
+    if (!(err instanceof RestError)) throw err;
+  }
+}
+
 /**
  * The inbox entries `from + 1 .. to` of a qledger-v1 rollup, read back from
  * the transactions that posted them (the chain keeps only commitments; the
- * bytes stay in block history). Posts come from `MsgPostRollupData`, deposits
- * from the `rdk_rollup_deposit` event. Every entry is checked against the
- * chain's inbox accumulator before it is returned. Needs a node with
- * transaction indexing on.
+ * bytes stay in block history). Posts come from `MsgPostRollupData`, found at
+ * any depth inside authz `MsgExec` and x/group proposals (including a
+ * proposal executed in a later transaction); deposits from the
+ * `rdk_rollup_deposit` event. Every entry is checked against the chain's
+ * inbox accumulator before it is returned. Needs a node with transaction
+ * indexing on. Throws when an entry cannot be read back, never skips it.
  */
 export async function fetchQledgerEntries(
   rest: RestClient,
@@ -148,24 +224,40 @@ export async function fetchQledgerEntries(
   const from = BigInt(input.from);
   const to = BigInt(input.to);
   const bySeq = new Map<bigint, QledgerEntry>();
-  const q = (t: string) => `${t}.rollup_id='${input.rollupId}'`;
+  const q = (t: string) => `${t}.rollup_id='${input.rollupId}' AND ${t}.sequence>${from} AND ${t}.sequence<=${to}`;
+  const proposalCache = new Map<string, PostedPayloads>();
   for (const tx of await rest.searchTxs(q("rdk_data_posted"))) {
     const height = BigInt(String(tx.height ?? "0"));
-    const msgs = ((((tx.tx as RawRecord)?.body as RawRecord)?.messages as RawRecord[]) ?? []).filter(
-      (m) => m["@type"] === "/qorechain.rdk.v1.MsgPostRollupData",
-    );
+    const found = collectPostedPayloads(((tx.tx as RawRecord)?.body as RawRecord)?.messages);
+    let proposalsRead = false;
     for (const ev of (tx.events as RawRecord[]) ?? []) {
       if (ev.type !== "rdk_data_posted") continue;
       const a = attrs(ev);
       if (a.rollup_id !== input.rollupId) continue;
       const seq = BigInt(a.sequence ?? "0");
       if (seq <= from || seq > to) continue;
-      const m = msgs.find((x) => {
-        const d = b64(String(x.data ?? ""));
-        return bytesToHex(postedDataHash(d)) === a.data_hash && String(x.poster) === a.poster;
-      });
-      if (!m) throw new Error(`qledger: post ${seq} is in transaction ${tx.txhash} but its payload could not be matched`);
-      bySeq.set(seq, { height, poster: a.poster!, payload: b64(String(m.data)) });
+      const hash = (a.data_hash ?? "").replace(/^0x/, "").toLowerCase();
+      if (!found.payloads.has(hash) && !proposalsRead) {
+        // The post ran inside a group proposal executed by this transaction.
+        for (const id of found.groupProposals) {
+          let p = proposalCache.get(id);
+          if (!p) {
+            p = { payloads: new Map(), groupProposals: new Set() };
+            await groupProposalPayloads(rest, id, p);
+            proposalCache.set(id, p);
+          }
+          for (const [h, d] of p.payloads) found.payloads.set(h, d);
+        }
+        proposalsRead = true;
+      }
+      const payload = found.payloads.get(hash);
+      if (!payload) {
+        throw new Error(
+          `qledger: post ${seq} is in transaction ${tx.txhash} but its payload is not in the transaction ` +
+            `or in a group proposal it executes, so the entry cannot be read back`,
+        );
+      }
+      bySeq.set(seq, { height, poster: a.poster!, payload });
     }
   }
   for (const tx of await rest.searchTxs(q("rdk_rollup_deposit"))) {
@@ -187,7 +279,12 @@ export async function fetchQledgerEntries(
   const entries: QledgerEntry[] = [];
   for (let s = from + 1n; s <= to; s++) {
     const e = bySeq.get(s);
-    if (!e) throw new Error(`qledger: inbox entry ${s} of rollup ${input.rollupId} was not found in the node's transaction index`);
+    if (!e) {
+      throw new Error(
+        `qledger: inbox entry ${s} of rollup ${input.rollupId} was not found in the node's transaction index ` +
+          `(a post or deposit made by a governance proposal runs outside any transaction)`,
+      );
+    }
     entries.push(e);
   }
   // Check the entries against the chain's own accumulator at `to`: the

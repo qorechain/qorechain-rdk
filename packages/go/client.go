@@ -957,7 +957,8 @@ type SearchTxsOptions struct {
 
 // SearchTxs reads every transaction matching an event query (for example
 // rdk_data_posted.rollup_id='my-rollup'), as raw tx_responses, oldest first.
-// Needs a node with transaction indexing on.
+// Needs a node with transaction indexing on. It fails when more than MaxPages
+// pages match rather than return a partial list.
 func (c *RestClient) SearchTxs(ctx context.Context, query string, opts ...SearchTxsOptions) ([]map[string]any, error) {
 	limit, maxPages := 100, 50
 	if len(opts) > 0 {
@@ -979,10 +980,23 @@ func (c *RestClient) SearchTxs(ctx context.Context, query string, opts ...Search
 		out = append(out, txs...)
 		total := asU64(pick(body, "total"), 0)
 		if len(txs) < limit || (total > 0 && uint64(len(out)) >= total) {
-			break
+			return out, nil
 		}
 	}
-	return out, nil
+	return nil, fmt.Errorf("REST transaction search %q matches more than %d transactions; narrow the query or raise MaxPages",
+		query, maxPages*limit)
+}
+
+// GetGroupProposalMessages returns the messages of an x/group proposal while
+// the chain still holds it (an executed or expired proposal is pruned; its
+// messages stay in the transaction that submitted it).
+func (c *RestClient) GetGroupProposalMessages(ctx context.Context, proposalID string) ([]any, error) {
+	body, err := c.get(ctx, "/cosmos/group/v1/proposal/"+url.PathEscape(proposalID))
+	if err != nil {
+		return nil, err
+	}
+	msgs, _ := asRecord(body["proposal"])["messages"].([]any)
+	return msgs, nil
 }
 
 // BroadcastTxBytes broadcasts TxRaw bytes via the REST txs endpoint in

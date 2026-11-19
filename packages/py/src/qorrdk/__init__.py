@@ -13,7 +13,7 @@ account derivation) works fully offline.
 
 from __future__ import annotations
 
-__version__ = "0.9.0"
+__version__ = "0.9.1"
 
 # Constants.
 from .constants import (  # noqa: E402
@@ -380,6 +380,9 @@ from .qledger import (  # noqa: E402
     encode_qledger_tx,
     execute_qledger,
     fetch_qledger_entries,
+    collect_posted_payloads,
+    PostedPayloads,
+    QLEDGER_MAX_MESSAGE_JSON_DEPTH,
     is_http_not_found,
     is_canonical_qor_address,
     is_qledger_checkpoint,
@@ -758,6 +761,9 @@ __all__ = [
     "QledgerBatchPlan",
     "choose_qledger_batch_end",
     "fetch_qledger_entries",
+    "collect_posted_payloads",
+    "PostedPayloads",
+    "QLEDGER_MAX_MESSAGE_JSON_DEPTH",
     "is_http_not_found",
     "is_qledger_checkpoint",
     "plan_qledger_batch",

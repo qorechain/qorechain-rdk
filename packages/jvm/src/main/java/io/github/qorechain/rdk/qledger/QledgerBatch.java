@@ -237,10 +237,115 @@ public final class QledgerBatch {
     }
 
     /**
+     * How deep (in JSON levels) the payload search looks into a transaction's messages. Each authz
+     * {@code MsgExec} or group proposal level adds two, and the chain decodes at most 10 levels of
+     * nested messages, so no transaction it executed comes near this; anything deeper is refused,
+     * never skipped.
+     */
+    public static final int MAX_MESSAGE_JSON_DEPTH = 64;
+
+    private static final String POST_TYPE_URL = "/qorechain.rdk.v1.MsgPostRollupData";
+
+    /** x/group messages that can execute a proposal, so run its messages in their own transaction. */
+    private static final java.util.Set<String> GROUP_EXECUTING_TYPE_URLS =
+            java.util.Set.of("/cosmos.group.v1.MsgExec", "/cosmos.group.v1.MsgVote");
+
+    /** What a transaction's messages carry, at any nesting depth. */
+    public static final class PostedPayloads {
+        /** Every {@code MsgPostRollupData} payload, keyed by its data hash (lowercase hex). */
+        public final Map<String, byte[]> payloads = new LinkedHashMap<>();
+        /**
+         * Ids of the x/group proposals the transaction executes ({@code MsgExec}, or {@code
+         * MsgVote} with immediate execution).
+         */
+        public final java.util.Set<String> groupProposals = new java.util.TreeSet<>();
+    }
+
+    /**
+     * Add every {@code MsgPostRollupData} payload in {@code messages} (a transaction's {@code
+     * body.messages} as the REST gateway returns them) to {@code into}, looking inside every
+     * wrapper the chain executes on someone's behalf: authz {@code MsgExec} (nested to any depth),
+     * x/group {@code MsgSubmitProposal}, and any other message that carries messages. Payloads are
+     * keyed by data hash, so a payload found anywhere is the one the chain committed to whenever
+     * its hash matches the event.
+     *
+     * @throws IllegalStateException when the messages nest deeper than {@link
+     *     #MAX_MESSAGE_JSON_DEPTH}
+     */
+    public static PostedPayloads collectPostedPayloads(Object messages, PostedPayloads into) {
+        PostedPayloads out = into != null ? into : new PostedPayloads();
+        walk(messages, 0, out);
+        return out;
+    }
+
+    private static void walk(Object node, int depth, PostedPayloads out) {
+        if (depth > MAX_MESSAGE_JSON_DEPTH) {
+            throw new IllegalStateException(
+                    "qledger: transaction messages nest deeper than " + MAX_MESSAGE_JSON_DEPTH + " levels");
+        }
+        if (node instanceof List) {
+            for (Object x : (List<?>) node) {
+                walk(x, depth + 1, out);
+            }
+            return;
+        }
+        if (!(node instanceof Map)) {
+            return;
+        }
+        Map<?, ?> m = (Map<?, ?>) node;
+        Object type = m.get("@type");
+        if (POST_TYPE_URL.equals(type) && m.get("data") instanceof String) {
+            try {
+                byte[] d = Base64.getDecoder().decode((String) m.get("data"));
+                out.payloads.put(Bytes.bytesToHex(Inbox.postedDataHash(d)), d);
+            } catch (IllegalArgumentException e) {
+                // Not base64: it cannot be the payload of any post.
+            }
+        }
+        if (type instanceof String && GROUP_EXECUTING_TYPE_URLS.contains(type) && m.get("proposal_id") != null) {
+            out.groupProposals.add(str(m.get("proposal_id")));
+        }
+        for (Map.Entry<?, ?> e : m.entrySet()) {
+            if (!"@type".equals(e.getKey())) {
+                walk(e.getValue(), depth + 1, out);
+            }
+        }
+    }
+
+    private static Object txMessages(Map<String, Object> tx) {
+        return rec(rec(tx.get("tx")).get("body")).get("messages");
+    }
+
+    /**
+     * The payloads of a group proposal's messages: from the transaction that submitted it, and
+     * from the chain while it still holds the proposal.
+     */
+    private static void groupProposalPayloads(RestClient rest, String id, PostedPayloads into) {
+        for (Map<String, Object> tx :
+                rest.searchTxs("cosmos.group.v1.EventSubmitProposal.proposal_id='\"" + id + "\"'")) {
+            collectPostedPayloads(txMessages(tx), into);
+        }
+        List<Object> msgs;
+        try {
+            msgs = rest.getGroupProposalMessages(id);
+        } catch (RuntimeException e) {
+            String msg = String.valueOf(e.getMessage());
+            if (msg.startsWith("REST GET ")) {
+                // A pruned proposal is not an error: its submitting transaction was read above.
+                return;
+            }
+            throw e;
+        }
+        collectPostedPayloads(msgs, into);
+    }
+
+    /**
      * The inbox entries {@code from + 1 .. to} of a qledger-v1 rollup, read back from the
      * transactions that posted them (the chain keeps only commitments; the bytes stay in block
-     * history). Posts come from {@code MsgPostRollupData}, deposits from the {@code
-     * rdk_rollup_deposit} event. Needs a node with transaction indexing on.
+     * history). Posts come from {@code MsgPostRollupData}, found at any depth inside authz {@code
+     * MsgExec} and x/group proposals (including a proposal executed in a later transaction);
+     * deposits from the {@code rdk_rollup_deposit} event. Needs a node with transaction indexing
+     * on. An entry that cannot be read back is an error, never skipped.
      *
      * <p>Entries are never returned unverified: the accumulator recomputed from {@code accFrom}
      * over them must equal the chain's accumulator at {@code to}, the {@code inboxAcc} of post
@@ -253,15 +358,11 @@ public final class QledgerBatch {
     public static List<QledgerEntry> fetchEntries(
             RestClient rest, String chainId, String rollupId, long from, long to, byte[] accFrom) {
         Map<Long, QledgerEntry> bySeq = new HashMap<>();
-        for (Map<String, Object> tx : rest.searchTxs(query("rdk_data_posted", rollupId))) {
+        Map<String, PostedPayloads> proposalCache = new HashMap<>();
+        for (Map<String, Object> tx : rest.searchTxs(query("rdk_data_posted", rollupId, from, to))) {
             long height = parseU64(str(tx.get("height")));
-            List<Map<String, Object>> msgs = new ArrayList<>();
-            for (Object m : list(rec(rec(tx.get("tx")).get("body")).get("messages"))) {
-                Map<String, Object> mm = rec(m);
-                if ("/qorechain.rdk.v1.MsgPostRollupData".equals(mm.get("@type"))) {
-                    msgs.add(mm);
-                }
-            }
+            PostedPayloads found = collectPostedPayloads(txMessages(tx), null);
+            boolean proposalsRead = false;
             for (Object evo : list(tx.get("events"))) {
                 Map<String, Object> ev = rec(evo);
                 if (!"rdk_data_posted".equals(ev.get("type"))) {
@@ -276,27 +377,34 @@ public final class QledgerBatch {
                     continue;
                 }
                 String poster = a.getOrDefault("poster", "");
-                String dataHash = a.getOrDefault("data_hash", "").toLowerCase();
-                byte[] payload = null;
-                for (Map<String, Object> m : msgs) {
-                    byte[] d = Base64.getDecoder().decode(str(m.get("data")));
-                    if (Bytes.bytesToHex(Inbox.postedDataHash(d)).equals(dataHash) && poster.equals(str(m.get("poster")))) {
-                        payload = d;
-                        break;
+                String dataHash = a.getOrDefault("data_hash", "").replaceFirst("^0[xX]", "").toLowerCase();
+                if (!found.payloads.containsKey(dataHash) && !proposalsRead) {
+                    // The post ran inside a group proposal executed by this transaction.
+                    for (String id : found.groupProposals) {
+                        PostedPayloads p = proposalCache.get(id);
+                        if (p == null) {
+                            p = new PostedPayloads();
+                            groupProposalPayloads(rest, id, p);
+                            proposalCache.put(id, p);
+                        }
+                        found.payloads.putAll(p.payloads);
                     }
+                    proposalsRead = true;
                 }
+                byte[] payload = found.payloads.get(dataHash);
                 if (payload == null) {
                     throw new IllegalStateException(
                             "qledger: post "
                                     + u(seq)
                                     + " is in transaction "
                                     + str(tx.get("txhash"))
-                                    + " but its payload could not be matched");
+                                    + " but its payload is not in the transaction or in a group proposal it"
+                                    + " executes, so the entry cannot be read back");
                 }
                 bySeq.put(seq, new QledgerEntry(height, poster, payload));
             }
         }
-        for (Map<String, Object> tx : rest.searchTxs(query("rdk_rollup_deposit", rollupId))) {
+        for (Map<String, Object> tx : rest.searchTxs(query("rdk_rollup_deposit", rollupId, from, to))) {
             long height = parseU64(str(tx.get("height")));
             for (Object evo : list(tx.get("events"))) {
                 Map<String, Object> ev = rec(evo);
@@ -329,7 +437,8 @@ public final class QledgerBatch {
                                 + u(s)
                                 + " of rollup "
                                 + rollupId
-                                + " was not found in the node's transaction index");
+                                + " was not found in the node's transaction index (a post or deposit made by"
+                                + " a governance proposal runs outside any transaction)");
             }
             entries.add(e);
             if (s == to) {
@@ -370,8 +479,18 @@ public final class QledgerBatch {
         return msg != null && msg.endsWith(" failed: 404");
     }
 
-    private static String query(String event, String rollupId) {
-        return event + ".rollup_id='" + rollupId + "'";
+    private static String query(String event, String rollupId, long from, long to) {
+        return event
+                + ".rollup_id='"
+                + rollupId
+                + "' AND "
+                + event
+                + ".sequence>"
+                + u(from)
+                + " AND "
+                + event
+                + ".sequence<="
+                + u(to);
     }
 
     /** The inbox accumulator after {@code entries}, starting from {@code accFrom} at sequence {@code from}. */

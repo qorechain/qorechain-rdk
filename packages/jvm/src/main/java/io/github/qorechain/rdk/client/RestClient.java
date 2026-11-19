@@ -412,6 +412,9 @@ public final class RestClient {
      * rdk_data_posted.rollup_id='my-rollup'}), as raw {@code tx_responses}, oldest first. Needs a
      * node with transaction indexing on.
      *
+     * @throws IllegalStateException when more than {@code maxPages} pages match, rather than
+     *     return a partial list
+     *
      * @param pageLimit transactions per page (0 means 100)
      * @param maxPages most pages read (0 means 50)
      */
@@ -433,10 +436,27 @@ public final class RestClient {
             out.addAll(txs);
             long total = Views.asLong(body.get("total"), 0);
             if (txs.size() < limit || (total > 0 && out.size() >= total)) {
-                break;
+                return out;
             }
         }
-        return out;
+        throw new IllegalStateException(
+                "REST transaction search \""
+                        + query
+                        + "\" matches more than "
+                        + ((long) pages * limit)
+                        + " transactions; narrow the query or raise maxPages");
+    }
+
+    /**
+     * The messages of an x/group proposal while the chain still holds it (an executed or expired
+     * proposal is pruned; its messages stay in the transaction that submitted it).
+     */
+    @SuppressWarnings("unchecked")
+    public List<Object> getGroupProposalMessages(String proposalId) {
+        Map<String, Object> body = get("/cosmos/group/v1/proposal/" + pathEscape(proposalId));
+        Object proposal = body.get("proposal");
+        Object msgs = proposal instanceof Map ? ((Map<String, Object>) proposal).get("messages") : null;
+        return msgs instanceof List ? (List<Object>) msgs : new ArrayList<>();
     }
 
     /** {@link #searchTxs(String, int, int)} with 100 transactions per page, at most 50 pages. */

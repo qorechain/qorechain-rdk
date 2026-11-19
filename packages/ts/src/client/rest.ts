@@ -363,7 +363,8 @@ export class RestClient {
   /**
    * Every transaction matching an event query (for example
    * `rdk_data_posted.rollup_id='my-rollup'`), as raw `tx_responses`, oldest
-   * first. Needs a node with transaction indexing on.
+   * first. Needs a node with transaction indexing on. Throws when more than
+   * `maxPages` pages match rather than return a partial list.
    */
   async searchTxs(query: string, opts: { pageLimit?: number; maxPages?: number } = {}): Promise<RawRecord[]> {
     const limit = opts.pageLimit ?? 100;
@@ -376,8 +377,20 @@ export class RestClient {
       const txs = asArray(body.tx_responses);
       out.push(...txs);
       const total = Number(body.total ?? 0);
-      if (txs.length < limit || (total > 0 && out.length >= total)) break;
+      if (txs.length < limit || (total > 0 && out.length >= total)) return out;
     }
-    return out;
+    throw new Error(
+      `REST transaction search "${query}" matches more than ${maxPages * limit} transactions; narrow the query or raise maxPages`,
+    );
+  }
+
+  /**
+   * The messages of an x/group proposal, while the chain still holds it (an
+   * executed or expired proposal is pruned; its messages stay in the
+   * transaction that submitted it).
+   */
+  async getGroupProposalMessages(proposalId: bigint | number | string): Promise<RawRecord[]> {
+    const body = await this.get(`/cosmos/group/v1/proposal/${encodeURIComponent(String(proposalId))}`);
+    return asArray(asRecord(body.proposal).messages);
   }
 }

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.9.1
+
+Upgrade if you run a watcher, challenger or batch submitter for a qledger-v1
+rollup. No chain change; works against QoreChain v3.2.8.
+
+### Fixed
+
+- **qledger-v1 entries posted through a wrapper are read back.** The chain
+  executes a `MsgPostRollupData` on the poster's behalf inside authz
+  `MsgExec` (nested), inside an x/group proposal run at submission, and inside
+  a group proposal executed later by `MsgExec` or `MsgVote` of x/group. The
+  fetcher only looked at top-level messages, so such a post stopped
+  `fetchQledgerEntries` / `planQledgerBatch` (and their Go, Python, Rust and
+  Java ports): a watcher could neither check nor challenge the batch that
+  consumed it. The fetcher now looks into every message a transaction carries,
+  to a bounded depth well above what the chain decodes, matches each post by
+  its data hash, and reads a group proposal's messages back from the
+  transaction that submitted it. Every entry is still checked against the
+  chain's inbox accumulator. A post whose bytes are in no transaction (one
+  made by a contract or a governance proposal) is reported as an error, never
+  skipped.
+- **Transaction searches never return a partial list.** `searchTxs` (all five
+  languages) now fails when more transactions match than its page limit reads,
+  instead of silently returning the first pages. The qledger fetcher asks the
+  node only for the sequence range it needs, so a rollup with a long history
+  stays well inside the limit.
+
+### Added
+
+- `collectPostedPayloads` (`CollectPostedPayloads`, `collect_posted_payloads`,
+  `QledgerBatch.collectPostedPayloads`) and the bound
+  `QLEDGER_MAX_MESSAGE_JSON_DEPTH` (64).
+- `RestClient.getGroupProposalMessages` in every language.
+- Rust: `RestError::TooManyResults`, returned by `search_txs` and
+  `search_txs_with` when the page limit would cut the list short.
+
 ## 0.9.0
 
 QoreChain v3.2.8 support (the testnet runs v3.2.8 since block 9,929,500; the

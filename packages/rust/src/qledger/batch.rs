@@ -234,14 +234,119 @@ fn norm_hex(s: &str) -> String {
     s.trim_start_matches("0x").to_ascii_lowercase()
 }
 
+/// How deep (in JSON levels) the payload search looks into a transaction's
+/// messages. Each authz `MsgExec` or group proposal level adds two, and the
+/// chain decodes at most 10 levels of nested messages, so no transaction it
+/// executed comes near this; anything deeper is refused, never skipped.
+pub const QLEDGER_MAX_MESSAGE_JSON_DEPTH: usize = 64;
+
+const POST_TYPE_URL: &str = "/qorechain.rdk.v1.MsgPostRollupData";
+/// x/group messages that can execute a proposal, so run its messages in their
+/// own transaction.
+const GROUP_EXECUTING_TYPE_URLS: [&str; 2] =
+    ["/cosmos.group.v1.MsgExec", "/cosmos.group.v1.MsgVote"];
+
+/// What a transaction's messages carry, at any nesting depth.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PostedPayloads {
+    /// Every `MsgPostRollupData` payload, keyed by its data hash (lowercase hex).
+    pub payloads: HashMap<String, Vec<u8>>,
+    /// Ids of the x/group proposals the transaction executes (`MsgExec`, or
+    /// `MsgVote` with immediate execution).
+    pub group_proposals: std::collections::BTreeSet<String>,
+}
+
+/// Add every `MsgPostRollupData` payload in `messages` (a transaction's
+/// `body.messages` as the REST gateway returns them) to `into`, looking inside
+/// every wrapper the chain executes on someone's behalf: authz `MsgExec`
+/// (nested to any depth), x/group `MsgSubmitProposal`, and any other message
+/// that carries messages. Payloads are keyed by data hash, so a payload found
+/// anywhere is the one the chain committed to whenever its hash matches the
+/// event.
+pub fn collect_posted_payloads(
+    messages: &Value,
+    into: &mut PostedPayloads,
+) -> Result<(), QledgerError> {
+    fn walk(node: &Value, depth: usize, into: &mut PostedPayloads) -> Result<(), QledgerError> {
+        if depth > QLEDGER_MAX_MESSAGE_JSON_DEPTH {
+            return Err(QledgerError::Fetch(format!(
+                "transaction messages nest deeper than {QLEDGER_MAX_MESSAGE_JSON_DEPTH} levels"
+            )));
+        }
+        match node {
+            Value::Array(items) => {
+                for x in items {
+                    walk(x, depth + 1, into)?;
+                }
+            }
+            Value::Object(map) => {
+                let typ = map.get("@type").and_then(Value::as_str).unwrap_or("");
+                if typ == POST_TYPE_URL {
+                    if let Some(Ok(data)) =
+                        map.get("data").and_then(Value::as_str).map(base64_to_bytes)
+                    {
+                        into.payloads
+                            .insert(hex::encode(posted_data_hash(&data)), data);
+                    }
+                }
+                if GROUP_EXECUTING_TYPE_URLS.contains(&typ) {
+                    let id = match map.get("proposal_id") {
+                        Some(Value::String(s)) => Some(s.clone()),
+                        Some(Value::Number(n)) => Some(n.to_string()),
+                        _ => None,
+                    };
+                    if let Some(id) = id {
+                        into.group_proposals.insert(id);
+                    }
+                }
+                for (k, v) in map {
+                    if k != "@type" {
+                        walk(v, depth + 1, into)?;
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    walk(messages, 0, into)
+}
+
+fn tx_messages(tx: &Value) -> &Value {
+    tx.pointer("/tx/body/messages").unwrap_or(&Value::Null)
+}
+
+/// The payloads of a group proposal's messages: from the transaction that
+/// submitted it, and from the chain while it still holds the proposal.
+fn group_proposal_payloads(
+    rest: &RestClient,
+    id: &str,
+    into: &mut PostedPayloads,
+) -> Result<(), QledgerError> {
+    for tx in rest.search_txs(&format!(
+        "cosmos.group.v1.EventSubmitProposal.proposal_id='\"{id}\"'"
+    ))? {
+        collect_posted_payloads(tx_messages(&tx), into)?;
+    }
+    match rest.get_group_proposal_messages(id) {
+        Ok(msgs) => collect_posted_payloads(&Value::Array(msgs), into),
+        // A pruned proposal is not an error: its submitting transaction was read above.
+        Err(RestError::Status { .. }) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
 /// The inbox entries `from + 1 ..= to` of a qledger-v1 rollup, read back from
 /// the transactions that posted them (the chain keeps only commitments; the
 /// bytes stay in block history). Posts come from `MsgPostRollupData`
-/// (`rdk_data_posted` events), deposits from `rdk_rollup_deposit` events.
+/// (`rdk_data_posted` events), found at any depth inside authz `MsgExec` and
+/// x/group proposals (including a proposal executed in a later transaction);
+/// deposits from `rdk_rollup_deposit` events.
 /// The entries are checked against the chain's inbox accumulator after post
 /// `to` (its posted-data commitment, or the head accumulator when `to` is the
-/// head and that commitment is pruned) and refused when they cannot be.
-/// Needs a node with transaction indexing on.
+/// head and that commitment is pruned) and refused when they cannot be. An
+/// entry that cannot be read back is an error, never skipped. Needs a node
+/// with transaction indexing on.
 pub fn fetch_qledger_entries(
     rest: &RestClient,
     input: &QledgerFetchInput<'_>,
@@ -255,19 +360,18 @@ pub fn fetch_qledger_entries(
         let seq: u64 = a.get("sequence")?.parse().ok()?;
         (seq > from && seq <= to).then_some(seq)
     };
+    let query = |event: &str| {
+        format!(
+            "{event}.rollup_id='{rollup_id}' AND {event}.sequence>{from} AND {event}.sequence<={to}"
+        )
+    };
 
-    for tx in rest.search_txs(&format!("rdk_data_posted.rollup_id='{rollup_id}'"))? {
+    let mut proposal_cache: HashMap<String, PostedPayloads> = HashMap::new();
+    for tx in rest.search_txs(&query("rdk_data_posted"))? {
         let height = height_of(&tx);
-        let msgs: Vec<&Value> = tx
-            .pointer("/tx/body/messages")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter(|m| {
-                m.get("@type").and_then(Value::as_str)
-                    == Some("/qorechain.rdk.v1.MsgPostRollupData")
-            })
-            .collect();
+        let mut found = PostedPayloads::default();
+        collect_posted_payloads(tx_messages(&tx), &mut found)?;
+        let mut proposals_read = false;
         for ev in events(&tx) {
             if ev.get("type").and_then(Value::as_str) != Some("rdk_data_posted") {
                 continue;
@@ -276,15 +380,24 @@ pub fn fetch_qledger_entries(
             let Some(seq) = in_range(&a) else { continue };
             let want_hash = norm_hex(a.get("data_hash").map_or("", String::as_str));
             let poster = a.get("poster").cloned().unwrap_or_default();
-            let payload = msgs.iter().find_map(|m| {
-                let data =
-                    base64_to_bytes(m.get("data").and_then(Value::as_str).unwrap_or("")).ok()?;
-                let same_poster = m.get("poster").and_then(Value::as_str) == Some(poster.as_str());
-                (same_poster && hex::encode(posted_data_hash(&data)) == want_hash).then_some(data)
-            });
-            let Some(payload) = payload else {
+            if !found.payloads.contains_key(&want_hash) && !proposals_read {
+                // The post ran inside a group proposal executed by this transaction.
+                for id in found.group_proposals.clone() {
+                    if !proposal_cache.contains_key(&id) {
+                        let mut p = PostedPayloads::default();
+                        group_proposal_payloads(rest, &id, &mut p)?;
+                        proposal_cache.insert(id.clone(), p);
+                    }
+                    for (h, d) in &proposal_cache[&id].payloads {
+                        found.payloads.insert(h.clone(), d.clone());
+                    }
+                }
+                proposals_read = true;
+            }
+            let Some(payload) = found.payloads.get(&want_hash).cloned() else {
                 return Err(QledgerError::Fetch(format!(
-                    "post {seq} is in transaction {} but its payload could not be matched",
+                    "post {seq} is in transaction {} but its payload is not in the transaction or \
+                     in a group proposal it executes, so the entry cannot be read back",
                     tx.get("txhash").and_then(Value::as_str).unwrap_or("?")
                 )));
             };
@@ -299,7 +412,7 @@ pub fn fetch_qledger_entries(
         }
     }
 
-    for tx in rest.search_txs(&format!("rdk_rollup_deposit.rollup_id='{rollup_id}'"))? {
+    for tx in rest.search_txs(&query("rdk_rollup_deposit"))? {
         let height = height_of(&tx);
         for ev in events(&tx) {
             if ev.get("type").and_then(Value::as_str) != Some("rdk_rollup_deposit") {
@@ -338,7 +451,8 @@ pub fn fetch_qledger_entries(
         let e = by_seq.remove(&s).ok_or_else(|| {
             QledgerError::Fetch(format!(
                 "inbox entry {s} of rollup {rollup_id} was not found in the node's transaction \
-                 index"
+                 index (a post or deposit made by a governance proposal runs outside any \
+                 transaction)"
             ))
         })?;
         entries.push(e);

@@ -126,6 +126,18 @@ ledger = plan.ledger; // the parent state of the next batch, once this one settl
 `qledgerBatchErrors` and `chooseQledgerBatchEnd` expose the rules on their
 own; `submitBatch` runs the same checks before the fee.
 
+**Where posts come from.** Anyone may post on a based rollup, and not only in a
+top-level message: the chain also runs `MsgPostRollupData` inside authz
+`MsgExec` (nested), inside an x/group proposal run when it is submitted, and
+inside a group proposal executed later. `fetchQledgerEntries` (used by
+`planQledgerBatch`) finds a post in all of these: it looks into every message
+of the transaction that emitted the post event, matches the payload by its data
+hash, and reads a later-executed group proposal back from the transaction that
+submitted it. A post whose bytes are in no transaction (one made by a contract
+or by a governance proposal) stops the fetch with an error instead of being
+skipped, because a watcher that skips an entry cannot check the batch. Use RDK
+0.9.1 or later for any watcher or submitter.
+
 **After a long idle period.** Commitments are kept for the retention period and
 up to four more while no finalized batch covers them; after that only the
 checkpoints (every 64th post) stay. A submitter then catches up checkpoint by

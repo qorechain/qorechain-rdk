@@ -16,15 +16,20 @@ developer-facing front door for launching rollups on the network.
 
 | Package | Language | Status |
 | --- | --- | --- |
-| `@qorechain/rdk` | TypeScript | Available (v0.9.0) |
-| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.9.0) |
-| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.9.0) |
-| `qorechain-rdk` (Python) | Python | Available on PyPI (v0.9.0) |
-| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.9.0) |
-| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.9.0) |
-| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.9.0) |
+| `@qorechain/rdk` | TypeScript | Available (v0.9.1) |
+| `@qorechain/rdk-cli` (`qorollup`) | Operator CLI | Available (v0.9.1) |
+| `create-qorechain-rollup` | Project scaffolding CLI | Available (v0.9.1) |
+| `qorechain-rdk` (Python) | Python | Available on PyPI (v0.9.1) |
+| `github.com/qorechain/qorechain-rdk/packages/go` | Go | Available (v0.9.1) |
+| `qorechain-rdk` (Rust crate) | Rust | Available on crates.io (v0.9.1) |
+| `io.github.qorechain:qorechain-rdk` | Java (JVM) | Available on Maven Central (v0.9.1) |
 
 ## What's new
+
+**0.9.1**: qledger-v1 watchers and batch submitters read back posts made
+through authz `MsgExec` and x/group proposals (before, such a post stopped the
+batch planner and the fraud-proof flow), and transaction searches refuse to
+return a partial list. Upgrade if you run a watcher or submitter.
 
 **0.9.0**: support for QoreChain v3.2.8 (live on the testnet) in all five
 languages: rollup data posting, rollups ordered by the chain (based
@@ -158,7 +163,7 @@ advisory service is unavailable.
 
 ## Quickstart (TypeScript)
 
-> The TypeScript package is published at v0.9.0 (`npm i @qorechain/rdk`).
+> The TypeScript package is published at v0.9.1 (`npm i @qorechain/rdk`).
 
 ```sh
 npm install @qorechain/rdk

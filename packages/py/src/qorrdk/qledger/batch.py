@@ -162,6 +162,86 @@ def is_http_not_found(err: BaseException) -> bool:
     return isinstance(err, RuntimeError) and " failed: 404 " in f"{err} "
 
 
+#: How deep (in JSON levels) the payload search looks into a transaction's
+#: messages. Each authz ``MsgExec`` or group proposal level adds two, and the
+#: chain decodes at most 10 levels of nested messages, so no transaction it
+#: executed comes near this; anything deeper is refused, never skipped.
+QLEDGER_MAX_MESSAGE_JSON_DEPTH = 64
+
+# x/group messages that can execute a proposal, so run its messages in their
+# own transaction.
+_GROUP_EXECUTING_TYPES = frozenset({"/cosmos.group.v1.MsgExec", "/cosmos.group.v1.MsgVote"})
+
+
+@dataclass
+class PostedPayloads:
+    """What a transaction's messages carry, at any nesting depth."""
+
+    #: Every ``MsgPostRollupData`` payload, keyed by its data hash (lowercase hex).
+    payloads: dict[str, bytes] = field(default_factory=dict)
+    #: Ids of the x/group proposals the transaction executes (``MsgExec``, or
+    #: ``MsgVote`` with immediate execution).
+    group_proposals: set[str] = field(default_factory=set)
+
+
+def collect_posted_payloads(messages: Any, into: Optional[PostedPayloads] = None) -> PostedPayloads:
+    """Collect every ``MsgPostRollupData`` payload in ``messages`` (a
+    transaction's ``body.messages`` as the REST gateway returns them), looking
+    inside every wrapper the chain executes on someone's behalf: authz
+    ``MsgExec`` (nested to any depth), x/group ``MsgSubmitProposal``, and any
+    other message that carries messages. Payloads are keyed by data hash, so a
+    payload found anywhere is the one the chain committed to whenever its hash
+    matches the event."""
+    out = into if into is not None else PostedPayloads()
+
+    def walk(node: Any, depth: int) -> None:
+        if depth > QLEDGER_MAX_MESSAGE_JSON_DEPTH:
+            raise ValueError(
+                f"qledger: transaction messages nest deeper than {QLEDGER_MAX_MESSAGE_JSON_DEPTH} levels"
+            )
+        if isinstance(node, list):
+            for x in node:
+                walk(x, depth + 1)
+            return
+        if not isinstance(node, dict):
+            return
+        typ = node.get("@type")
+        if typ == _POST_MSG_TYPE and isinstance(node.get("data"), str):
+            try:
+                d = _b64(node["data"])
+            except (binascii.Error, ValueError):
+                d = None
+            if d is not None:
+                out.payloads[posted_data_hash(d).hex()] = d
+        if typ in _GROUP_EXECUTING_TYPES and node.get("proposal_id") is not None:
+            out.group_proposals.add(str(node["proposal_id"]))
+        for k, v in node.items():
+            if k != "@type":
+                walk(v, depth + 1)
+
+    walk(messages, 0)
+    return out
+
+
+def _tx_messages(tx: Any) -> Any:
+    tx_obj = tx.get("tx") if isinstance(tx, dict) and isinstance(tx.get("tx"), dict) else {}
+    body = tx_obj.get("body") if isinstance(tx_obj.get("body"), dict) else {}
+    return body.get("messages")
+
+
+def _group_proposal_payloads(rest: "RestClient", proposal_id: str, into: PostedPayloads) -> None:
+    """The payloads of a group proposal's messages: from the transaction that
+    submitted it, and from the chain while it still holds the proposal."""
+    for tx in rest.search_txs(f"cosmos.group.v1.EventSubmitProposal.proposal_id='\"{proposal_id}\"'"):
+        collect_posted_payloads(_tx_messages(tx), into)
+    try:
+        collect_posted_payloads(rest.get_group_proposal_messages(proposal_id), into)
+    except RuntimeError as err:
+        # A pruned proposal is not an error: its submitting transaction was read above.
+        if not str(err).startswith("REST GET "):
+            raise
+
+
 def _norm_hex(s: str) -> str:
     s = s.strip()
     return (s[2:] if s[:2] in ("0x", "0X") else s).lower()
@@ -263,12 +343,15 @@ def fetch_qledger_entries(
     """The inbox entries ``from_sequence + 1 .. to_sequence`` of a qledger-v1
     rollup, read back from the transactions that posted them (the chain keeps
     only commitments; the bytes stay in block history). Posts come from
-    ``MsgPostRollupData``, deposits from the ``rdk_rollup_deposit`` event.
+    ``MsgPostRollupData``, found at any depth inside authz ``MsgExec`` and
+    x/group proposals (including a proposal executed in a later transaction);
+    deposits from the ``rdk_rollup_deposit`` event.
 
     The entries are checked against the chain's inbox accumulator before they
     are returned (``acc_from`` is the accumulator at ``from_sequence``, empty
     or the 32 zero bytes before the first post). Needs a node with
-    transaction indexing on.
+    transaction indexing on. Raises when an entry cannot be read back, never
+    skips it.
     """
     lo, hi = int(from_sequence), int(to_sequence)
     if hi <= lo:
@@ -276,16 +359,16 @@ def fetch_qledger_entries(
     by_seq: dict[int, QledgerEntry] = {}
 
     def query(event: str) -> str:
-        return f"{event}.rollup_id='{rollup_id}'"
+        return (
+            f"{event}.rollup_id='{rollup_id}' AND {event}.sequence>{lo} "
+            f"AND {event}.sequence<={hi}"
+        )
 
+    proposal_cache: dict[str, PostedPayloads] = {}
     for tx in rest.search_txs(query("rdk_data_posted")):
         height = int(str(tx.get("height") or "0"))
-        tx_obj = tx.get("tx") if isinstance(tx.get("tx"), dict) else {}
-        body = tx_obj.get("body") if isinstance(tx_obj.get("body"), dict) else {}
-        msgs = [
-            m for m in (body.get("messages") or [])
-            if isinstance(m, dict) and m.get("@type") == _POST_MSG_TYPE
-        ]
+        found = collect_posted_payloads(_tx_messages(tx))
+        proposals_read = False
         for ev in tx.get("events") or []:
             if not isinstance(ev, dict) or ev.get("type") != "rdk_data_posted":
                 continue
@@ -295,22 +378,23 @@ def fetch_qledger_entries(
             seq = int(a.get("sequence") or "0")
             if seq <= lo or seq > hi:
                 continue
-            payload: Optional[bytes] = None
-            for m in msgs:
-                try:
-                    d = _b64(m.get("data"))
-                except (binascii.Error, ValueError):
-                    continue
-                if (
-                    posted_data_hash(d).hex() == _norm_hex(a.get("data_hash", ""))
-                    and str(m.get("poster")) == a.get("poster")
-                ):
-                    payload = d
-                    break
+            h = _norm_hex(a.get("data_hash", ""))
+            if h not in found.payloads and not proposals_read:
+                # The post ran inside a group proposal executed by this transaction.
+                for pid in sorted(found.group_proposals):
+                    p = proposal_cache.get(pid)
+                    if p is None:
+                        p = PostedPayloads()
+                        _group_proposal_payloads(rest, pid, p)
+                        proposal_cache[pid] = p
+                    found.payloads.update(p.payloads)
+                proposals_read = True
+            payload = found.payloads.get(h)
             if payload is None:
                 raise ValueError(
-                    f"qledger: post {seq} is in transaction {tx.get('txhash')} but its payload "
-                    "could not be matched"
+                    f"qledger: post {seq} is in transaction {tx.get('txhash')} but its payload is "
+                    "not in the transaction or in a group proposal it executes, so the entry "
+                    "cannot be read back"
                 )
             by_seq[seq] = QledgerEntry(height=height, poster=a.get("poster", ""), payload=payload)
 
@@ -340,7 +424,8 @@ def fetch_qledger_entries(
         if e is None:
             raise ValueError(
                 f"qledger: inbox entry {s} of rollup {rollup_id} was not found in the node's "
-                "transaction index"
+                "transaction index (a post or deposit made by a governance proposal runs outside "
+                "any transaction)"
             )
         entries.append(e)
     _verify_entries(
@@ -484,6 +569,9 @@ def plan_qledger_batch(
 
 
 __all__ = [
+    "QLEDGER_MAX_MESSAGE_JSON_DEPTH",
+    "PostedPayloads",
+    "collect_posted_payloads",
     "QLEDGER_FRESH_POST_BLOCKS",
     "QLEDGER_MAX_PENDING_BATCHES_PER_SUBMITTER",
     "QLEDGER_CHECKPOINT_INTERVAL",

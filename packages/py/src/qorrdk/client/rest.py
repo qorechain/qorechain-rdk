@@ -323,7 +323,9 @@ class RestClient:
     ) -> list[RawRecord]:
         """Every transaction matching an event query (for example
         ``rdk_data_posted.rollup_id='my-rollup'``), as raw ``tx_responses``,
-        oldest first. Needs a node with transaction indexing on."""
+        oldest first. Needs a node with transaction indexing on. Raises when
+        more than ``max_pages`` pages match rather than return a partial
+        list."""
         out: list[RawRecord] = []
         for page in range(1, max_pages + 1):
             body = self._get(
@@ -337,8 +339,19 @@ class RestClient:
             except (TypeError, ValueError):
                 total = 0
             if len(txs) < page_limit or (total > 0 and len(out) >= total):
-                break
-        return out
+                return out
+        raise RuntimeError(
+            f'REST transaction search "{query}" matches more than {max_pages * page_limit} '
+            "transactions; narrow the query or raise max_pages"
+        )
+
+    def get_group_proposal_messages(self, proposal_id: Union[int, str]) -> list[Any]:
+        """The messages of an x/group proposal while the chain still holds it
+        (an executed or expired proposal is pruned; its messages stay in the
+        transaction that submitted it)."""
+        body = self._get(f"/cosmos/group/v1/proposal/{quote(str(proposal_id), safe='')}")
+        msgs = _as_record(body.get("proposal")).get("messages")
+        return msgs if isinstance(msgs, list) else []
 
 
 __all__ = ["RestClient"]

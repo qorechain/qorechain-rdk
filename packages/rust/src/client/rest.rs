@@ -37,6 +37,15 @@ pub enum RestError {
     /// The response body was not valid JSON.
     #[error("REST response was not valid JSON: {0}")]
     Json(String),
+    /// A transaction search matched more transactions than the page limit
+    /// allows; the list is refused rather than returned incomplete.
+    #[error("REST transaction search \"{query}\" matches more than {limit} transactions; narrow the query or raise the page limit")]
+    TooManyResults {
+        /// The event query.
+        query: String,
+        /// The most transactions the search would read.
+        limit: u64,
+    },
 }
 
 /// Typed read/broadcast client over the `rdk` REST routes.
@@ -527,7 +536,8 @@ impl RestClient {
     /// Every transaction matching an event query (for example
     /// `rdk_data_posted.rollup_id='my-rollup'`), as raw `tx_responses`, oldest
     /// first (pages of 100, at most 50 pages). Needs a node with transaction
-    /// indexing on.
+    /// indexing on. Fails with [`RestError::TooManyResults`] when more match,
+    /// rather than return a partial list.
     pub fn search_txs(&self, query: &str) -> Result<Vec<Value>, RestError> {
         self.search_txs_with(query, 100, 50)
     }
@@ -559,10 +569,28 @@ impl RestClient {
                 _ => 0,
             };
             if got < limit as usize || (total > 0 && out.len() >= total) {
-                break;
+                return Ok(out);
             }
         }
-        Ok(out)
+        Err(RestError::TooManyResults {
+            query: query.to_string(),
+            limit: u64::from(max_pages) * u64::from(limit),
+        })
+    }
+
+    /// The messages of an x/group proposal while the chain still holds it (an
+    /// executed or expired proposal is pruned; its messages stay in the
+    /// transaction that submitted it).
+    pub fn get_group_proposal_messages(&self, proposal_id: &str) -> Result<Vec<Value>, RestError> {
+        let body = self.get(&format!(
+            "/cosmos/group/v1/proposal/{}",
+            urlencode(proposal_id)
+        ))?;
+        Ok(body
+            .pointer("/proposal/messages")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default())
     }
 }
 
