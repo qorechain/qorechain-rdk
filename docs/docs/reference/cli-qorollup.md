@@ -281,10 +281,13 @@ These wrap `buildSettlementReceipt` and `verifySettlementReceipt`. See
 
 Run the auto-challenger framework for an optimistic rollup: follow its batches,
 print each new batch and its challenge-window deadline, until you press Ctrl-C.
-With `--canonical` it also checks each batch against the chain's own fraud rule
-(its state root must be the canonical transition root of its inputs) and reports
-any batch a challenge would win. It reports; to challenge automatically, wire
-`transitionRootValidator` and `fraudProofForBatch` into `watchBatches` in code.
+With `--canonical` it also checks each batch against the fraud rule the chain
+applies to that rollup and reports any batch a challenge would win: for a
+qledger-v1 rollup, re-executing the batch's inbox entries from its parent state;
+for other optimistic rollups, the canonical transition root of its inputs. It
+reports; to challenge automatically, wire `qledgerValidator` and
+`qledgerFraudProofForBatch` (or `transitionRootValidator` and
+`fraudProofForBatch`) into `watchBatches` in code.
 
 ```bash
 qorollup watchtower my-roll

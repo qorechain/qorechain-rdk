@@ -4,10 +4,14 @@
  * It polls a rollup's settlement batches, surfaces each new batch and its
  * challenge-window deadline, and (when you supply a validity predicate) flags
  * batches you should challenge before the window closes. Supply your own
- * `validate`, or {@link transitionRootValidator}, which applies the chain's own
- * fraud rule: an optimistic batch is fraudulent exactly when its published root
- * differs from the canonical transition root of its inputs. Wire `onInvalid` to
- * `challengeBatch` with {@link fraudProofForBatch} to close the loop.
+ * `validate`, or the predicate for the rule the chain applies to the rollup:
+ * {@link transitionRootValidator} for optimistic rollups judged by the
+ * transition-root rule (an optimistic batch is fraudulent exactly when its
+ * published root differs from the canonical transition root of its inputs), and
+ * {@link qledgerValidator} for qledger-v1 rollups, which the chain judges by
+ * re-executing the batch's inbox entries. Wire `onInvalid` to `challengeBatch`
+ * with {@link fraudProofForBatch} (or {@link qledgerFraudProofForBatch}) to
+ * close the loop.
  *
  * From chain v3.2.5 an upheld fraud rejects the batch and every later
  * unfinalized one, and the sequencer resubmits from the last good root under
@@ -21,6 +25,7 @@ import {
   transitionRootVersionForBatch,
 } from "../transition";
 import type { RdkClient } from "../client/rdk-client";
+import { qledgerValidator, type QledgerValidatorOptions } from "./qledger";
 import type { BatchView } from "../client/views";
 import {
   batchChallengeWindow,
@@ -227,6 +232,10 @@ const sameBytes = (a: Uint8Array, b: Uint8Array): boolean =>
  * canonical transition root under the binding the chain judges that batch by.
  * A batch it rejects is one a challenge built by {@link fraudProofForBatch}
  * wins.
+ *
+ * Not for qledger-v1 rollups: their state root is the root of the account tree,
+ * so this rule reports every honest qledger-v1 batch as invalid. Use
+ * {@link qledgerValidator} there.
  */
 export function transitionRootValidator(
   client: RdkClient,
@@ -239,7 +248,8 @@ export function transitionRootValidator(
 /**
  * The fraud proof that wins a challenge against `batch`, or `undefined` when
  * the batch publishes the canonical root (a challenge would be dismissed and
- * forfeit its bond).
+ * forfeit its bond). For a qledger-v1 rollup use
+ * {@link qledgerFraudProofForBatch}: the chain dismisses this proof there.
  */
 export async function fraudProofForBatch(
   client: RdkClient,
@@ -249,4 +259,32 @@ export async function fraudProofForBatch(
   const canonical = await canonicalRootFor(client, rollupId, batch);
   if (sameBytes(decodeWireBytes(batch.stateRoot), canonical)) return undefined;
   return fraudProof(decodeWireBytes(batch.prevStateRoot), canonical);
+}
+
+export {
+  QledgerJudge,
+  qledgerValidator,
+  qledgerFraudProofForBatch,
+  type QledgerEntryReader,
+  type QledgerJudgement,
+  type QledgerValidatorOptions,
+} from "./qledger";
+
+/** Which fraud rule the chain applies to a rollup's batches. */
+export type WatchtowerRule = "qledger-v1" | "transition-root";
+
+/**
+ * The `validate` predicate for the rule the chain applies to `rollupId`:
+ * {@link qledgerValidator} for a qledger-v1 rollup, {@link transitionRootValidator}
+ * otherwise. This is what `qorollup watchtower --canonical` uses.
+ */
+export async function validatorForRollup(
+  client: RdkClient,
+  rollupId: string,
+  opts: QledgerValidatorOptions = {},
+): Promise<{ rule: WatchtowerRule; validate: (batch: BatchView) => Promise<boolean> }> {
+  const rollup = await client.rest.getRollup(rollupId);
+  return rollup.executionVm === "qledger-v1"
+    ? { rule: "qledger-v1", validate: qledgerValidator(client, rollupId, opts) }
+    : { rule: "transition-root", validate: transitionRootValidator(client, rollupId) };
 }

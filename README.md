@@ -76,7 +76,8 @@ The RDK's distinctive features, all built on QoreChain itself:
   *(TypeScript.)*
 - **Watchtower** — `watchBatches`, an auto-challenger framework for optimistic
   rollups, with `transitionRootValidator` / `fraudProofForBatch` applying the
-  chain's own fraud rule. CLI: `qorollup watchtower --canonical`. *(TypeScript.)*
+  chain's own fraud rule, and `qledgerValidator` / `qledgerFraudProofForBatch`
+  for qledger-v1 rollups. CLI: `qorollup watchtower --canonical`. *(TypeScript.)*
 
 The Python, Go, Rust, and Java (JVM) clients mirror the TypeScript surface —
 config builder and validation, presets, utilities, Merkle/withdrawal helpers,

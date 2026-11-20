@@ -14,8 +14,8 @@ import {
   buildExecuteWithdrawalInput,
   bytesToHex,
   decodeWireBytes,
-  transitionRootValidator,
   transitionRootVersionForBatch,
+  validatorForRollup,
   withdrawalsTree,
   checkPreflight,
   deriveNativeAccount,
@@ -656,11 +656,17 @@ export async function cmdWatchtower(ctx: CliContext, parsed: ParsedCli): Promise
   }
   const intervalMs = Number(flagStr(parsed.flags, "interval") ?? "5000");
   const canonical = flagBool(parsed.flags, "canonical");
+  // The chain judges a qledger-v1 batch by re-executing its inbox entries, and
+  // every other optimistic batch by the transition-root rule; check by the same rule.
+  const checker = canonical ? await validatorForRollup(ctx.client, rollupId) : undefined;
+  const qledger = checker?.rule === "qledger-v1";
   ctx.out.line(`Watchtower on ${rollupId} (every ${intervalMs}ms; Ctrl-C to stop).`);
   ctx.out.line(
-    canonical
-      ? "Checking each optimistic batch against the chain's transition-root rule; this CLI reports, it does not challenge."
-      : "Note: pass --canonical to flag batches that break the chain's transition-root rule; this CLI only reports.",
+    !checker
+      ? "Note: pass --canonical to flag batches the chain's fraud rule would reject; this CLI only reports."
+      : qledger
+        ? "Checking each batch by re-executing its qledger-v1 inbox entries, as the chain decides a challenge; this CLI reports, it does not challenge."
+        : "Checking each optimistic batch against the chain's transition-root rule; this CLI reports, it does not challenge.",
   );
   await new Promise<void>((resolve) => {
     const controller = new AbortController();
@@ -671,10 +677,14 @@ export async function cmdWatchtower(ctx: CliContext, parsed: ParsedCli): Promise
       signal: controller.signal,
       onBatch: (b) =>
         ctx.out.line(`new batch #${b.batchIndex} (${b.status}) state ${b.stateRoot.slice(0, 16)}…`),
-      validate: canonical ? transitionRootValidator(ctx.client, rollupId) : undefined,
+      validate: checker?.validate,
       onInvalid: (info) =>
         ctx.out.warn(
-          `batch #${info.batch.batchIndex} does not publish the canonical transition root: a challenge would win` +
+          `batch #${info.batch.batchIndex} ${
+            qledger
+              ? "publishes roots that differ from re-executing its inbox entries"
+              : "does not publish the canonical transition root"
+          }: a challenge would win` +
             (info.window ? ` (${describeWindow(info.window)})` : ""),
         ),
       onDeadline: (info) =>

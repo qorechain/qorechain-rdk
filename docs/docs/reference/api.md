@@ -135,6 +135,14 @@ produce it.
   `watchBatches` that applies the chain's fraud rule.
 - **`fraudProofForBatch(client, rollupId, batch)`** — the proof that wins a
   challenge against a batch, or `undefined` for an honest one.
+- **`qledgerValidator(client, rollupId, opts?)`** — the `validate` predicate for
+  a qledger-v1 rollup: re-executes the batch's inbox entries from its parent
+  state and decides the resulting proof with `checkQledgerFraud`, as the chain
+  does. `opts.readEntries` reads entries from your own archive.
+- **`qledgerFraudProofForBatch(client, rollupId, batch, opts?)`** — the qledger-v1
+  proof that wins a challenge against a batch, or `undefined` for an honest one.
+- **`validatorForRollup(client, rollupId)`** — `{ rule, validate }` for the rule
+  the chain applies to the rollup (`qledger-v1` or `transition-root`).
 
 ### Transition roots
 
