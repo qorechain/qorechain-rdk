@@ -402,3 +402,91 @@ describe("settlement receipts on a v2 network", () => {
     expect(v.valid).toBe(true);
   });
 });
+
+describe("settlement receipts after the chain prunes the batch record", () => {
+  // The chain deletes a finalized batch's record after finalized_batch_retention_blocks while its
+  // anchor (layer height = batch index) stays on chain. The receipt must still verify then, and only then.
+  const layerId = "layer-rollup-1";
+  const batchIndex = 3;
+  const stateRoot = "98d658fb28540a2eca2a8a5930c309a9c37f89979d48d025a72c36a77a74510d";
+  const vsh = "";
+  const creator = "qor1creator0000000000000000000000000000000";
+  const kp = generatePqcKeypair();
+  const signature = pqcSign(kp.secretKey, anchorSignBytes({ layerId, layerHeight: batchIndex, stateRoot, validatorSetHash: vsh }));
+  const b64 = (hex: string): string => bytesToBase64(hexToBytes(hex));
+  const RETENTION = 432000;
+  const ANCHOR_HEIGHT = 100;
+
+  function client(opts: { pruned: boolean; height: number; anchorRoot?: string }) {
+    const { fetch } = mockFetch((call) => {
+      const u = call.url;
+      if (u.includes("/qorechain/rdk/v1/rollup/")) {
+        return { json: { rollup: { rollup_id: "r", creator, layer_id: layerId, status: "active" } } };
+      }
+      if (u.includes("/qorechain/rdk/v1/batch/")) {
+        if (opts.pruned) return { ok: false, status: 404, statusText: "Not Found", json: { code: 5, message: "not found" } };
+        return { json: { batch: { rollup_id: "r", batch_index: batchIndex, state_root: b64(stateRoot), status: "finalized" } } };
+      }
+      if (u.includes("/qorechain/rdk/v1/params")) {
+        return { json: { params: { finalized_batch_retention_blocks: String(RETENTION) } } };
+      }
+      if (u.includes("/cosmos/base/node/v1beta1/status")) {
+        return { json: { height: String(opts.height) } };
+      }
+      if (u.includes("/qorechain/multilayer/v1/anchors/")) {
+        return {
+          json: {
+            anchors: [
+              {
+                layer_id: layerId,
+                layer_height: batchIndex,
+                state_root: b64(opts.anchorRoot ?? stateRoot),
+                validator_set_hash: "",
+                main_chain_height: ANCHOR_HEIGHT,
+                anchored_at: 1700000000,
+                pqc_aggregate_signature: bytesToBase64(signature),
+              },
+            ],
+          },
+        };
+      }
+      if (u.includes("/qorechain/pqc/v1/account/")) {
+        return { json: { account: { address: creator, public_key: bytesToBase64(kp.publicKey), algorithm_name: "ML-DSA-87" } } };
+      }
+      return { json: {} };
+    });
+    return createRdkClient({ network: "testnet", endpoints: { rest: "http://node" }, fetch });
+  }
+
+  const old = ANCHOR_HEIGHT + RETENTION + 10;
+
+  it("verifies a receipt whose batch record was pruned, from the batch's anchor", async () => {
+    const receipt = await buildSettlementReceipt(client({ pruned: false, height: 1000 }), "r", batchIndex);
+    const v = await verifySettlementReceipt(receipt, { client: client({ pruned: true, height: old }) });
+    expect(v.valid).toBe(true);
+    expect(v.batchRecordPruned).toBe(true);
+    expect(Object.values(v.checks).every(Boolean)).toBe(true);
+  });
+
+  it("does not report pruning when the batch record is still there", async () => {
+    const c = client({ pruned: false, height: old });
+    const v = await verifySettlementReceipt(await buildSettlementReceipt(c, "r", batchIndex), { client: c });
+    expect(v.valid).toBe(true);
+    expect(v.batchRecordPruned).toBeUndefined();
+  });
+
+  it("still fails a missing batch whose anchor is younger than the retention window", async () => {
+    const receipt = await buildSettlementReceipt(client({ pruned: false, height: 1000 }), "r", batchIndex);
+    const v = await verifySettlementReceipt(receipt, { client: client({ pruned: true, height: ANCHOR_HEIGHT + 5 }) });
+    expect(v.valid).toBe(false);
+    expect(v.reason).toMatch(/not found on chain/);
+  });
+
+  it("still rejects a forged state root when the batch record is pruned", async () => {
+    const receipt = await buildSettlementReceipt(client({ pruned: false, height: 1000 }), "r", batchIndex);
+    const forged = { ...receipt, stateRoot: "ff" + receipt.stateRoot.slice(2), batchStateRoot: "ff" + receipt.batchStateRoot.slice(2) };
+    const v = await verifySettlementReceipt(forged, { client: client({ pruned: true, height: old }) });
+    expect(v.valid).toBe(false);
+    expect(v.checks.batchStateRoot).toBe(false);
+  });
+});

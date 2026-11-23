@@ -201,6 +201,10 @@ exactly what was presented to you, without rebuilding it.
 
 See the [qorollup reference](../reference/cli-qorollup.md).
 
+## Receipts for pruned batches
+
+The chain deletes a finalized batch's record after `finalized_batch_retention_blocks` (432,000 blocks, about 7 days, on testnet); the batch's anchor stays on chain. `verifySettlementReceipt` handles this: when the batch is not found and the batch's own anchor (layer height = batch index) is older than the retention window, it reads the batch's state root from that anchor and runs every other check unchanged. The result then has `batchRecordPruned: true`. A batch that is missing while its anchor is still inside the window fails as before, because that is not pruning.
+
 ## What a receipt does not prove
 
 Verification tells you that the chain holds what the receipt claims. Two limits

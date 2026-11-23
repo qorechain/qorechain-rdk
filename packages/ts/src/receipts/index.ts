@@ -17,6 +17,7 @@
  */
 import { pqcVerify } from "@qorechain/sdk";
 import type { RdkClient } from "../client/rdk-client";
+import { isRestNotFound } from "../client/rest";
 import type { AnchorView, RollupView } from "../client/views";
 import { bytesToHex, decodeWireBytes, hexToBytes } from "../utils/bytes";
 
@@ -118,6 +119,11 @@ export interface ReceiptVerification {
      */
     chainBinding: boolean;
   };
+  /**
+   * True when the chain had pruned the batch record (it keeps finalized batches for
+   * `finalized_batch_retention_blocks`) and the batch's state root was read from its anchor.
+   */
+  batchRecordPruned?: boolean;
   /**
    * Which canonical anchor message the signature was checked against: `v2`
    * from the chain's `rdk-integrity` height, `v1` below it.
@@ -473,6 +479,21 @@ function signatureOver(
 }
 
 /**
+ * The state root of a batch whose record the chain has pruned, read from the batch's own anchor
+ * (layer height = batch index), or `undefined` when the batch is not provably pruned: no such
+ * anchor, or the anchor is younger than `finalized_batch_retention_blocks`, so a missing record
+ * means something else and must still fail.
+ */
+async function prunedBatchRoot(rest: RdkClient["rest"], receipt: SettlementReceipt): Promise<string | undefined> {
+  const [params, height, anchors] = await Promise.all([rest.getParams(), rest.getLatestHeight(), rest.getAnchors(receipt.layerId)]);
+  const retention = params.finalizedBatchRetentionBlocks;
+  if (!retention) return undefined;
+  const own = anchors.find((a) => a.layerHeight === receipt.batchIndex);
+  if (!own || height - own.mainChainHeight < retention) return undefined;
+  return own.stateRoot;
+}
+
+/**
  * Verify a settlement receipt against live chain state.
  *
  * A receipt is a *claim*, not evidence: every field in it is supplied by
@@ -546,7 +567,9 @@ export async function verifySettlementReceipt(
   }
 
   const rest = options.client.rest;
-  const fail = (reason: string): ReceiptVerification => ({ valid: false, mode: "chain", checks, reason });
+  let batchRecordPruned = false;
+  const pruned = () => (batchRecordPruned ? { batchRecordPruned: true } : {});
+  const fail = (reason: string): ReceiptVerification => ({ valid: false, mode: "chain", checks, reason, ...pruned() });
 
   // 1. The rollup must exist on chain and belong to the layer the receipt names.
   let rollup: RollupView;
@@ -563,9 +586,23 @@ export async function verifySettlementReceipt(
   }
 
   // 2. The chain's batch must carry the receipt's state root (not the receipt's own copy).
+  // The chain deletes a finalized batch's record after `finalized_batch_retention_blocks`
+  // (432,000 blocks, about 7 days, on testnet), while its anchor stays on chain for good. Once the
+  // record is shown to be pruned (not found, and the batch's own anchor is older than the
+  // retention window), the batch root is read from that anchor instead: the chain only accepts an
+  // anchor whose layer height is the batch index and whose state root is the batch's. Every later
+  // step still runs, and nothing is taken from the receipt.
   try {
-    const batch = await rest.getBatch(receipt.rollupId, receipt.batchIndex);
-    const onChainRoot = batch.stateRoot ? bytesToHex(decodeWireBytes(batch.stateRoot)) : "";
+    let onChainRoot: string;
+    try {
+      const batch = await rest.getBatch(receipt.rollupId, receipt.batchIndex);
+      onChainRoot = batch.stateRoot ? bytesToHex(decodeWireBytes(batch.stateRoot)) : "";
+    } catch (err) {
+      const fromAnchor = isRestNotFound(err) ? await prunedBatchRoot(rest, receipt) : undefined;
+      if (fromAnchor === undefined) throw err;
+      onChainRoot = fromAnchor;
+      batchRecordPruned = true;
+    }
     checks.batchStateRoot =
       onChainRoot !== "" && onChainRoot === receipt.stateRoot && onChainRoot === receipt.batchStateRoot;
   } catch (err) {
@@ -645,6 +682,7 @@ export async function verifySettlementReceipt(
         checks,
         signBytesVersion: version,
         anchor: matched,
+        ...pruned(),
         verifiedReceipt: receiptFromParts(
           receipt.rollupId,
           rollup.layerId,
