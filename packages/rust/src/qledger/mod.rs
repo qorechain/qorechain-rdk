@@ -1,6 +1,8 @@
 //! The qledger-v1 execution model of optimistic rollups (chain v3.2.8+):
 //! account keys and transactions, the state tree, execution, withdrawals,
-//! fraud proofs and the batch admission rules, byte-compatible with the chain.
+//! fraud proofs and the batch admission rules, byte-compatible with the chain,
+//! and a watchtower judge that decides batches as the chain decides a
+//! challenge ([`qledger_validator`]).
 //!
 //! Signatures are ML-DSA-44 with the FIPS 204 context `"qledger/v1"`:
 //! [`QledgerTx::sign`] signs deterministically and [`MLDSA44_VERIFIER`] is the
@@ -16,6 +18,7 @@ pub mod exec;
 pub mod fraud;
 pub mod smt;
 pub mod tx;
+pub mod watchtower;
 
 pub use batch::{
     choose_qledger_batch_end, collect_posted_payloads, fetch_qledger_entries,
@@ -45,6 +48,10 @@ pub use tx::{
     MLDSA44_VERIFIER, QLEDGER_DEPOSIT_POSTER_PREFIX, QLEDGER_KIND_TRANSFER, QLEDGER_KIND_WITHDRAW,
     QLEDGER_MAX_RECIPIENT_LEN, QLEDGER_MLDSA44_PUBLIC_KEY_SIZE, QLEDGER_MLDSA44_SIGNATURE_SIZE,
     QLEDGER_SCHEME_MLDSA44, QLEDGER_SIGNING_CONTEXT,
+};
+pub use watchtower::{
+    qledger_fraud_proof_for_batch, qledger_validator, QledgerEntryReader, QledgerJudge,
+    QledgerJudgement, QledgerValidatorOptions,
 };
 
 /// A qledger-v1 error.

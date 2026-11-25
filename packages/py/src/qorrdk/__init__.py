@@ -402,6 +402,14 @@ from .qledger import (  # noqa: E402
     sign_qledger_tx,
     verify_qledger_tx,
 )
+# Watchtower: judging qledger-v1 batches as the chain does.
+from .watchtower import (  # noqa: E402
+    QledgerEntryReader,
+    QledgerJudge,
+    QledgerJudgement,
+    qledger_fraud_proof_for_batch,
+    qledger_validator,
+)
 from .lifecycle.state_machine import ChainTip, ChallengeWindowStatus, batch_challenge_window
 from .transition import (
     FEATURE_RDK_CHALLENGE_SETTLEMENT,
@@ -769,4 +777,10 @@ __all__ = [
     "plan_qledger_batch",
     "qledger_accumulate",
     "qledger_batch_errors",
+    # watchtower
+    "QledgerEntryReader",
+    "QledgerJudge",
+    "QledgerJudgement",
+    "qledger_fraud_proof_for_batch",
+    "qledger_validator",
 ]
